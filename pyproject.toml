@@ -1,0 +1,22 @@
+[project]
+name = "docking_benchmark"
+version = "0.1.0"
+description = "Benchmarking docking models against ChEMBL data"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "chembl_webresource_client",
+    "polars",
+    "rdkit",
+    "meeko",
+    "matplotlib",
+    "seaborn",
+    "scipy",
+    "gemmi>=0.7.4",
+    "prody>=2.4.1",
+    "molscrub>=0.2.2",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
