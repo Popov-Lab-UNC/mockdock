@@ -1,0 +1,8 @@
+target_id: "CHEMBL301"
+doc_id: "CHEMBL5728430"
+pdb_id: "4BZD"
+ligand_resname: "D6I"
+activity_units: "nM"
+output_dir: "CDK2_workflow"
+smarts: "c1cn[nH]c1"  # Example SMARTS for testing (pyrazole). Need user input for real case.
+rmsd_threshold: 2.0
