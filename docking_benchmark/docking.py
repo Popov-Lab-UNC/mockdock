@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Union, Tuple
 import gzip
 import time
+import math
 
 import polars as pl
 from molscrub import Scrub
@@ -23,7 +24,10 @@ class AutoDockGPUOracle:
         n_cpus: Optional[int] = None,
         save_dir: Optional[Union[str, Path]] = None,
         ph_low: float = 6.4,
-        ph_high: float = 8.4
+        ph_high: float = 8.4,
+        reference_ligand_path: Optional[Union[str, Path]] = None,
+        smarts: Optional[str] = None,
+        rmsd_threshold: float = 2.0
     ):
         """
         Oracle for scoring molecules using AutoDock-GPU.
@@ -36,6 +40,9 @@ class AutoDockGPUOracle:
             save_dir: Directory to save persistent PDBQT and DLG files.
             ph_low: Minimum pH for protonation state enumeration.
             ph_high: Maximum pH for protonation state enumeration.
+            reference_ligand_path: Path to the reference ligand PDB for RMSD calculation.
+            smarts: SMARTS string for the fragment constraint.
+            rmsd_threshold: RMSD threshold for the fragment constraint.
         """
         self.receptor_file = Path(receptor_file).resolve()
         self.adgpu_executable = adgpu_executable
@@ -69,6 +76,34 @@ class AutoDockGPUOracle:
         
         self.adgpu_executable = resolved_exe
 
+        # Fragment constraint setup
+        self.reference_ligand_path = reference_ligand_path
+        self.smarts = smarts
+        self.rmsd_threshold = rmsd_threshold
+        self.ref_mol = None
+        self.smarts_mol = None
+
+        if self.reference_ligand_path and self.smarts:
+            self.reference_ligand_path = Path(self.reference_ligand_path)
+            if not self.reference_ligand_path.exists():
+                raise FileNotFoundError(f"Reference ligand not found: {self.reference_ligand_path}")
+
+            # Load reference ligand
+            self.ref_mol = Chem.MolFromPDBFile(str(self.reference_ligand_path), removeHs=False)
+            if self.ref_mol is None:
+                raise ValueError(f"Could not load reference ligand from {self.reference_ligand_path}")
+
+            self.smarts_mol = Chem.MolFromSmarts(self.smarts)
+            if self.smarts_mol is None:
+                raise ValueError(f"Invalid SMARTS string: {self.smarts}")
+
+            # Verify reference matches SMARTS
+            if not self.ref_mol.HasSubstructMatch(self.smarts_mol):
+                print(f"Warning: Reference ligand does not match SMARTS: {self.smarts}")
+            else:
+                print("Reference ligand loaded and matches SMARTS.")
+
+
     def __call__(self, smiles: str) -> float:
         """
         Score a single SMILES string. Returns the best docking score (lowest energy).
@@ -81,6 +116,28 @@ class AutoDockGPUOracle:
         """
         Score a batch of SMILES strings.
         """
+        # Pre-check SMARTS if applicable
+        pre_check_results = []
+        if self.smarts_mol:
+            matches = 0
+            for smi in smiles_list:
+                mol = Chem.MolFromSmiles(smi)
+                if mol and mol.HasSubstructMatch(self.smarts_mol):
+                    matches += 1
+                    pre_check_results.append(True)
+                else:
+                    pre_check_results.append(False)
+
+            percent_match = (matches / len(smiles_list)) * 100 if smiles_list else 0
+            print(f"Pre-docking SMARTS check: {matches}/{len(smiles_list)} ({percent_match:.1f}%) match {self.smarts}")
+        else:
+             pre_check_results = [True] * len(smiles_list)
+
+        # Store pre-check results temporarily mapped by smiles (duplicates handled by order ideally, but here list-to-list)
+        # To avoid issues with duplicates, we'll zip them later or handle in _process_chunk.
+        # Actually _process_chunk iterates over the chunk, so we need to pass the info or re-compute?
+        # Re-computing is cheap.
+
         all_results = []
         
         # Process in chunks to avoid overwhelming file system or args
@@ -146,6 +203,44 @@ class AutoDockGPUOracle:
             print(f"Error in _prepare_single_ligand for {smiles}: {e}")
             return []
 
+    def _calculate_rmsd(self, probe_mol: Chem.Mol) -> float:
+        """
+        Calculate RMSD of the SMARTS fragment between probe_mol and self.ref_mol.
+        """
+        if self.ref_mol is None or self.smarts_mol is None:
+            return 0.0 # No constraint, RMSD is 0
+
+        # Find matches
+        ref_match = self.ref_mol.GetSubstructMatch(self.smarts_mol)
+        probe_match = probe_mol.GetSubstructMatch(self.smarts_mol)
+
+        if not ref_match or not probe_match:
+            return 999.9 # Constraint not matched in topology
+
+        # Get coordinates
+        ref_conf = self.ref_mol.GetConformer()
+        probe_conf = probe_mol.GetConformer()
+
+        ref_coords = []
+        probe_coords = []
+
+        for idx in ref_match:
+            pos = ref_conf.GetAtomPosition(idx)
+            ref_coords.append((pos.x, pos.y, pos.z))
+
+        for idx in probe_match:
+            pos = probe_conf.GetAtomPosition(idx)
+            probe_coords.append((pos.x, pos.y, pos.z))
+
+        # Calculate RMSD
+        # Manual RMSD to avoid alignment (we want absolute position check)
+        sq_diff = 0
+        for (rx, ry, rz), (px, py, pz) in zip(ref_coords, probe_coords):
+            sq_diff += (rx - px)**2 + (ry - py)**2 + (rz - pz)**2
+
+        rmsd = math.sqrt(sq_diff / len(ref_coords))
+        return rmsd
+
     def _process_chunk(self, smiles_list: List[str], chunk_idx: int) -> List[dict]:
         # Create temp dir for this chunk
         with tempfile.TemporaryDirectory(prefix=f"adgpu_chunk_{chunk_idx}_") as tmp_dir:
@@ -180,7 +275,13 @@ class AutoDockGPUOracle:
                 idx_to_pdbqts[i] = written_files
 
             if not idx_to_pdbqts:
-                return [{"smiles": s, "docking_score": 999.9, "dlg_path": None} for s in smiles_list]
+                return [{
+                    "smiles": s,
+                    "docking_score": float('nan'),
+                    "dlg_path": None,
+                    "valid_pose_found": False,
+                    "smarts_precheck": False
+                } for s in smiles_list]
 
             # Create filelist
             filelist_path = tmp_path / "filelist.txt"
@@ -238,9 +339,18 @@ class AutoDockGPUOracle:
             chunk_results = []
             
             for i, smi in enumerate(smiles_list):
-                best_score_for_smiles = 999.9
-                best_dlg_for_smiles = None
+                best_valid_score = float('nan')
+                best_valid_dlg_path = None
+                valid_pose_found = False
                 
+                # Check 2D match
+                smarts_precheck = False
+                mol = Chem.MolFromSmiles(smi)
+                if mol and self.smarts_mol and mol.HasSubstructMatch(self.smarts_mol):
+                    smarts_precheck = True
+                elif not self.smarts_mol:
+                    smarts_precheck = True # No filter
+
                 if i in idx_to_pdbqts:
                     for rel_path in idx_to_pdbqts[i]:
                         stem = Path(rel_path).stem
@@ -248,43 +358,90 @@ class AutoDockGPUOracle:
                         
                         if dlg_path.exists():
                             persistent_dlg = None
-                            # Save DLG if requested
                             if self.save_dir:
                                 persistent_dlg = self.save_dir / "results" / f"chunk_{chunk_idx}_{stem}.dlg"
                                 shutil.copy2(dlg_path, persistent_dlg)
                             
+                            # Use extended parsing to handle constraints
                             try:
-                                val = self._parse_dlg(dlg_path)
-                                if val is not None and val < best_score_for_smiles:
-                                    best_score_for_smiles = val
-                                    best_dlg_for_smiles = str(persistent_dlg) if persistent_dlg else str(dlg_path)
+                                best_score, passed_constraint, best_mol = self._parse_and_filter(dlg_path, persistent_dlg, smi)
+
+                                if passed_constraint and (math.isnan(best_valid_score) or best_score < best_valid_score):
+                                    best_valid_score = best_score
+                                    best_valid_dlg_path = str(persistent_dlg) if persistent_dlg else str(dlg_path)
+                                    valid_pose_found = True
                             except Exception as e:
                                 print(f"Error parsing {dlg_path}: {e}")
                 
                 chunk_results.append({
                     "smiles": smi,
-                    "docking_score": best_score_for_smiles,
-                    "dlg_path": best_dlg_for_smiles
+                    "docking_score": best_valid_score,
+                    "dlg_path": best_valid_dlg_path,
+                    "valid_pose_found": valid_pose_found,
+                    "smarts_precheck": smarts_precheck
                 })
             
             return chunk_results
 
-    def _parse_dlg(self, dlg_path: Path) -> Optional[float]:
+    def _parse_and_filter(self, dlg_path: Path, persistent_dlg: Optional[Path], smiles: str) -> Tuple[float, bool, Optional[Chem.Mol]]:
         """
-        Robust parsing of best energy using Meeko's PDBQTMolecule.
+        Parse DLG, filter poses by RMSD if applicable, and return best score among valid poses and the molecule.
+        Returns (best_score, passed_constraint, best_molecule).
+        """
+        # If no filtering needed, use fast path
+        if not self.reference_ligand_path or not self.smarts:
+             val = self._parse_dlg_simple(dlg_path)
+             if val is not None:
+                 return val, True, None # Mol unnecessary
+             return float('nan'), False, None
+
+        # Filtering needed
+        try:
+            pdbqt_mol = PDBQTMolecule.from_file(str(dlg_path), is_dlg=True, skip_typing=True)
+            rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
+
+            if not rdkit_mols:
+                return float('nan'), False, None
+
+            best_valid_score = float('nan')
+            best_mol = None
+
+            energies = []
+            if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
+                energies = pdbqt_mol._pose_data["free_energies"]
+            
+            for idx, mol in enumerate(rdkit_mols):
+                score = energies[idx] if idx < len(energies) else 999.9
+
+                # Check RMSD
+                rmsd = self._calculate_rmsd(mol)
+
+                if rmsd < self.rmsd_threshold:
+                    if math.isnan(best_valid_score) or score < best_valid_score:
+                        best_valid_score = score
+                        best_mol = mol
+
+            if not math.isnan(best_valid_score):
+                return best_valid_score, True, best_mol
+
+            return float('nan'), False, None
+
+        except Exception as e:
+            print(f"Error in RMSD filtering for {dlg_path}: {e}")
+            return float('nan'), False, None
+
+    def _parse_dlg_simple(self, dlg_path: Path) -> Optional[float]:
+        """
+        Robust parsing of best energy using Meeko's PDBQTMolecule (original logic).
         """
         try:
-            # PDBQTMolecule.from_file can parse .dlg files
             pdbqt_mol = PDBQTMolecule.from_file(str(dlg_path), is_dlg=True, skip_typing=True)
-            
-            # _pose_data contains energies
-            # For ADGPU, the poses are already sorted by rank in clusters or we can just find the minimum free_energy
             if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
                 energies = pdbqt_mol._pose_data["free_energies"]
                 if energies:
                     return float(min(energies))
             
-            # Fallback to manual parsing if Meeko structure is different or fails
+            # Fallback to manual parsing
             best_score = 999.9
             found = False
             with open(dlg_path, "r") as f:
@@ -302,21 +459,17 @@ class AutoDockGPUOracle:
             return best_score if found else None
             
         except Exception as e:
-            # Last resort fallback if Meeko fails completely
             try:
                 with open(dlg_path, "r") as f:
                     for line in f:
                         if "Rank | Binding Energy" in line:
-                            # Skip header and separator
-                            next(f)
-                            next(f)
+                            next(f); next(f)
                             line = next(f)
                             parts = line.split("|")
                             if len(parts) >= 3:
                                 return float(parts[2].strip())
             except:
                 pass
-            print(f"Warning: Failed to parse {dlg_path} using all methods: {e}")
             return None
 
     def save_best_poses_sdf(self, output_path: Union[str, Path]):
@@ -332,22 +485,49 @@ class AutoDockGPUOracle:
         count = 0
         
         for row in self.results_df.iter_rows(named=True):
-            if row['docking_score'] >= 999.0 or row['dlg_path'] is None:
+            if row['docking_score'] is None or math.isnan(row['docking_score']) or row['docking_score'] >= 999.0 or row['dlg_path'] is None:
                 continue
             
             try:
+                # Optimized path: If we used the filter, we might want to cache the mol or just re-extract.
+                # Re-extracting is safer but slower.
+                # Since we passed (best_score, passed_constraint, best_mol) internally in _process_chunk but threw away mol to serializable dict.
+                # We have to re-do it here.
+
                 # Load DLG with Meeko
                 pdbqt_mol = PDBQTMolecule.from_file(row['dlg_path'], is_dlg=True, skip_typing=True)
-                # Create RDKit molecules for all poses, Meeko keeps them in order of rank
                 rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
+                energies = []
+                if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
+                    energies = pdbqt_mol._pose_data["free_energies"]
+
+                best_mol = None
+                target_score = row['docking_score']
+
+                for idx, mol in enumerate(rdkit_mols):
+                    score = energies[idx] if idx < len(energies) else 999.9
+
+                    if abs(score - target_score) < 0.001:
+                        # Found a pose with this score. Verify filter if needed.
+                        if self.reference_ligand_path and self.smarts:
+                            rmsd = self._calculate_rmsd(mol)
+                            if rmsd < self.rmsd_threshold:
+                                best_mol = mol
+                                best_mol.SetProp("RMSD_fragment", f"{rmsd:.3f}")
+                                break # Found it
+                        else:
+                            best_mol = mol
+                            break
                 
-                if rdkit_mols:
-                    best_mol = rdkit_mols[0]
+                if best_mol:
                     # Add metadata
-                    best_mol.SetProp("_Name", row['molecule_chembl_id'])
-                    best_mol.SetProp("smiles", row['smiles'])
+                    if 'molecule_chembl_id' in row:
+                         best_mol.SetProp("_Name", str(row['molecule_chembl_id']))
+                    else:
+                         best_mol.SetProp("_Name", str(row['smiles']))
+                    best_mol.SetProp("smiles", str(row['smiles']))
                     best_mol.SetProp("docking_score", str(row['docking_score']))
-                    best_mol.SetProp("dlg_path", row['dlg_path'])
+                    best_mol.SetProp("dlg_path", str(row['dlg_path']))
                     writer.write(best_mol)
                     count += 1
             except Exception as e:

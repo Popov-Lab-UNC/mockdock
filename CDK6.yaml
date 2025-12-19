@@ -1,0 +1,8 @@
+target_id: "CHEMBL2508"
+doc_id: "CHEMBL5728430"
+pdb_id: "5L2S"
+ligand_resname: "6ZV"
+activity_units: "nM"
+output_dir: "CDK6_workflow"
+# smarts: "" # Optional
+rmsd_threshold: 2.0

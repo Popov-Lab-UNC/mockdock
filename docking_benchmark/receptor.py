@@ -66,7 +66,22 @@ def extract_protein_and_ligand(
 
 class ReceptorPreparer:
     def __init__(self, autogrid_executable: str = "autogrid4", mk_prepare_receptor_executable: str = "mk_prepare_receptor.py"):
-        self.autogrid_executable = shutil.which(autogrid_executable) or autogrid_executable
+        self.autogrid_executable = shutil.which(autogrid_executable)
+
+        # Fallback if shutil.which didn't find it but it's a relative path or in current dir
+        if self.autogrid_executable is None:
+             if Path(autogrid_executable).exists():
+                 self.autogrid_executable = str(Path(autogrid_executable).resolve())
+             elif Path.cwd().joinpath(autogrid_executable).exists():
+                 self.autogrid_executable = str(Path.cwd().joinpath(autogrid_executable).resolve())
+             else:
+                 # Last ditch: keep it as is, maybe subprocess finds it?
+                 self.autogrid_executable = autogrid_executable
+        else:
+             # Ensure absolute path even if found by which, if it looks relative
+             if not Path(self.autogrid_executable).is_absolute():
+                  self.autogrid_executable = str(Path(self.autogrid_executable).resolve())
+
         self.mk_prepare_receptor_executable = shutil.which(mk_prepare_receptor_executable) or mk_prepare_receptor_executable
 
     def prepare_receptor_and_grid(
@@ -75,18 +90,40 @@ class ReceptorPreparer:
         chain: str = 'A', 
         output_dir: Union[str, Path] = ".", 
         allow_bad_res: bool = False,
-        ligand_resname: Optional[str] = None
+        ligand_resname: Optional[str] = None,
+        protein_pdb_path: Optional[Union[str, Path]] = None,
+        ligand_pdb_path: Optional[Union[str, Path]] = None
     ) -> Path:
         """
         Prepare receptor PDBQT and GPF using mk_prepare_receptor.py and run AutoGrid4.
         Returns the path to the .maps.fld file.
+
+        If protein_pdb_path and ligand_pdb_path are provided, they are used instead of fetching from PDB.
         """
         output_dir = Path(output_dir)
         grid_dir = output_dir / "grid"
         grid_dir.mkdir(parents=True, exist_ok=True)
         
-        # 1. Extract protein and ligand PDBs
-        protein_pdb, ligand_pdb = extract_protein_and_ligand(pdb_id, chain=chain, output_dir=grid_dir, ligand_resname=ligand_resname)
+        # 1. Obtain protein and ligand PDBs
+        if protein_pdb_path and ligand_pdb_path:
+            protein_pdb_path = Path(protein_pdb_path)
+            ligand_pdb_path = Path(ligand_pdb_path)
+
+            if not protein_pdb_path.exists():
+                raise FileNotFoundError(f"Protein PDB not found: {protein_pdb_path}")
+            if not ligand_pdb_path.exists():
+                raise FileNotFoundError(f"Ligand PDB not found: {ligand_pdb_path}")
+
+            # Copy to grid dir for consistency
+            protein_pdb = grid_dir / protein_pdb_path.name
+            ligand_pdb = grid_dir / ligand_pdb_path.name
+            shutil.copy2(protein_pdb_path, protein_pdb)
+            shutil.copy2(ligand_pdb_path, ligand_pdb)
+
+            print(f"Using provided protein ({protein_pdb.name}) and ligand ({ligand_pdb.name})")
+
+        else:
+            protein_pdb, ligand_pdb = extract_protein_and_ligand(pdb_id, chain=chain, output_dir=grid_dir, ligand_resname=ligand_resname)
         
         # 2. Run mk_prepare_receptor.py
         base_name = f"rec_{pdb_id.lower()}"
@@ -116,7 +153,7 @@ class ReceptorPreparer:
         glg_path = grid_dir / f"{base_name}.glg"
         
         # 3. Run AutoGrid4
-        print(f"Running AutoGrid4 for {gpf_path.name}...")
+        print(f"Running AutoGrid4 for {gpf_path.name} using {self.autogrid_executable}...")
         ag_cmd = [self.autogrid_executable, "-p", gpf_path.name, "-l", glg_path.name]
         ag_result = subprocess.run(ag_cmd, cwd=str(grid_dir), capture_output=True, text=True)
         

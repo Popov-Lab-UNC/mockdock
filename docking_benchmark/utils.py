@@ -23,15 +23,16 @@ def plot_docking_results(
         activity_units: Units of the activity values ('nM', 'uM', 'mM', 'M').
     """
     
-    # Filter out failed scores (999.9) or nulls
+    # Filter out failed scores (999.9), nulls, and NaNs
     clean_df = df.filter(
         (pl.col(score_col).is_not_null()) &
+        (pl.col(score_col).is_not_nan()) &
         (pl.col(activity_col).is_not_null()) &
         (pl.col(score_col) < 999.0)
     )
     
     if len(clean_df) < 2:
-        print("Not enough data points to plot after filtering failed scores.")
+        print("Not enough data points to plot after filtering failed scores/NaNs.")
         return
 
     # Extract columns
