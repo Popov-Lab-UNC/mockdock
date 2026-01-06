@@ -26,7 +26,7 @@ class AutoDockGPUOracle:
         ph_low: float = 6.4,
         ph_high: float = 8.4,
         reference_ligand_path: Optional[Union[str, Path]] = None,
-        smarts: Optional[str] = None,
+        fragment_smiles: Optional[str] = None,
         rmsd_threshold: float = 2.0
     ):
         """
@@ -41,7 +41,7 @@ class AutoDockGPUOracle:
             ph_low: Minimum pH for protonation state enumeration.
             ph_high: Maximum pH for protonation state enumeration.
             reference_ligand_path: Path to the reference ligand PDB for RMSD calculation.
-            smarts: SMARTS string for the fragment constraint.
+            fragment_smiles: SMILES string for the fragment constraint (no exit vectors).
             rmsd_threshold: RMSD threshold for the fragment constraint.
         """
         self.receptor_file = Path(receptor_file).resolve()
@@ -50,8 +50,8 @@ class AutoDockGPUOracle:
         self.n_cpus = n_cpus or multiprocessing.cpu_count()
         self.save_dir = Path(save_dir) if save_dir else None
         
-        # Initialize Scrubber
-        self.scrub = Scrub(ph_low=ph_low, ph_high=ph_high)
+        self.ph_low = ph_low
+        self.ph_high = ph_high
         
         # Tracking results
         self.results_df = None
@@ -78,80 +78,86 @@ class AutoDockGPUOracle:
 
         # Fragment constraint setup
         self.reference_ligand_path = reference_ligand_path
-        self.smarts = smarts
+        self.fragment_smiles = fragment_smiles
         self.rmsd_threshold = rmsd_threshold
         self.ref_mol = None
-        self.smarts_mol = None
+        self.fragment_mol = None
 
-        if self.reference_ligand_path and self.smarts:
+        if self.reference_ligand_path and self.fragment_smiles:
             self.reference_ligand_path = Path(self.reference_ligand_path)
             if not self.reference_ligand_path.exists():
                 raise FileNotFoundError(f"Reference ligand not found: {self.reference_ligand_path}")
 
             # Load reference ligand
-            self.ref_mol = Chem.MolFromPDBFile(str(self.reference_ligand_path), removeHs=False)
+            # Load reference ligand
+            if self.reference_ligand_path.suffix.lower() == ".sdf":
+                suppl = Chem.SDMolSupplier(str(self.reference_ligand_path), removeHs=False)
+                self.ref_mol = next(iter(suppl), None)
+            else:
+                self.ref_mol = Chem.MolFromPDBFile(str(self.reference_ligand_path), removeHs=False)
+
             if self.ref_mol is None:
                 raise ValueError(f"Could not load reference ligand from {self.reference_ligand_path}")
 
-            self.smarts_mol = Chem.MolFromSmarts(self.smarts)
-            if self.smarts_mol is None:
-                raise ValueError(f"Invalid SMARTS string: {self.smarts}")
+            self.fragment_mol = Chem.MolFromSmiles(self.fragment_smiles)
+            if self.fragment_mol is None:
+                raise ValueError(f"Invalid fragment SMILES string: {self.fragment_smiles}")
 
-            # Verify reference matches SMARTS
-            if not self.ref_mol.HasSubstructMatch(self.smarts_mol):
-                print(f"Warning: Reference ligand does not match SMARTS: {self.smarts}")
+            # Verify reference matches Fragment
+            if not self.ref_mol.HasSubstructMatch(self.fragment_mol):
+                print(f"WARNING: Reference ligand ({self.reference_ligand_path.name}) does not match fragment SMILES!")
+                print("This is likely due to missing/incorrect bond orders in the PDB file.")
+                print("RMSD filtering will fail for all compounds.")
             else:
-                print("Reference ligand loaded and matches SMARTS.")
+                print("Reference ligand loaded and matches fragment SMILES.")
 
 
     def __call__(self, smiles: str) -> float:
         """
         Score a single SMILES string. Returns the best docking score (lowest energy).
-        Returns high value (e.g. 999.9) if docking fails.
+        Returns high value (e.g. 999.9) if docking fails or fragment match checks fail.
         """
         results = self.score_batch([smiles])
-        return results[0] if results else 999.9
+        return results.get(smiles, 999.9)
 
-    def score_batch(self, smiles_list: List[str], batch_size: int = 100) -> List[float]:
+    def score_batch(self, smiles_list: List[str], batch_size: int = 100) -> dict[str, float]:
         """
-        Score a batch of SMILES strings.
+        Score a batch of SMILES strings. Returns a dictionary {smiles: score}.
+        Only returns scores for molecules that match the fragment constraint.
         """
-        # Pre-check SMARTS if applicable
-        pre_check_results = []
-        if self.smarts_mol:
-            matches = 0
+        # Filter by fragment if applicable
+        valid_smiles = []
+        if self.fragment_mol:
             for smi in smiles_list:
                 mol = Chem.MolFromSmiles(smi)
-                if mol and mol.HasSubstructMatch(self.smarts_mol):
-                    matches += 1
-                    pre_check_results.append(True)
-                else:
-                    pre_check_results.append(False)
-
-            percent_match = (matches / len(smiles_list)) * 100 if smiles_list else 0
-            print(f"Pre-docking SMARTS check: {matches}/{len(smiles_list)} ({percent_match:.1f}%) match {self.smarts}")
+                if mol and mol.HasSubstructMatch(self.fragment_mol):
+                     valid_smiles.append(smi)
+            
+            print(f"Fragment filtering: {len(valid_smiles)}/{len(smiles_list)} compounds match {self.fragment_smiles}")
+            if not valid_smiles:
+                raise ValueError("No compounds match the specified fragment.")
         else:
-             pre_check_results = [True] * len(smiles_list)
-
-        # Store pre-check results temporarily mapped by smiles (duplicates handled by order ideally, but here list-to-list)
-        # To avoid issues with duplicates, we'll zip them later or handle in _process_chunk.
-        # Actually _process_chunk iterates over the chunk, so we need to pass the info or re-compute?
-        # Re-computing is cheap.
+             valid_smiles = smiles_list
 
         all_results = []
         
         # Process in chunks to avoid overwhelming file system or args
-        for i in range(0, len(smiles_list), batch_size):
-            chunk = smiles_list[i : i + batch_size]
-            print(f"Processing batch {i // batch_size + 1}/{(len(smiles_list) - 1) // batch_size + 1} ({len(chunk)} compounds)...")
+        for i in range(0, len(valid_smiles), batch_size):
+            chunk = valid_smiles[i : i + batch_size]
+            print(f"Processing batch {i // batch_size + 1}/{(len(valid_smiles) - 1) // batch_size + 1} ({len(chunk)} compounds)...", flush=True)
             chunk_results = self._process_chunk(chunk, chunk_idx=i // batch_size)
             all_results.extend(chunk_results)
             
         # Store detailed results in a DataFrame
         self.results_df = pl.DataFrame(all_results)
         
-        # Return just the scores for compatibility
-        return self.results_df.get_column("docking_score").to_list()
+        # Return dictionary mapping smiles to best docking score
+        # Note: Valid smiles validation and best score selection handles tautomers internally in _process_chunk and returns one best score per input smile
+        smile_to_score = {}
+        for row in self.results_df.iter_rows(named=True):
+             smile_to_score[row['smiles']] = row['docking_score']
+             
+        return smile_to_score
 
     def _prepare_single_ligand(self, args: Tuple[str, int, Path]) -> List[Tuple[str, str]]:
         """
@@ -165,13 +171,21 @@ class AutoDockGPUOracle:
             if mol is None:
                 return []
             
+            # Initialize Scrubber locally in the worker to avoid pickling/fork issues
+            scrubber = Scrub(ph_low=self.ph_low, ph_high=self.ph_high)
+            
             # 1. Use Scrub to generate tautomers/protonation states/stereoisomers
             try:
-                mol_states = list(self.scrub(mol))
+                mol_states = list(scrubber(mol))
             except Exception as e:
-                print(f"Scrub failed for {smiles}: {e}")
+                print(f"Scrub failed for {smiles}: {e}", flush=True)
                 mol_states = [mol] # Fallback to original mol
             
+            # Limit states to avoid combinatorial explosion
+            if len(mol_states) > 16:
+                print(f"Warning: {smiles} produced {len(mol_states)} states. Limiting to 16.", flush=True)
+                mol_states = mol_states[:16]
+
             preparator = MoleculePreparation()
             
             state_counter = 0
@@ -193,26 +207,32 @@ class AutoDockGPUOracle:
                             results.append((pdbqt_string, f"s{state_counter}"))
                             state_counter += 1
                         else:
-                            print(f"Meeko write failed for state {state_counter} of {smiles}: {error_msg}")
+                            print(f"Meeko write failed for state {state_counter} of {smiles}: {error_msg}", flush=True)
+                        
+                        # Hard limit total states per SMILES
+                        if state_counter >= 32:
+                            break
+                    if state_counter >= 32:
+                        break
                 except Exception as e:
-                    print(f"Error preparing state {state_counter} for {smiles}: {e}")
+                    print(f"Error preparing state {state_counter} for {smiles}: {e}", flush=True)
                     continue
                     
             return results
         except Exception as e:
-            print(f"Error in _prepare_single_ligand for {smiles}: {e}")
+            print(f"Error in _prepare_single_ligand for {smiles}: {e}", flush=True)
             return []
 
     def _calculate_rmsd(self, probe_mol: Chem.Mol) -> float:
         """
-        Calculate RMSD of the SMARTS fragment between probe_mol and self.ref_mol.
+        Calculate RMSD of the fragment between probe_mol and self.ref_mol.
         """
-        if self.ref_mol is None or self.smarts_mol is None:
+        if self.ref_mol is None or self.fragment_mol is None:
             return 0.0 # No constraint, RMSD is 0
 
         # Find matches
-        ref_match = self.ref_mol.GetSubstructMatch(self.smarts_mol)
-        probe_match = probe_mol.GetSubstructMatch(self.smarts_mol)
+        ref_match = self.ref_mol.GetSubstructMatch(self.fragment_mol)
+        probe_match = probe_mol.GetSubstructMatch(self.fragment_mol)
 
         if not ref_match or not probe_match:
             return 999.9 # Constraint not matched in topology
@@ -307,8 +327,10 @@ class AutoDockGPUOracle:
 
             # Run ADGPU
             env = os.environ.copy()
+            # Limit OpenMP threads to avoid overhead on massive nodes
+            n_threads = min(8, multiprocessing.cpu_count())
             env.update({
-                'OMP_NUM_THREADS': str(multiprocessing.cpu_count()),
+                'OMP_NUM_THREADS': str(n_threads),
                 'OMP_PROC_BIND': 'true',
                 'OMP_PLACES': 'cores'
             })
@@ -344,12 +366,12 @@ class AutoDockGPUOracle:
                 valid_pose_found = False
                 
                 # Check 2D match
-                smarts_precheck = False
+                fragment_precheck = False
                 mol = Chem.MolFromSmiles(smi)
-                if mol and self.smarts_mol and mol.HasSubstructMatch(self.smarts_mol):
-                    smarts_precheck = True
-                elif not self.smarts_mol:
-                    smarts_precheck = True # No filter
+                if mol and self.fragment_mol and mol.HasSubstructMatch(self.fragment_mol):
+                    fragment_precheck = True
+                elif not self.fragment_mol:
+                    fragment_precheck = True # No filter
 
                 if i in idx_to_pdbqts:
                     for rel_path in idx_to_pdbqts[i]:
@@ -378,7 +400,7 @@ class AutoDockGPUOracle:
                     "docking_score": best_valid_score,
                     "dlg_path": best_valid_dlg_path,
                     "valid_pose_found": valid_pose_found,
-                    "smarts_precheck": smarts_precheck
+                    "fragment_precheck": fragment_precheck
                 })
             
             return chunk_results
@@ -389,7 +411,7 @@ class AutoDockGPUOracle:
         Returns (best_score, passed_constraint, best_molecule).
         """
         # If no filtering needed, use fast path
-        if not self.reference_ligand_path or not self.smarts:
+        if not self.reference_ligand_path or not self.fragment_smiles:
              val = self._parse_dlg_simple(dlg_path)
              if val is not None:
                  return val, True, None # Mol unnecessary
@@ -509,7 +531,7 @@ class AutoDockGPUOracle:
 
                     if abs(score - target_score) < 0.001:
                         # Found a pose with this score. Verify filter if needed.
-                        if self.reference_ligand_path and self.smarts:
+                        if self.reference_ligand_path and self.fragment_smiles:
                             rmsd = self._calculate_rmsd(mol)
                             if rmsd < self.rmsd_threshold:
                                 best_mol = mol

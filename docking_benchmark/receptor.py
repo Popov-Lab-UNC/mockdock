@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
+import sys
 from typing import Union, Optional, Tuple, List
 import numpy as np
 
@@ -46,9 +47,18 @@ def extract_protein_and_ligand(
     
     # Select ligand
     if ligand_resname:
-        ligand_sel = structure.select(f"resname {ligand_resname}")
+        # Try to find the ligand in the specified chain first
+        ligand_sel = structure.select(f"chain {chain} and resname {ligand_resname}")
+        
         if ligand_sel is None:
-             raise ValueError(f"Ligand with resname {ligand_resname} not found in PDB {pdb_id}")
+            # Fallback: find any instance of this resname and pick the first one
+            print(f"Warning: Ligand {ligand_resname} not found in chain {chain}. Searching other chains...")
+            all_ligands = structure.select(f"resname {ligand_resname}")
+            if all_ligands is None:
+                 raise ValueError(f"Ligand with resname {ligand_resname} not found in PDB {pdb_id}")
+            
+            res = all_ligands.getHierView().iterResidues().__next__()
+            ligand_sel = structure.select(f"chain {res.getChid()} and resname {res.getResname()} and resnum {res.getResnum()}")
     else:
         # Fallback to first non-protein, non-water residue
         ligands = structure.select('not protein and not water')
@@ -140,25 +150,33 @@ class ReceptorPreparer:
             cmd.append("--allow_bad_res")
             
         print(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=str(grid_dir), capture_output=True, text=True)
+        result = subprocess.run(cmd, cwd=str(grid_dir))
         
         if result.returncode != 0:
-            print(f"Error in mk_prepare_receptor.py:\n{result.stderr}")
-            # Check if it failed due to template matching
-            if "Template matching failed" in result.stderr:
-                raise RuntimeError(f"Receptor preparation failed: Template matching failed. Consider using allow_bad_res=True.\nDetails: {result.stderr}")
-            raise RuntimeError(f"Receptor preparation failed: {result.stderr}")
+            raise RuntimeError(f"Receptor preparation failed. Check output above.")
         
         gpf_path = grid_dir / f"{base_name}.gpf"
         glg_path = grid_dir / f"{base_name}.glg"
         
         # 3. Run AutoGrid4
         print(f"Running AutoGrid4 for {gpf_path.name} using {self.autogrid_executable}...")
+        
+        # Check grid size to warn user
+        try:
+            with open(gpf_path, 'r') as f:
+                for line in f:
+                    if line.startswith('npts'):
+                        print(f"Grid size: {line.strip()}")
+                        break
+        except:
+            pass
+
         ag_cmd = [self.autogrid_executable, "-p", gpf_path.name, "-l", glg_path.name]
-        ag_result = subprocess.run(ag_cmd, cwd=str(grid_dir), capture_output=True, text=True)
+        # Run without capture_output to show progress in real-time
+        ag_result = subprocess.run(ag_cmd, cwd=str(grid_dir))
         
         if ag_result.returncode != 0:
-            raise RuntimeError(f"AutoGrid4 failed: {ag_result.stderr}")
+            raise RuntimeError(f"AutoGrid4 failed. Check {glg_path} for details.")
             
         fld_path = grid_dir / f"{base_name}.maps.fld"
         return fld_path

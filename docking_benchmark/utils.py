@@ -4,6 +4,10 @@ import polars as pl
 import numpy as np
 from scipy.stats import pearsonr, spearmanr
 from typing import Optional
+import requests
+from pathlib import Path
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
 def plot_docking_results(
     df: pl.DataFrame,
@@ -115,3 +119,39 @@ def plot_activity_distribution(
         plt.show()
     
     plt.close()
+
+def fetch_ligand_expo_sdf(resname: str, output_dir: Path) -> Optional[Path]:
+    """
+    Fetch the ideal SDF for a ligand from RCSB Ligand Expo.
+    """
+    # Sanitize resname
+    resname = resname.upper()
+    url = f"https://files.rcsb.org/ligands/view/{resname}_ideal.sdf"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            out_path = output_dir / f"{resname}_ideal.sdf"
+            out_path.write_text(response.text)
+            return out_path
+        else:
+            print(f"Failed to fetch SDF for {resname} from Ligand Expo: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Error fetching SDF for {resname}: {e}")
+        return None
+
+def assign_bond_orders_from_template(pdb_mol: Chem.Mol, template_mol: Chem.Mol) -> Optional[Chem.Mol]:
+    """
+    Assign bond orders to a PDB molecule using a template molecule (with bond orders).
+    """
+    try:
+        # Remove Hs from template if the PDB mol doesn't have them
+        # PDB mols from MolFromPDBFile usually don't have Hs
+        if pdb_mol.GetNumAtoms() < template_mol.GetNumAtoms():
+            template_mol = Chem.RemoveHs(template_mol)
+            
+        new_mol = AllChem.AssignBondOrdersFromTemplate(template_mol, pdb_mol)
+        return new_mol
+    except Exception as e:
+        print(f"Failed to assign bond orders from template: {e}")
+        return None

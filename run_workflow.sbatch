@@ -20,5 +20,4 @@ module load autogrid
 source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
 
 cd /work/users/s/h/shuhang/benchmark
-python CDK6_workflow.py
-python CDK2_workflow.py
+python -u run_workflow.py --config PptT.yaml

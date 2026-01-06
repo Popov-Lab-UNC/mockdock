@@ -1,18 +1,15 @@
 import polars as pl
-from chembl_webresource_client.new_client import new_client
 
 def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str = "nM") -> pl.DataFrame:
     """
     Fetch bioactivity data from ChEMBL for a specific target and document.
-
-    Args:
-        target_chembl_id (str): The ChEMBL ID of the target (e.g., 'CHEMBL301').
-        document_chembl_id (str): The ChEMBL ID of the document (e.g., 'CHEMBL5728430').
-        units (str): The units to filter for (e.g., 'nM', 'uM'). Defaults to 'nM'.
-
-    Returns:
-        pl.DataFrame: A Polars DataFrame containing the SMILES and standard activity values.
     """
+    try:
+        from chembl_webresource_client.new_client import new_client
+    except Exception as e:
+        print(f"Error: Could not connect to ChEMBL API. It might be down. Detail: {e}")
+        raise RuntimeError("ChEMBL API is currently unavailable. Please try again later or use a local CSV file.")
+
     activity = new_client.activity
     
     # Filter by target and document
