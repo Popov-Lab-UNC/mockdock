@@ -27,7 +27,8 @@ class AutoDockGPUOracle:
         ph_high: float = 8.4,
         reference_ligand_path: Optional[Union[str, Path]] = None,
         fragment_smiles: Optional[str] = None,
-        rmsd_threshold: float = 2.0
+        rmsd_threshold: float = 2.0,
+        generate_isomers: bool = True
     ):
         """
         Oracle for scoring molecules using AutoDock-GPU.
@@ -43,6 +44,7 @@ class AutoDockGPUOracle:
             reference_ligand_path: Path to the reference ligand PDB for RMSD calculation.
             fragment_smiles: SMILES string for the fragment constraint (no exit vectors).
             rmsd_threshold: RMSD threshold for the fragment constraint.
+            generate_isomers: Whether to generate stereoisomers (and use Scrub for them).
         """
         self.receptor_file = Path(receptor_file).resolve()
         self.adgpu_executable = adgpu_executable
@@ -52,6 +54,7 @@ class AutoDockGPUOracle:
         
         self.ph_low = ph_low
         self.ph_high = ph_high
+        self.generate_isomers = generate_isomers
         
         # Tracking results
         self.results_df = None
@@ -88,7 +91,6 @@ class AutoDockGPUOracle:
             if not self.reference_ligand_path.exists():
                 raise FileNotFoundError(f"Reference ligand not found: {self.reference_ligand_path}")
 
-            # Load reference ligand
             # Load reference ligand
             if self.reference_ligand_path.suffix.lower() == ".sdf":
                 suppl = Chem.SDMolSupplier(str(self.reference_ligand_path), removeHs=False)
@@ -152,10 +154,19 @@ class AutoDockGPUOracle:
         self.results_df = pl.DataFrame(all_results)
         
         # Return dictionary mapping smiles to best docking score
-        # Note: Valid smiles validation and best score selection handles tautomers internally in _process_chunk and returns one best score per input smile
+        # Note: We now prioritize passing valid score, but also keep invalid score for reporting
         smile_to_score = {}
         for row in self.results_df.iter_rows(named=True):
-             smile_to_score[row['smiles']] = row['docking_score']
+             # We return the VALID score if found, otherwise best ANY score (if present but invalid)
+             # But score_batch traditionally returns score of successful docking.
+             # If invalid, it should probably return 999.9 or similar?
+             # For this function return, I'll return valid if exists, else invalid if exists.
+             if row['valid_pose_found']:
+                 smile_to_score[row['smiles']] = row['docking_score']
+             elif row['best_any_score'] is not None and not math.isnan(row['best_any_score']):
+                 smile_to_score[row['smiles']] = row['best_any_score'] # Return best any for red dots
+             else:
+                 smile_to_score[row['smiles']] = float('nan')
              
         return smile_to_score
 
@@ -171,17 +182,62 @@ class AutoDockGPUOracle:
             if mol is None:
                 return []
             
-            # Initialize Scrubber locally in the worker to avoid pickling/fork issues
+            # Check for explicit stereochemistry
+            has_stereo = False
+            centers = Chem.FindMolChiralCenters(mol, includeUnassigned=False)
+            if centers:
+                has_stereo = True
+
+            # Determine if we should use Scrub for isomers or try to preserve input
+            # Logic: If generate_isomers is False AND stereo is explicitly defined, we want to AVOID generating stereoisomers.
+            # Scrub generates states. We can filter them.
+
+            # Initialize Scrubber locally
             scrubber = Scrub(ph_low=self.ph_low, ph_high=self.ph_high)
             
-            # 1. Use Scrub to generate tautomers/protonation states/stereoisomers
+            mol_states = []
+
             try:
-                mol_states = list(scrubber(mol))
+                # If we want to restrict isomers (user flag or explicit stereo), we need to be careful with Scrub
+                use_scrub_generated = True
+
+                scrub_results = list(scrubber(mol))
+
+                if (not self.generate_isomers) and has_stereo:
+                    # Filter: Keep only those matching original stereo
+                    filtered_states = []
+                    # Get original tags (atom idx -> tag)
+                    orig_tags = dict(centers)
+
+                    for s_mol in scrub_results:
+                        s_centers = Chem.FindMolChiralCenters(s_mol, includeUnassigned=False)
+                        s_tags = dict(s_centers)
+
+                        match = True
+                        for idx, tag in orig_tags.items():
+                            # Note: Scrub might reorder atoms?
+                            # If atoms are reordered, index matching is invalid.
+                            # Assuming Scrub preserves atom ordering or we rely on InChI/SMILES equality?
+                            # SMILES with chirality should match.
+                            if idx not in s_tags or s_tags[idx] != tag:
+                                match = False
+                                break
+                        if match:
+                            filtered_states.append(s_mol)
+
+                    if filtered_states:
+                        mol_states = filtered_states
+                    else:
+                        # Fallback: Just use original mol (with Hs)
+                        mol_states = [mol]
+                else:
+                    mol_states = scrub_results
+
             except Exception as e:
                 print(f"Scrub failed for {smiles}: {e}", flush=True)
                 mol_states = [mol] # Fallback to original mol
             
-            # Limit states to avoid combinatorial explosion
+            # Limit states
             if len(mol_states) > 16:
                 print(f"Warning: {smiles} produced {len(mol_states)} states. Limiting to 16.", flush=True)
                 mol_states = mol_states[:16]
@@ -209,7 +265,6 @@ class AutoDockGPUOracle:
                         else:
                             print(f"Meeko write failed for state {state_counter} of {smiles}: {error_msg}", flush=True)
                         
-                        # Hard limit total states per SMILES
                         if state_counter >= 32:
                             break
                     if state_counter >= 32:
@@ -298,9 +353,10 @@ class AutoDockGPUOracle:
                 return [{
                     "smiles": s,
                     "docking_score": float('nan'),
+                    "best_any_score": float('nan'),
                     "dlg_path": None,
                     "valid_pose_found": False,
-                    "smarts_precheck": False
+                    "fragment_precheck": False
                 } for s in smiles_list]
 
             # Create filelist
@@ -363,6 +419,8 @@ class AutoDockGPUOracle:
             for i, smi in enumerate(smiles_list):
                 best_valid_score = float('nan')
                 best_valid_dlg_path = None
+                best_any_score = float('nan')
+
                 valid_pose_found = False
                 
                 # Check 2D match
@@ -386,18 +444,30 @@ class AutoDockGPUOracle:
                             
                             # Use extended parsing to handle constraints
                             try:
-                                best_score, passed_constraint, best_mol = self._parse_and_filter(dlg_path, persistent_dlg, smi)
+                                best_score, passed_constraint, best_mol, best_invalid_score, best_invalid_mol = self._parse_and_filter(dlg_path, persistent_dlg, smi)
 
-                                if passed_constraint and (math.isnan(best_valid_score) or best_score < best_valid_score):
-                                    best_valid_score = best_score
-                                    best_valid_dlg_path = str(persistent_dlg) if persistent_dlg else str(dlg_path)
-                                    valid_pose_found = True
+                                if passed_constraint:
+                                    if math.isnan(best_valid_score) or best_score < best_valid_score:
+                                        best_valid_score = best_score
+                                        best_valid_dlg_path = str(persistent_dlg) if persistent_dlg else str(dlg_path)
+                                        valid_pose_found = True
+
+                                # Track best ANY score
+                                if not math.isnan(best_score): # If valid found, it's also a score
+                                    if math.isnan(best_any_score) or best_score < best_any_score:
+                                        best_any_score = best_score
+
+                                if not math.isnan(best_invalid_score):
+                                    if math.isnan(best_any_score) or best_invalid_score < best_any_score:
+                                        best_any_score = best_invalid_score
+
                             except Exception as e:
                                 print(f"Error parsing {dlg_path}: {e}")
                 
                 chunk_results.append({
                     "smiles": smi,
                     "docking_score": best_valid_score,
+                    "best_any_score": best_any_score,
                     "dlg_path": best_valid_dlg_path,
                     "valid_pose_found": valid_pose_found,
                     "fragment_precheck": fragment_precheck
@@ -405,17 +475,16 @@ class AutoDockGPUOracle:
             
             return chunk_results
 
-    def _parse_and_filter(self, dlg_path: Path, persistent_dlg: Optional[Path], smiles: str) -> Tuple[float, bool, Optional[Chem.Mol]]:
+    def _parse_and_filter(self, dlg_path: Path, persistent_dlg: Optional[Path], smiles: str) -> Tuple[float, bool, Optional[Chem.Mol], float, Optional[Chem.Mol]]:
         """
-        Parse DLG, filter poses by RMSD if applicable, and return best score among valid poses and the molecule.
-        Returns (best_score, passed_constraint, best_molecule).
+        Parse DLG, filter poses by RMSD if applicable, and return (best_valid_score, passed_constraint, best_mol, best_invalid_score, best_invalid_mol).
         """
         # If no filtering needed, use fast path
         if not self.reference_ligand_path or not self.fragment_smiles:
              val = self._parse_dlg_simple(dlg_path)
              if val is not None:
-                 return val, True, None # Mol unnecessary
-             return float('nan'), False, None
+                 return val, True, None, float('nan'), None
+             return float('nan'), False, None, float('nan'), None
 
         # Filtering needed
         try:
@@ -423,10 +492,13 @@ class AutoDockGPUOracle:
             rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
 
             if not rdkit_mols:
-                return float('nan'), False, None
+                return float('nan'), False, None, float('nan'), None
 
             best_valid_score = float('nan')
             best_mol = None
+
+            best_any_score = float('nan')
+            best_any_mol = None
 
             energies = []
             if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
@@ -434,6 +506,11 @@ class AutoDockGPUOracle:
             
             for idx, mol in enumerate(rdkit_mols):
                 score = energies[idx] if idx < len(energies) else 999.9
+
+                # Track global best
+                if math.isnan(best_any_score) or score < best_any_score:
+                    best_any_score = score
+                    best_any_mol = mol
 
                 # Check RMSD
                 rmsd = self._calculate_rmsd(mol)
@@ -444,13 +521,13 @@ class AutoDockGPUOracle:
                         best_mol = mol
 
             if not math.isnan(best_valid_score):
-                return best_valid_score, True, best_mol
+                return best_valid_score, True, best_mol, best_any_score, best_any_mol
 
-            return float('nan'), False, None
+            return float('nan'), False, None, best_any_score, best_any_mol
 
         except Exception as e:
             print(f"Error in RMSD filtering for {dlg_path}: {e}")
-            return float('nan'), False, None
+            return float('nan'), False, None, float('nan'), None
 
     def _parse_dlg_simple(self, dlg_path: Path) -> Optional[float]:
         """
