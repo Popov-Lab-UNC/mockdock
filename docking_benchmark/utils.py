@@ -12,7 +12,7 @@ from rdkit.Chem import AllChem
 def plot_docking_results(
     df: pl.DataFrame,
     score_col: str = "docking_score",
-    activity_col: str = "standard_value", # Assumed to be log-activity or activity
+    activity_col: str = "standard_value", 
     valid_col: str = "valid_pose_found",
     output_path: Optional[str] = None,
     activity_units: str = "nM"
@@ -29,11 +29,12 @@ def plot_docking_results(
         activity_units: Units of the activity values ('nM', 'uM', 'mM', 'M').
     """
     
-    # Filter out failed scores (999.9), nulls, and NaNs
+    # Filter out failed scores (999.9), nulls, and NaNs for both columns
     clean_df = df.filter(
         (pl.col(score_col).is_not_null()) &
         (pl.col(score_col).is_not_nan()) &
         (pl.col(activity_col).is_not_null()) &
+        (pl.col(activity_col).is_not_nan()) &
         (pl.col(score_col) < 999.0)
     )
     
@@ -51,28 +52,27 @@ def plot_docking_results(
         is_valid = np.ones(len(scores), dtype=bool)
 
     # Log transform activity (pActivity = -log10(Molar))
-    # Adjust based on units
     unit_offsets = {
         "nM": 9,
         "uM": 6,
         "mM": 3,
         "M": 0
     }
-    offset = unit_offsets.get(activity_units, 9) # Default to nM if unknown
-    
+    offset = unit_offsets.get(activity_units, 9) 
     p_activities = offset - np.log10(activities + 1e-12)
 
     plt.figure(figsize=(10, 6))
     
+    # x=Docking Score, y=pActivity
     # Plot valid points (Blue)
-    valid_mask = is_valid == True
+    valid_mask = (is_valid == True)
     if np.any(valid_mask):
-        sns.scatterplot(x=p_activities[valid_mask], y=scores[valid_mask], color='blue', alpha=0.6, label='RMSD < Threshold')
+        sns.scatterplot(x=scores[valid_mask], y=p_activities[valid_mask], color='blue', alpha=0.6, label='RMSD < Threshold')
 
     # Plot invalid points (Red)
-    invalid_mask = is_valid == False
+    invalid_mask = (is_valid == False)
     if np.any(invalid_mask):
-        sns.scatterplot(x=p_activities[invalid_mask], y=scores[invalid_mask], color='red', alpha=0.6, marker='X', label='RMSD > Threshold')
+        sns.scatterplot(x=scores[invalid_mask], y=p_activities[invalid_mask], color='red', alpha=0.6, label='RMSD > Threshold')
 
     # Calculate correlations
     pearson_corr = 0.0
@@ -86,9 +86,9 @@ def plot_docking_results(
     else:
         print("Warning: Constant input detected, correlation set to 0.0")
     
-    plt.title(f"Docking Score vs pActivity\nR²: {r_squared:.3f}, Pearson: {pearson_corr:.3f}, Spearman: {spearman_corr:.3f}")
-    plt.ylabel("Docking Score (Predicted)")
-    plt.xlabel(f"pActivity (-log10 experimental {activity_units} -> M)")
+    plt.title(f"pActivity vs Docking Score\nR²: {r_squared:.3f}, Pearson: {pearson_corr:.3f}, Spearman: {spearman_corr:.3f}")
+    plt.xlabel("Docking Score (Predicted)")
+    plt.ylabel(f"pActivity (-log10 experimental {activity_units} -> M)")
     plt.legend()
     plt.grid(True, alpha=0.3)
     

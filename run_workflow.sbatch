@@ -20,4 +20,5 @@ module load autogrid
 source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
 
 cd /work/users/s/h/shuhang/benchmark
-python -u run_workflow.py --config PptT.yaml
+#python -u run_workflow.py --config PptT.yaml
+python run_workflow.py --config PptT.yaml --stage docking

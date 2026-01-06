@@ -106,7 +106,7 @@ class AutoDockGPUOracle:
                 raise ValueError(f"Invalid fragment SMILES string: {self.fragment_smiles}")
 
             # Verify reference matches Fragment
-            if not self.ref_mol.HasSubstructMatch(self.fragment_mol):
+            if not self._get_robust_match(self.ref_mol, self.fragment_mol):
                 print(f"WARNING: Reference ligand ({self.reference_ligand_path.name}) does not match fragment SMILES!")
                 print("This is likely due to missing/incorrect bond orders in the PDB file.")
                 print("RMSD filtering will fail for all compounds.")
@@ -127,19 +127,11 @@ class AutoDockGPUOracle:
         Score a batch of SMILES strings. Returns a dictionary {smiles: score}.
         Only returns scores for molecules that match the fragment constraint.
         """
-        # Filter by fragment if applicable
-        valid_smiles = []
+        # We no longer filter by fragment here to ensure all compounds are in the output CSV
+        valid_smiles = smiles_list
         if self.fragment_mol:
-            for smi in smiles_list:
-                mol = Chem.MolFromSmiles(smi)
-                if mol and mol.HasSubstructMatch(self.fragment_mol):
-                     valid_smiles.append(smi)
-            
-            print(f"Fragment filtering: {len(valid_smiles)}/{len(smiles_list)} compounds match {self.fragment_smiles}")
-            if not valid_smiles:
-                raise ValueError("No compounds match the specified fragment.")
-        else:
-             valid_smiles = smiles_list
+            match_count = sum(1 for smi in smiles_list if (m := Chem.MolFromSmiles(smi)) and m.HasSubstructMatch(self.fragment_mol))
+            print(f"Fragment matching (2D): {match_count}/{len(smiles_list)} compounds match {self.fragment_smiles}")
 
         all_results = []
         
@@ -157,14 +149,11 @@ class AutoDockGPUOracle:
         # Note: We now prioritize passing valid score, but also keep invalid score for reporting
         smile_to_score = {}
         for row in self.results_df.iter_rows(named=True):
-             # We return the VALID score if found, otherwise best ANY score (if present but invalid)
-             # But score_batch traditionally returns score of successful docking.
-             # If invalid, it should probably return 999.9 or similar?
-             # For this function return, I'll return valid if exists, else invalid if exists.
-             if row['valid_pose_found']:
-                 smile_to_score[row['smiles']] = row['docking_score']
-             elif row['best_any_score'] is not None and not math.isnan(row['best_any_score']):
-                 smile_to_score[row['smiles']] = row['best_any_score'] # Return best any for red dots
+             # The 'docking_score' column now already contains the logic (valid if found, else best any)
+             # So we can just use it directly.
+             ds = row['docking_score']
+             if ds is not None and not math.isnan(ds):
+                 smile_to_score[row['smiles']] = ds
              else:
                  smile_to_score[row['smiles']] = float('nan')
              
@@ -278,6 +267,35 @@ class AutoDockGPUOracle:
             print(f"Error in _prepare_single_ligand for {smiles}: {e}", flush=True)
             return []
 
+    def _get_robust_match(self, target_mol: Chem.Mol, query_mol: Chem.Mol) -> Tuple[int]:
+        """
+        Attempt to find substructure match robust to tautomers/bond orders.
+        """
+        # 1. Try exact match
+        match = target_mol.GetSubstructMatch(query_mol)
+        if match:
+            return match
+
+        # 2. Try match with bond orders unspecified (tautomer-like robustness)
+        # Create a query where bond orders are generic
+        try:
+            params = Chem.AdjustQueryParameters()
+            params.adjustDegree = False
+            params.adjustHeavyDegree = False
+            params.makeBondsGeneric = True # Matches any bond order
+            params.aromatizeIfPossible = True
+            
+            # Use AdjustQueryProperties to create a loose query from the fragment
+            loose_query = Chem.AdjustQueryProperties(query_mol, params)
+            
+            match = target_mol.GetSubstructMatch(loose_query)
+            if match:
+                return match
+        except Exception:
+            pass
+
+        return ()
+
     def _calculate_rmsd(self, probe_mol: Chem.Mol) -> float:
         """
         Calculate RMSD of the fragment between probe_mol and self.ref_mol.
@@ -285,9 +303,9 @@ class AutoDockGPUOracle:
         if self.ref_mol is None or self.fragment_mol is None:
             return 0.0 # No constraint, RMSD is 0
 
-        # Find matches
-        ref_match = self.ref_mol.GetSubstructMatch(self.fragment_mol)
-        probe_match = probe_mol.GetSubstructMatch(self.fragment_mol)
+        # Find matches using robust matcher
+        ref_match = self._get_robust_match(self.ref_mol, self.fragment_mol)
+        probe_match = self._get_robust_match(probe_mol, self.fragment_mol)
 
         if not ref_match or not probe_match:
             return 999.9 # Constraint not matched in topology
@@ -353,10 +371,12 @@ class AutoDockGPUOracle:
                 return [{
                     "smiles": s,
                     "docking_score": float('nan'),
-                    "best_any_score": float('nan'),
+                    "score_valid": float('nan'),
+                    "score_best_any": float('nan'),
                     "dlg_path": None,
                     "valid_pose_found": False,
-                    "fragment_precheck": False
+                    "fragment_precheck": False,
+                    "n_conformers": 0
                 } for s in smiles_list]
 
             # Create filelist
@@ -420,6 +440,7 @@ class AutoDockGPUOracle:
                 best_valid_score = float('nan')
                 best_valid_dlg_path = None
                 best_any_score = float('nan')
+                best_any_dlg_path = None
 
                 valid_pose_found = False
                 
@@ -446,31 +467,46 @@ class AutoDockGPUOracle:
                             try:
                                 best_score, passed_constraint, best_mol, best_invalid_score, best_invalid_mol = self._parse_and_filter(dlg_path, persistent_dlg, smi)
 
+                                cur_dlg_path_str = str(persistent_dlg) if persistent_dlg else str(dlg_path)
+
                                 if passed_constraint:
                                     if math.isnan(best_valid_score) or best_score < best_valid_score:
                                         best_valid_score = best_score
-                                        best_valid_dlg_path = str(persistent_dlg) if persistent_dlg else str(dlg_path)
+                                        best_valid_dlg_path = cur_dlg_path_str
                                         valid_pose_found = True
 
                                 # Track best ANY score
                                 if not math.isnan(best_score): # If valid found, it's also a score
                                     if math.isnan(best_any_score) or best_score < best_any_score:
                                         best_any_score = best_score
+                                        best_any_dlg_path = cur_dlg_path_str
 
                                 if not math.isnan(best_invalid_score):
                                     if math.isnan(best_any_score) or best_invalid_score < best_any_score:
                                         best_any_score = best_invalid_score
+                                        best_any_dlg_path = cur_dlg_path_str
 
                             except Exception as e:
                                 print(f"Error parsing {dlg_path}: {e}")
                 
+                # Selection Logic:
+                # If valid pose found (RMSD < threshold), use its score.
+                # Else, use the overall best score (best_any_score).
+                final_score = best_valid_score if valid_pose_found else best_any_score
+                final_dlg_path = best_valid_dlg_path if valid_pose_found else best_any_dlg_path
+
+                # Count PDBQTs (states) generated
+                n_states = len(idx_to_pdbqts.get(i, []))
+
                 chunk_results.append({
                     "smiles": smi,
-                    "docking_score": best_valid_score,
-                    "best_any_score": best_any_score,
-                    "dlg_path": best_valid_dlg_path,
-                    "valid_pose_found": valid_pose_found,
-                    "fragment_precheck": fragment_precheck
+                    "docking_score": final_score,         # The primary score (selected)
+                    "score_valid": best_valid_score,      # Specific valid score
+                    "score_best_any": best_any_score,     # Overall best
+                    "dlg_path": final_dlg_path,           # Path to the DLG of selected score
+                    "valid_pose_found": valid_pose_found, # Boolean flag
+                    "fragment_precheck": fragment_precheck,
+                    "n_conformers": n_states                  # Metadata: Number of states/conformers docked
                 })
             
             return chunk_results
@@ -571,9 +607,10 @@ class AutoDockGPUOracle:
                 pass
             return None
 
-    def save_best_poses_sdf(self, output_path: Union[str, Path]):
+    def save_best_poses_sdf(self, output_path: Union[str, Path], df_metadata: Optional[pl.DataFrame] = None, id_col: str = "id"):
         """
         Extract the best pose from each successful docking run and save to an SDF.
+        Adds metadata from df_metadata if provided.
         """
         if self.results_df is None:
             print("No results to save. Run score_batch first.")
@@ -583,16 +620,35 @@ class AutoDockGPUOracle:
         writer = Chem.SDWriter(str(output_path))
         count = 0
         
-        for row in self.results_df.iter_rows(named=True):
+        # Create a mapping from SMILES to metadata rows for quick lookup
+        meta_map = {}
+        if df_metadata is not None:
+            # Check if ID column exists
+            if id_col not in df_metadata.columns:
+                 # Fallback to defaults if specific ID not found
+                 for potential in ["molecule_chembl_id", "Name", "NAME", "compound_id"]:
+                     if potential in df_metadata.columns:
+                         id_col = potential
+                         break
+            
+            # Convert to dictionary keyed by canonical_smiles
+            if "canonical_smiles" in df_metadata.columns:
+                key_col = "canonical_smiles"
+            else:
+                key_col = "smiles" # Fallback
+            
+            for row in df_metadata.iter_rows(named=True):
+                 if row.get(key_col):
+                     meta_map[row[key_col]] = row
+
+        # Sort results by docking_score (ascending = more negative = better)
+        sorted_results = self.results_df.sort("docking_score", descending=False)
+
+        for row in sorted_results.iter_rows(named=True):
             if row['docking_score'] is None or math.isnan(row['docking_score']) or row['docking_score'] >= 999.0 or row['dlg_path'] is None:
                 continue
             
             try:
-                # Optimized path: If we used the filter, we might want to cache the mol or just re-extract.
-                # Re-extracting is safer but slower.
-                # Since we passed (best_score, passed_constraint, best_mol) internally in _process_chunk but threw away mol to serializable dict.
-                # We have to re-do it here.
-
                 # Load DLG with Meeko
                 pdbqt_mol = PDBQTMolecule.from_file(row['dlg_path'], is_dlg=True, skip_typing=True)
                 rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
@@ -607,26 +663,50 @@ class AutoDockGPUOracle:
                     score = energies[idx] if idx < len(energies) else 999.9
 
                     if abs(score - target_score) < 0.001:
-                        # Found a pose with this score. Verify filter if needed.
-                        if self.reference_ligand_path and self.fragment_smiles:
+                        # Found a pose with this score. 
+                        # If the pose was supposed to be valid, verify constraint.
+                        # If not (e.g. valid_pose_found is False), we just accept the score match.
+                        
+                        is_valid = row.get("valid_pose_found", False)
+                        
+                        if is_valid and self.reference_ligand_path and self.fragment_smiles:
                             rmsd = self._calculate_rmsd(mol)
                             if rmsd < self.rmsd_threshold:
                                 best_mol = mol
                                 best_mol.SetProp("RMSD_fragment", f"{rmsd:.3f}")
-                                break # Found it
+                                break # Found the valid one
                         else:
+                            # Either we don't care about constraint (failed anyway), or no constraint set
                             best_mol = mol
+                            # Calculate RMSD for info if possible
+                            if self.reference_ligand_path and self.fragment_smiles:
+                                 rmsd = self._calculate_rmsd(mol)
+                                 best_mol.SetProp("RMSD_fragment", f"{rmsd:.3f}")
                             break
                 
                 if best_mol:
-                    # Add metadata
-                    if 'molecule_chembl_id' in row:
-                         best_mol.SetProp("_Name", str(row['molecule_chembl_id']))
-                    else:
-                         best_mol.SetProp("_Name", str(row['smiles']))
-                    best_mol.SetProp("smiles", str(row['smiles']))
+                    # Add docking metadata
                     best_mol.SetProp("docking_score", str(row['docking_score']))
                     best_mol.SetProp("dlg_path", str(row['dlg_path']))
+                    best_mol.SetProp("n_conformers", str(row.get('n_conformers', 0)))
+                    
+                    # Add external metadata (Bioactivity, ID, etc.)
+                    smi = row['smiles']
+                    if smi in meta_map:
+                        meta = meta_map[smi]
+                        # Set Name
+                        if id_col in meta and meta[id_col] is not None:
+                            best_mol.SetProp("_Name", str(meta[id_col]))
+                        else:
+                            best_mol.SetProp("_Name", str(smi))
+
+                        # Set all other properties
+                        for k, v in meta.items():
+                            if v is not None and k != key_col:
+                                best_mol.SetProp(str(k), str(v))
+                    else:
+                        best_mol.SetProp("_Name", str(smi))
+
                     writer.write(best_mol)
                     count += 1
             except Exception as e:

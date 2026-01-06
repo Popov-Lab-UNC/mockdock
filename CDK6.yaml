@@ -1,9 +1,24 @@
+# General Setup
+pdb_id: "5L2S"
+output_dir: "CDK6_workflow"
+
+# STAGE 1: Data Retrieval
 target_id: "CHEMBL2508"
 doc_id: "CHEMBL5728430"
-pdb_id: "5L2S"
+ligand_csv_path: null
+activity_units: "nM"
+activity_column: "standard_value"
+id_column: "molecule_chembl_id"
+
+# STAGE 2: Grid Preparation
 chain: "A"
 ligand_resname: "6ZV"
-activity_units: "nM"
-output_dir: "CDK6_workflow"
+protein_pdb_path: null
+ligand_pdb_path: null
+
+# STAGE 3: Docking
 fragment_smiles: "c1nc2ccccc2[nH]1"
 rmsd_threshold: 2.0
+
+# STAGE 4: Analysis
+# No additional params

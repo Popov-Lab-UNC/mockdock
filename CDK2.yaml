@@ -1,8 +1,24 @@
+# General Setup
+pdb_id: "4BZD"
+output_dir: "CDK2_workflow"
+
+# STAGE 1: Data Retrieval
 target_id: "CHEMBL301"
 doc_id: "CHEMBL5728430"
-pdb_id: "4BZD"
-ligand_resname: "D6I"
+ligand_csv_path: null
 activity_units: "nM"
-output_dir: "CDK2_workflow"
-smarts: "c1cn[nH]c1"  # Example SMARTS for testing (pyrazole). Need user input for real case.
+activity_column: "standard_value"
+id_column: "molecule_chembl_id"
+
+# STAGE 2: Grid Preparation
+chain: "A"
+ligand_resname: "D6I"
+protein_pdb_path: null
+ligand_pdb_path: null
+
+# STAGE 3: Docking
+fragment_smiles: "c1cn[nH]c1"
 rmsd_threshold: 2.0
+
+# STAGE 4: Analysis
+# No additional params

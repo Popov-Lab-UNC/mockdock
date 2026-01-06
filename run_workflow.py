@@ -62,62 +62,97 @@ def main():
     fragment_smiles = config.get("fragment_smiles")
     rmsd_threshold = config.get("rmsd_threshold", 2.0)
 
-    print(f"--- Starting Workflow ({pdb_id}) ---")
+    # Determine naming prefix for output files
+    if target_id and doc_id:
+        data_prefix = f"{target_id}_{doc_id}"
+    elif target_id:
+        data_prefix = f"{target_id}"
+    elif config.get("ligand_csv_path"):
+        data_prefix = Path(config["ligand_csv_path"]).stem
+    else:
+        data_prefix = "workflow_data"
+
+    print(f"\n" + "="*50)
+    print(f"--- Starting Docking Workflow: {pdb_id} ---")
     print(f"Output Directory: {work_dir}")
+    print(f"Workflow Prefix: {data_prefix}")
     print(f"Stage: {args.stage}")
+    print("="*50 + "\n")
 
     # STAGE 1: Retrieval (Data & Receptor PDB)
-    # Note: Receptor PDB fetching is handled in grid stage usually, but ChEMBL is here.
     if args.stage in ["all", "retrieve"]:
-        print("\n=== Stage 1: Data Retrieval ===")
-        # 3. Data Collection
+        print(f"[STAGE 1] Data Retrieval")
+        print(f"------------------------")
         if config.get("ligand_csv_path"):
             csv_path = Path(config.get("ligand_csv_path"))
-            print(f"Loading local ligand data from {csv_path}...")
+            print(f"-> Loading local ligand data from: {csv_path}")
             if not csv_path.exists():
                 raise FileNotFoundError(f"Ligand CSV not found: {csv_path}")
             df = pl.read_csv(csv_path)
-            # Ensure we have standard column names for the rest of the script
-            if "canonical_smiles" not in df.columns and "smiles" in df.columns:
-                df = df.rename({"smiles": "canonical_smiles"})
+            
+            # 1. Standardize SMILES column
+            # If canonical_smiles is missing, look for common names
+            if "canonical_smiles" not in df.columns:
+                smi_fallbacks = ["smiles", "SMILES", "SMILE", "canonical_smiles"]
+                for col in smi_fallbacks:
+                    if col in df.columns:
+                        df = df.rename({col: "canonical_smiles"})
+                        print(f"   Note: Using '{col}' as the SMILES column.")
+                        break
 
-            # Also handle activity column mapping
-            if "standard_value" not in df.columns:
-                for col in ["ic50", "pic50", "value", "activity", "Ki"]:
+            # 2. Standardize Activity column
+            # Priority: 1. YAML specified activity_column, 2. "standard_value", 3. Common fallbacks
+            if activity_col in df.columns:
+                if activity_col != "standard_value":
+                    df = df.rename({activity_col: "standard_value"})
+                    print(f"   Note: Using '{activity_col}' as the activity column.")
+            elif "standard_value" not in df.columns:
+                act_fallbacks = ["ic50", "pic50", "value", "activity", "Ki", "IC50", "KI"]
+                for col in act_fallbacks:
                     if col in df.columns:
                         df = df.rename({col: "standard_value"})
-                        print(f"Renamed column '{col}' to 'standard_value' for activity analysis.")
+                        print(f"   Note: Identified '{col}' as activity column and mapped to 'standard_value'.")
                         break
         else:
-            print(f"Fetching ChEMBL data for {target_id} (Units: {activity_units})...")
+            print(f"-> Fetching ChEMBL data for {target_id} (Units: {activity_units})...")
             df = fetch_chembl_data(target_id, doc_id, units=activity_units)
 
-        print(f"Retrieved/Loaded {len(df)} compounds.")
+        # Verify we have the required columns
+        if "canonical_smiles" not in df.columns:
+            print("ERROR: Could not find SMILES column in data. Please check CSV or YAML.")
+            sys.exit(1)
+        if "standard_value" not in df.columns:
+             print("WARNING: Could not identify activity column. Analysis will be limited.")
+
+        print(f"-> Successfully loaded {len(df)} compounds.")
 
         # Save raw data
-        raw_csv_path = work_dir / f"{target_id}_{doc_id}_raw.csv"
+        raw_csv_path = work_dir / f"{data_prefix}_raw.csv"
         df.write_csv(raw_csv_path)
-        print(f"Raw data saved to {raw_csv_path}")
+        print(f"-> Standardized raw data saved to: {raw_csv_path}")
 
         # Plot activity distribution
-        print("Generating activity distribution plot...")
-        dist_path = work_dir / "activity_distribution.png"
-        plot_activity_distribution(
-            df,
-            activity_col="standard_value" if "standard_value" in df.columns else activity_col,
-            output_path=str(dist_path),
-            activity_units=activity_units
-        )
+        if "standard_value" in df.columns:
+            print("-> Generating activity distribution plot...")
+            dist_path = work_dir / "activity_distribution.png"
+            plot_activity_distribution(
+                df,
+                activity_col="standard_value",
+                output_path=str(dist_path),
+                activity_units=activity_units
+            )
+            print(f"   Saved to: {dist_path}")
 
     # STAGE 2: Grid Preparation
-    fld_path = None # Will determine path
+    fld_path = None 
     reference_ligand_path = None
 
     if args.stage in ["all", "grid"]:
-        print("\n=== Stage 2: Receptor & Grid Preparation ===")
+        print(f"\n[STAGE 2] Receptor & Grid Preparation")
+        print(f"-------------------------------------")
         preparer = ReceptorPreparer()
 
-        print(f"Preparing receptor from PDB {pdb_id}...")
+        print(f"-> Preparing receptor from PDB: {pdb_id} (Chain: {chain})")
         try:
             fld_path = preparer.prepare_receptor_and_grid(
                 pdb_id,
@@ -128,12 +163,10 @@ def main():
                 protein_pdb_path=protein_pdb_path,
                 ligand_pdb_path=ligand_pdb_path
             )
-            print(f"Grid maps generated at: {fld_path}")
-            # Save the path to a file for next stages if needed?
-            # For now, we assume standard naming conventions or persistent objects if running 'all'.
+            print(f"-> Grid maps generated at: {fld_path}")
 
         except Exception as e:
-            print(f"Failed at receptor preparation step: {e}")
+            print(f"ERROR during receptor preparation: {e}")
             sys.exit(1)
 
         # Determine reference ligand path for RMSD calculation
@@ -142,80 +175,67 @@ def main():
         else:
              reference_ligand_path = work_dir / "grid" / f"{pdb_id}_ligand.pdb"
 
-             # Attempt bond order correction using Ligand Expo
              if ligand_resname:
-                print(f"Attempting to assign bond orders for {ligand_resname} using Ligand Expo template...")
+                print(f"-> Attempting to assign bond orders for '{ligand_resname}' using Ligand Expo template...")
                 template_sdf_path = None
                 try:
-                     # Fetch template
                      template_sdf_path = fetch_ligand_expo_sdf(ligand_resname, work_dir)
                      if template_sdf_path:
-                         # Load PDB ligand
                          pdb_mol = Chem.MolFromPDBFile(str(reference_ligand_path), removeHs=False)
-
-                         # Load Template
                          suppl = Chem.SDMolSupplier(str(template_sdf_path), removeHs=False)
                          template_mol = next(iter(suppl), None)
 
                          if pdb_mol and template_mol:
-                            # Assign Bond Orders
                             corrected_mol = assign_bond_orders_from_template(pdb_mol, template_mol)
                             if corrected_mol:
                                 corrected_path = work_dir / "grid" / f"{pdb_id}_ligand_corrected.sdf"
                                 w = Chem.SDWriter(str(corrected_path))
                                 w.write(corrected_mol)
                                 w.close()
-                                print(f"Successfully assigned bond orders. Saved to {corrected_path}")
-
-                                # Update reference ligand path to use the corrected one
+                                print(f"   Success! Saved corrected ligand to {corrected_path}")
                                 reference_ligand_path = corrected_path
                             else:
-                                print(f"Warning: Bond order assignment failed for {ligand_resname}. RMSD filtering might be inaccurate.")
+                                print(f"   Warning: Bond order assignment failed.")
                 except Exception as e:
-                    print(f"Bond order assignment warning: {e}. Proceeding with original PDB ligand.")
+                    print(f"   Warning: Bond order correction encountered an error: {e}")
                 finally:
-                    # Cleanup template
                     if template_sdf_path and template_sdf_path.exists():
                         template_sdf_path.unlink()
 
     # Recovery of paths if skipping stages
     if args.stage not in ["all", "grid"]:
-        # Assume files exist in work_dir
-        # Try to find fld
         possible_flds = list((work_dir / "grid").glob("*.maps.fld"))
         if possible_flds:
             fld_path = possible_flds[0]
-            print(f"Found existing grid map: {fld_path}")
+            print(f"-> Found existing grid map: {fld_path}")
         
-        # Try to find reference ligand
-        # Check corrected first
         corrected = work_dir / "grid" / f"{pdb_id}_ligand_corrected.sdf"
         if corrected.exists():
              reference_ligand_path = corrected
         else:
              reference_ligand_path = work_dir / "grid" / f"{pdb_id}_ligand.pdb"
 
-        if reference_ligand_path.exists():
-             print(f"Found reference ligand: {reference_ligand_path}")
-
+        if reference_ligand_path and reference_ligand_path.exists():
+             print(f"-> Found reference ligand: {reference_ligand_path}")
 
     # STAGE 3: Docking
     if args.stage in ["all", "docking"]:
-        print("\n=== Stage 3: Docking ===")
+        print(f"\n[STAGE 3] Docking Execution")
+        print(f"--------------------------")
 
         # Load data if not in memory (from stage 1)
-        raw_csv_path = work_dir / f"{target_id}_{doc_id}_raw.csv"
+        raw_csv_path = work_dir / f"{data_prefix}_raw.csv"
         if not raw_csv_path.exists():
-            print(f"Error: Raw data file {raw_csv_path} not found. Run 'retrieve' stage first.")
+            print(f"ERROR: Raw data file {raw_csv_path} not found. Please run 'retrieve' stage first.")
             sys.exit(1)
 
         df = pl.read_csv(raw_csv_path)
 
         if not fld_path or not fld_path.exists():
-            print("Error: Grid maps not found. Run 'grid' stage first.")
+            print("ERROR: Grid maps not found. Please run 'grid' stage first.")
             sys.exit(1)
 
-        print("Initializing AutoDock-GPU Oracle...")
+        print("-> Initializing AutoDock-GPU Oracle...")
         try:
             oracle = AutoDockGPUOracle(
                 receptor_file=fld_path,
@@ -227,123 +247,97 @@ def main():
                 generate_isomers=not args.no_isomers
             )
 
-            # Get unique SMILES for docking to save time
             all_smiles = df.get_column("canonical_smiles").to_list()
             unique_smiles = list(set(all_smiles))
 
-            print(f"Docking {len(unique_smiles)} unique compounds (from {len(all_smiles)} total)...")
-
-            # Run docking (which returns dict {smiles: score})
+            print(f"-> Docking {len(unique_smiles)} unique compounds...")
             smile_to_score = oracle.score_batch(unique_smiles)
 
             results_df = oracle.results_df
-
-            # Report Statistics
             total = len(results_df)
             valid_poses = len(results_df.filter(pl.col("valid_pose_found") == True))
             fragment_matched = len(results_df.filter(pl.col("fragment_precheck") == True))
+            total_conformers = results_df["n_conformers"].sum()
 
-            print("\n--- Statistics ---")
-            print(f"Total Compounds Processed: {total}")
+            print("\nDocking Statistics:")
+            print(f"  - Total Unique Compounds: {total}")
+            print(f"  - Total Conformers Docked: {total_conformers}")
             if fragment_smiles:
-                print(f"Compounds matching Fragment (2D): {fragment_matched} ({fragment_matched/total*100:.1f}%)")
-            print(f"Compounds with Valid Poses (RMSD < {rmsd_threshold}): {valid_poses} ({valid_poses/total*100:.1f}%)")
+                print(f"  - Matches Fragment (2D): {fragment_matched} ({fragment_matched/total*100:.1f}%)")
+            print(f"  - Valid Poses (RMSD < {rmsd_threshold}): {valid_poses} ({valid_poses/total*100:.1f}%)")
 
-            # Merge results back to original DF
-            # We want to carry over validity and "best any score" for plotting
-
-            # Create a dictionary for mapping all results
-            # We need valid_pose_found, docking_score, best_any_score
-
-            # Convert results_df to pandas or dictionary for efficient mapping?
-            # Polars join is better.
-
-            # Ensure unique results (smiles is unique in results_df because score_batch uniques input)
-            # Join df with results_df on 'canonical_smiles' == 'smiles'
-
+            # Merge results
             results_df_renamed = results_df.rename({"smiles": "canonical_smiles"})
-
-            # Select relevant columns from results
-            # 'docking_score' (valid score), 'best_any_score', 'valid_pose_found'
-            # Note: results_df might not have 'best_any_score' if I didn't update score_batch to return it in DF, but I did update _process_chunk.
-            # Wait, results_df is created from all_results list of dicts.
-            # _process_chunk returns dicts with 'best_any_score'.
-
-            df = df.join(results_df_renamed.select(["canonical_smiles", "docking_score", "best_any_score", "valid_pose_found"]),
+            
+            # Select relevant columns from results. 
+            # docking_score is now the 'Selected Score' (Valid prioritized, else Best Any)
+            df = df.join(results_df_renamed.select(["canonical_smiles", "docking_score", "valid_pose_found", "score_valid", "score_best_any", "n_conformers"]),
                          on="canonical_smiles", how="left")
 
-            # Create a 'plotting_score' column: docking_score if valid, else best_any_score
-            # Actually, the user wants 'red dots' for invalid.
-            # So we can keep them separate or use a single score column and use valid_pose_found to color.
-            # I'll fill docking_score with best_any_score where docking_score is null?
-            # No, 'docking_score' in results_df is best_valid_score (or NaN).
-            # 'best_any_score' is best score regardless.
-            # So I will create a new column `final_score` = coalese(docking_score, best_any_score).
-
+            # Fill nulls in validity column for plotting consistency
             df = df.with_columns(
-                pl.coalesce([pl.col("docking_score"), pl.col("best_any_score")]).alias("final_score")
+                pl.col("valid_pose_found").fill_null(False)
             )
 
-            # Save detailed results CSV (merged)
+            # Save results
             detailed_path = work_dir / "docking_results_detailed.csv"
             df.write_csv(detailed_path)
-            print(f"Detailed results saved to {detailed_path}")
+            print(f"\n-> Detailed results saved to: {detailed_path}")
 
-            # Save best poses SDF
-            oracle.save_best_poses_sdf(work_dir / "best_poses.sdf")
+            poses_path = work_dir / "best_poses.sdf"
+            # Pass full dataframe to include all metadata in SDF
+            oracle.save_best_poses_sdf(
+                output_path=poses_path, 
+                df_metadata=df, 
+                id_col=config.get("id_column", "id")
+            )
+            print(f"-> Best poses (lowest energy) saved to: {poses_path}")
 
         except Exception as e:
-            print(f"Failed at docking step: {e}")
+            print(f"FATAL ERROR during docking step: {e}")
             import traceback
             traceback.print_exc()
             sys.exit(1)
 
-
     # STAGE 4: Analysis
-    if args.stage in ["all", "analysis", "docking"]: # docking usually triggers analysis
-        print("\n=== Stage 4: Analysis ===")
+    if args.stage in ["all", "analysis", "docking"]:
+        print(f"\n[STAGE 4] Analysis & Plotting")
+        print(f"----------------------------")
 
-        # Load detailed results if we jumped here
         detailed_path = work_dir / "docking_results_detailed.csv"
         if args.stage == "analysis":
             if not detailed_path.exists():
-                print(f"Error: Detailed results {detailed_path} not found. Run 'docking' stage first.")
+                print(f"ERROR: Detailed results {detailed_path} not found. Run 'docking' stage first.")
                 sys.exit(1)
             df = pl.read_csv(detailed_path)
-
-        print("Generating results plot...")
-        plot_path = work_dir / "docking_analysis.png"
 
         # Determine which activity column to use for plotting
         plot_act_col = "standard_value" if "standard_value" in df.columns else activity_col
 
-        # Use "final_score" for plotting (contains both valid and invalid scores)
-        # Use "valid_pose_found" for coloring
+        if "docking_score" not in df.columns:
+            print("ERROR: 'docking_score' column missing for plotting. Check docking stage.")
+            sys.exit(1)
 
-        if "final_score" not in df.columns:
-            # Fallback for backward compatibility or if previous step failed
-            if "docking_score" in df.columns:
-                print("Warning: 'final_score' column missing, using 'docking_score'.")
-                df = df.with_columns(pl.col("docking_score").alias("final_score"))
-            else:
-                print("Error: No score column found for plotting.")
-                sys.exit(1)
-
+        plot_path = work_dir / "docking_analysis.png"
         if plot_act_col in df.columns:
+            print(f"-> Generating Activity vs Score plot (Activity Units: {activity_units})...")
             plot_docking_results(
                 df,
-                score_col="final_score",
+                score_col="docking_score",
                 activity_col=plot_act_col,
                 valid_col="valid_pose_found",
                 output_path=str(plot_path),
                 activity_units=activity_units
             )
+            print(f"-> Analysis plot saved to: {plot_path}")
         else:
-            print(f"Activity column '{plot_act_col}' missing, plotting against index.")
+            print(f"   Warning: Activity column '{plot_act_col}' missing. Plotting against index instead.")
             df = df.with_row_index("index")
-            plot_docking_results(df, score_col="final_score", activity_col="index", valid_col="valid_pose_found", output_path=str(plot_path))
+            plot_docking_results(df, score_col="docking_score", activity_col="index", valid_col="valid_pose_found", output_path=str(plot_path))
 
-    print(f"\nWorkflow complete. Results saved in {work_dir}")
+    print(f"\n" + "="*50)
+    print(f"Workflow Complete. All results available in: {work_dir}")
+    print("="*50 + "\n")
 
 if __name__ == "__main__":
     main()
