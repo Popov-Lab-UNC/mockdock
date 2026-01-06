@@ -13,6 +13,7 @@ def plot_docking_results(
     df: pl.DataFrame,
     score_col: str = "docking_score",
     activity_col: str = "standard_value", # Assumed to be log-activity or activity
+    valid_col: str = "valid_pose_found",
     output_path: Optional[str] = None,
     activity_units: str = "nM"
 ):
@@ -23,6 +24,7 @@ def plot_docking_results(
         df: Polars DataFrame containing the results.
         score_col: Column name for docking scores.
         activity_col: Column name for activity values.
+        valid_col: Column name for boolean validity (used for coloring).
         output_path: If provided, save the plot to this path.
         activity_units: Units of the activity values ('nM', 'uM', 'mM', 'M').
     """
@@ -43,6 +45,11 @@ def plot_docking_results(
     scores = clean_df.get_column(score_col).to_numpy()
     activities = clean_df.get_column(activity_col).to_numpy()
     
+    if valid_col in clean_df.columns:
+        is_valid = clean_df.get_column(valid_col).to_numpy()
+    else:
+        is_valid = np.ones(len(scores), dtype=bool)
+
     # Log transform activity (pActivity = -log10(Molar))
     # Adjust based on units
     unit_offsets = {
@@ -56,21 +63,33 @@ def plot_docking_results(
     p_activities = offset - np.log10(activities + 1e-12)
 
     plt.figure(figsize=(10, 6))
-    # X is predicted (docking), Y is experimental (pActivity)
-    sns.scatterplot(x=scores, y=p_activities, alpha=0.6)
     
-    # Calculate correlations only if we have variation in both axes
+    # Plot valid points (Blue)
+    valid_mask = is_valid == True
+    if np.any(valid_mask):
+        sns.scatterplot(x=p_activities[valid_mask], y=scores[valid_mask], color='blue', alpha=0.6, label='RMSD < Threshold')
+
+    # Plot invalid points (Red)
+    invalid_mask = is_valid == False
+    if np.any(invalid_mask):
+        sns.scatterplot(x=p_activities[invalid_mask], y=scores[invalid_mask], color='red', alpha=0.6, marker='X', label='RMSD > Threshold')
+
+    # Calculate correlations
     pearson_corr = 0.0
     spearman_corr = 0.0
+    r_squared = 0.0
+
     if np.var(scores) > 0 and np.var(p_activities) > 0:
         pearson_corr, _ = pearsonr(scores, p_activities)
         spearman_corr, _ = spearmanr(scores, p_activities)
+        r_squared = pearson_corr ** 2
     else:
         print("Warning: Constant input detected, correlation set to 0.0")
     
-    plt.title(f"pActivity vs Docking Score ({activity_units} to pActivity)\nPearson: {pearson_corr:.3f}, Spearman: {spearman_corr:.3f}")
-    plt.xlabel("Docking Score (Predicted)")
-    plt.ylabel(f"pActivity (-log10 experimental {activity_units} -> M)")
+    plt.title(f"Docking Score vs pActivity\nR²: {r_squared:.3f}, Pearson: {pearson_corr:.3f}, Spearman: {spearman_corr:.3f}")
+    plt.ylabel("Docking Score (Predicted)")
+    plt.xlabel(f"pActivity (-log10 experimental {activity_units} -> M)")
+    plt.legend()
     plt.grid(True, alpha=0.3)
     
     if output_path:
