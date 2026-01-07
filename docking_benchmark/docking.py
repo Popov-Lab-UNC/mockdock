@@ -504,6 +504,8 @@ class AutoDockGPUOracle:
                     "score_valid": best_valid_score,      # Specific valid score
                     "score_best_any": best_any_score,     # Overall best
                     "dlg_path": final_dlg_path,           # Path to the DLG of selected score
+                    "dlg_path_valid": best_valid_dlg_path,
+                    "dlg_path_any": best_any_dlg_path,
                     "valid_pose_found": valid_pose_found, # Boolean flag
                     "fragment_precheck": fragment_precheck,
                     "n_conformers": n_states                  # Metadata: Number of states/conformers docked
@@ -607,7 +609,7 @@ class AutoDockGPUOracle:
                 pass
             return None
 
-    def save_best_poses_sdf(self, output_path: Union[str, Path], df_metadata: Optional[pl.DataFrame] = None, id_col: str = "id"):
+    def save_best_poses_sdf(self, output_path: Union[str, Path], df_metadata: Optional[pl.DataFrame] = None, id_col: str = "id", score_col: str = "docking_score", dlg_col: str = "dlg_path"):
         """
         Extract the best pose from each successful docking run and save to an SDF.
         Adds metadata from df_metadata if provided.
@@ -616,7 +618,7 @@ class AutoDockGPUOracle:
             print("No results to save. Run score_batch first.")
             return
 
-        print(f"Generating best poses SDF at {output_path}...")
+        print(f"Generating best poses SDF at {output_path} (using {score_col})...")
         writer = Chem.SDWriter(str(output_path))
         count = 0
         
@@ -641,42 +643,40 @@ class AutoDockGPUOracle:
                  if row.get(key_col):
                      meta_map[row[key_col]] = row
 
-        # Sort results by docking_score (ascending = more negative = better)
-        sorted_results = self.results_df.sort("docking_score", descending=False)
+        # Sort results by score_col (ascending = more negative = better)
+        sorted_results = self.results_df.sort(score_col, descending=False)
 
         for row in sorted_results.iter_rows(named=True):
-            if row['docking_score'] is None or math.isnan(row['docking_score']) or row['docking_score'] >= 999.0 or row['dlg_path'] is None:
+            if row[score_col] is None or math.isnan(row[score_col]) or row[score_col] >= 999.0 or row[dlg_col] is None:
                 continue
             
             try:
                 # Load DLG with Meeko
-                pdbqt_mol = PDBQTMolecule.from_file(row['dlg_path'], is_dlg=True, skip_typing=True)
+                pdbqt_mol = PDBQTMolecule.from_file(row[dlg_col], is_dlg=True, skip_typing=True)
                 rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
                 energies = []
                 if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
                     energies = pdbqt_mol._pose_data["free_energies"]
 
                 best_mol = None
-                target_score = row['docking_score']
+                target_score = row[score_col]
 
                 for idx, mol in enumerate(rdkit_mols):
                     score = energies[idx] if idx < len(energies) else 999.9
 
                     if abs(score - target_score) < 0.001:
                         # Found a pose with this score. 
-                        # If the pose was supposed to be valid, verify constraint.
-                        # If not (e.g. valid_pose_found is False), we just accept the score match.
+                        # If we are using the 'valid' column, we should check RMSD if possible
+                        is_valid_col = (score_col == "score_valid" or (score_col == "docking_score" and row.get("valid_pose_found", False)))
                         
-                        is_valid = row.get("valid_pose_found", False)
-                        
-                        if is_valid and self.reference_ligand_path and self.fragment_smiles:
+                        if is_valid_col and self.reference_ligand_path and self.fragment_smiles:
                             rmsd = self._calculate_rmsd(mol)
                             if rmsd < self.rmsd_threshold:
                                 best_mol = mol
                                 best_mol.SetProp("RMSD_fragment", f"{rmsd:.3f}")
                                 break # Found the valid one
                         else:
-                            # Either we don't care about constraint (failed anyway), or no constraint set
+                            # Either we don't care about constraint (any best), or no constraint set
                             best_mol = mol
                             # Calculate RMSD for info if possible
                             if self.reference_ligand_path and self.fragment_smiles:
@@ -686,9 +686,10 @@ class AutoDockGPUOracle:
                 
                 if best_mol:
                     # Add docking metadata
-                    best_mol.SetProp("docking_score", str(row['docking_score']))
-                    best_mol.SetProp("dlg_path", str(row['dlg_path']))
+                    best_mol.SetProp("docking_score", str(row[score_col]))
+                    best_mol.SetProp("dlg_path", str(row[dlg_col]))
                     best_mol.SetProp("n_conformers", str(row.get('n_conformers', 0)))
+                    best_mol.SetProp("score_type", score_col)
                     
                     # Add external metadata (Bioactivity, ID, etc.)
                     smi = row['smiles']

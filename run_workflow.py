@@ -127,14 +127,14 @@ def main():
         print(f"-> Successfully loaded {len(df)} compounds.")
 
         # Save raw data
-        raw_csv_path = work_dir / f"{data_prefix}_raw.csv"
+        raw_csv_path = work_dir / f"{data_prefix}_cleaned_data.csv"
         df.write_csv(raw_csv_path)
-        print(f"-> Standardized raw data saved to: {raw_csv_path}")
+        print(f"-> Standardized data saved to: {raw_csv_path}")
 
         # Plot activity distribution
         if "standard_value" in df.columns:
             print("-> Generating activity distribution plot...")
-            dist_path = work_dir / "activity_distribution.png"
+            dist_path = work_dir / f"{data_prefix}_activity_dist.png"
             plot_activity_distribution(
                 df,
                 activity_col="standard_value",
@@ -224,9 +224,9 @@ def main():
         print(f"--------------------------")
 
         # Load data if not in memory (from stage 1)
-        raw_csv_path = work_dir / f"{data_prefix}_raw.csv"
+        raw_csv_path = work_dir / f"{data_prefix}_cleaned_data.csv"
         if not raw_csv_path.exists():
-            print(f"ERROR: Raw data file {raw_csv_path} not found. Please run 'retrieve' stage first.")
+            print(f"ERROR: Data file {raw_csv_path} not found. Please run 'retrieve' stage first.")
             sys.exit(1)
 
         df = pl.read_csv(raw_csv_path)
@@ -270,8 +270,7 @@ def main():
             results_df_renamed = results_df.rename({"smiles": "canonical_smiles"})
             
             # Select relevant columns from results. 
-            # docking_score is now the 'Selected Score' (Valid prioritized, else Best Any)
-            df = df.join(results_df_renamed.select(["canonical_smiles", "docking_score", "valid_pose_found", "score_valid", "score_best_any", "n_conformers"]),
+            df = df.join(results_df_renamed.select(["canonical_smiles", "docking_score", "score_valid", "score_best_any", "dlg_path_valid", "dlg_path_any", "valid_pose_found", "n_conformers"]),
                          on="canonical_smiles", how="left")
 
             # Fill nulls in validity column for plotting consistency
@@ -280,18 +279,29 @@ def main():
             )
 
             # Save results
-            detailed_path = work_dir / "docking_results_detailed.csv"
+            detailed_path = work_dir / f"{data_prefix}_vs_{pdb_id}_results_full.csv"
             df.write_csv(detailed_path)
-            print(f"\n-> Detailed results saved to: {detailed_path}")
+            print(f"\n-> Full docking results saved to: {detailed_path}")
 
-            poses_path = work_dir / "best_poses.sdf"
-            # Pass full dataframe to include all metadata in SDF
+            # 1. Save RMSD-constrained poses (with fallback to best any if none valid)
+            poses_valid_path = work_dir / f"{data_prefix}_vs_{pdb_id}_poses_rmsd_constrained.sdf"
             oracle.save_best_poses_sdf(
-                output_path=poses_path, 
+                output_path=poses_valid_path, 
                 df_metadata=df, 
-                id_col=config.get("id_column", "id")
+                id_col=config.get("id_column", "id"),
+                score_col="docking_score", # This already has the fallback logic (valid if exists, else best any)
+                dlg_col="dlg_path"
             )
-            print(f"-> Best poses (lowest energy) saved to: {poses_path}")
+
+            # 2. Save Absolute Best poses (regardless of RMSD)
+            poses_any_path = work_dir / f"{data_prefix}_vs_{pdb_id}_poses_best_any.sdf"
+            oracle.save_best_poses_sdf(
+                output_path=poses_any_path, 
+                df_metadata=df, 
+                id_col=config.get("id_column", "id"),
+                score_col="score_best_any",
+                dlg_col="dlg_path_any"
+            )
 
         except Exception as e:
             print(f"FATAL ERROR during docking step: {e}")
@@ -304,7 +314,7 @@ def main():
         print(f"\n[STAGE 4] Analysis & Plotting")
         print(f"----------------------------")
 
-        detailed_path = work_dir / "docking_results_detailed.csv"
+        detailed_path = work_dir / f"{data_prefix}_vs_{pdb_id}_results_full.csv"
         if args.stage == "analysis":
             if not detailed_path.exists():
                 print(f"ERROR: Detailed results {detailed_path} not found. Run 'docking' stage first.")
@@ -314,26 +324,35 @@ def main():
         # Determine which activity column to use for plotting
         plot_act_col = "standard_value" if "standard_value" in df.columns else activity_col
 
-        if "docking_score" not in df.columns:
-            print("ERROR: 'docking_score' column missing for plotting. Check docking stage.")
+        if "score_best_any" not in df.columns:
+            print("ERROR: Score columns missing for plotting. Check docking stage.")
             sys.exit(1)
 
-        plot_path = work_dir / "docking_analysis.png"
+        # 1. Plot Unconstrained (Best Any)
+        plot_any_path = work_dir / f"{data_prefix}_vs_{pdb_id}_analysis_best_any.png"
         if plot_act_col in df.columns:
-            print(f"-> Generating Activity vs Score plot (Activity Units: {activity_units})...")
+            print(f"-> Generating Unconstrained Activity vs Score plot...")
             plot_docking_results(
                 df,
-                score_col="docking_score",
+                score_col="score_best_any",
                 activity_col=plot_act_col,
                 valid_col="valid_pose_found",
-                output_path=str(plot_path),
+                output_path=str(plot_any_path),
                 activity_units=activity_units
             )
-            print(f"-> Analysis plot saved to: {plot_path}")
-        else:
-            print(f"   Warning: Activity column '{plot_act_col}' missing. Plotting against index instead.")
-            df = df.with_row_index("index")
-            plot_docking_results(df, score_col="docking_score", activity_col="index", valid_col="valid_pose_found", output_path=str(plot_path))
+        
+        # 2. Plot RMSD-constrained (with fallback)
+        plot_valid_path = work_dir / f"{data_prefix}_vs_{pdb_id}_analysis_rmsd_constrained.png"
+        if plot_act_col in df.columns:
+            print(f"-> Generating RMSD-Constrained Activity vs Score plot...")
+            plot_docking_results(
+                df,
+                score_col="docking_score", # Use the fallback-enabled score
+                activity_col=plot_act_col,
+                valid_col="valid_pose_found",
+                output_path=str(plot_valid_path),
+                activity_units=activity_units
+            )
 
     print(f"\n" + "="*50)
     print(f"Workflow Complete. All results available in: {work_dir}")
