@@ -25,9 +25,15 @@ def extract_protein_and_ligand(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    pdb_path = None
     try:
         pdb_path = fetchPDB(pdb_id, folder=str(output_dir), compressed=False)
-    except Exception:
+    except Exception as e:
+        print(f"   ProDy fetchPDB failed: {e}")
+    
+    # fetchPDB can return None instead of raising exception, so check explicitly
+    if pdb_path is None:
+        print(f"   Falling back to direct RCSB download...")
         url = f"https://files.rcsb.org/download/{pdb_id.upper()}.pdb"
         response = requests.get(url)
         response.raise_for_status()
@@ -37,28 +43,35 @@ def extract_protein_and_ligand(
     
     structure = parsePDB(str(pdb_path), altloc='first')
     
-    # Select protein atoms
-    protein_sel = structure.select(f'protein and chain {chain}')
+    # Auto-detect the correct chain based on ligand location if ligand_resname is provided
+    detected_chain = chain
+    ligand_res = None
+    
+    if ligand_resname:
+        # First, find which chain(s) contain this ligand
+        all_ligands = structure.select(f"resname {ligand_resname}")
+        if all_ligands is None:
+            raise ValueError(f"Ligand with resname {ligand_resname} not found in PDB {pdb_id}")
+        
+        # Get the FIRST ligand instance and store it
+        ligand_res = all_ligands.getHierView().iterResidues().__next__()
+        detected_chain = ligand_res.getChid()
+        
+        if detected_chain != chain:
+            print(f"   Note: Ligand '{ligand_resname}' found in chain {detected_chain} (not {chain}). Using chain {detected_chain}.")
+    
+    # Select protein atoms from the detected chain
+    protein_sel = structure.select(f'protein and chain {detected_chain}')
     if protein_sel is None:
-        raise ValueError(f"No protein atoms found in chain {chain} for PDB {pdb_id}")
+        raise ValueError(f"No protein atoms found in chain {detected_chain} for PDB {pdb_id}")
     
     protein_pdb = output_dir / f"{pdb_id}_protein.pdb"
     writePDB(str(protein_pdb), protein_sel)
     
     # Select ligand
     if ligand_resname:
-        # Try to find the ligand in the specified chain first
-        ligand_sel = structure.select(f"chain {chain} and resname {ligand_resname}")
-        
-        if ligand_sel is None:
-            # Fallback: find any instance of this resname and pick the first one
-            print(f"Warning: Ligand {ligand_resname} not found in chain {chain}. Searching other chains...")
-            all_ligands = structure.select(f"resname {ligand_resname}")
-            if all_ligands is None:
-                 raise ValueError(f"Ligand with resname {ligand_resname} not found in PDB {pdb_id}")
-            
-            res = all_ligands.getHierView().iterResidues().__next__()
-            ligand_sel = structure.select(f"chain {res.getChid()} and resname {res.getResname()} and resnum {res.getResnum()}")
+        # Use the SAME first instance we found above
+        ligand_sel = structure.select(f"chain {ligand_res.getChid()} and resname {ligand_res.getResname()} and resnum {ligand_res.getResnum()}")
     else:
         # Fallback to first non-protein, non-water residue
         ligands = structure.select('not protein and not water')

@@ -101,9 +101,13 @@ class AutoDockGPUOracle:
             if self.ref_mol is None:
                 raise ValueError(f"Could not load reference ligand from {self.reference_ligand_path}")
 
+            # Try parsing as SMILES first, then SMARTS as fallback
             self.fragment_mol = Chem.MolFromSmiles(self.fragment_smiles)
             if self.fragment_mol is None:
-                raise ValueError(f"Invalid fragment SMILES string: {self.fragment_smiles}")
+                # Try SMARTS as fallback (useful for MCS patterns or query molecules)
+                self.fragment_mol = Chem.MolFromSmarts(self.fragment_smiles)
+                if self.fragment_mol is None:
+                    raise ValueError(f"Invalid fragment SMILES/SMARTS string: {self.fragment_smiles}")
 
             # Verify reference matches Fragment
             if not self._get_robust_match(self.ref_mol, self.fragment_mol):

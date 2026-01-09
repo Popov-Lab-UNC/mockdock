@@ -132,14 +132,25 @@ def main():
         print(f"-> Standardized data saved to: {raw_csv_path}")
 
         # Plot activity distribution
-        if "standard_value" in df.columns:
+        # Check if we have pchembl_value (preferred) or standard_value
+        if "pchembl_value" in df.columns:
+            print("-> Generating activity distribution plot (using pchembl_value)...")
+            dist_path = work_dir / f"{data_prefix}_activity_dist.png"
+            plot_activity_distribution(
+                df,
+                activity_col="pchembl_value",  # Use pchembl_value directly (unit-agnostic)
+                output_path=str(dist_path),
+                activity_units=None  # pchembl is unit-agnostic
+            )
+            print(f"   Saved to: {dist_path}")
+        elif "standard_value" in df.columns:
             print("-> Generating activity distribution plot...")
             dist_path = work_dir / f"{data_prefix}_activity_dist.png"
             plot_activity_distribution(
                 df,
                 activity_col="standard_value",
                 output_path=str(dist_path),
-                activity_units=activity_units
+                activity_units=activity_units  # Required for standard_value
             )
             print(f"   Saved to: {dist_path}")
 
@@ -322,7 +333,14 @@ def main():
             df = pl.read_csv(detailed_path)
 
         # Determine which activity column to use for plotting
-        plot_act_col = "standard_value" if "standard_value" in df.columns else activity_col
+        # If pchembl_value exists, standard_value will also exist (created from pchembl)
+        # Use standard_value for consistency, but pass None for units if pchembl exists
+        if "pchembl_value" in df.columns:
+            plot_act_col = "standard_value"  # Created from pchembl, already in pActivity units
+        elif "standard_value" in df.columns:
+            plot_act_col = "standard_value"
+        else:
+            plot_act_col = activity_col
 
         if "score_best_any" not in df.columns:
             print("ERROR: Score columns missing for plotting. Check docking stage.")
@@ -332,26 +350,30 @@ def main():
         plot_any_path = work_dir / f"{data_prefix}_vs_{pdb_id}_analysis_best_any.png"
         if plot_act_col in df.columns:
             print(f"-> Generating Unconstrained Activity vs Score plot...")
+            # Use None for activity_units if we have pchembl_value (unit-agnostic)
+            plot_units = None if "pchembl_value" in df.columns else activity_units
             plot_docking_results(
                 df,
                 score_col="score_best_any",
                 activity_col=plot_act_col,
                 valid_col="valid_pose_found",
                 output_path=str(plot_any_path),
-                activity_units=activity_units
+                activity_units=plot_units
             )
         
         # 2. Plot RMSD-constrained (with fallback)
         plot_valid_path = work_dir / f"{data_prefix}_vs_{pdb_id}_analysis_rmsd_constrained.png"
         if plot_act_col in df.columns:
             print(f"-> Generating RMSD-Constrained Activity vs Score plot...")
+            # Use None for activity_units if we have pchembl_value (unit-agnostic)
+            plot_units = None if "pchembl_value" in df.columns else activity_units
             plot_docking_results(
                 df,
                 score_col="docking_score", # Use the fallback-enabled score
                 activity_col=plot_act_col,
                 valid_col="valid_pose_found",
                 output_path=str(plot_valid_path),
-                activity_units=activity_units
+                activity_units=plot_units
             )
 
     print(f"\n" + "="*50)

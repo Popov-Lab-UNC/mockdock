@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+"""
+Step 4b: Compute Maximum Common Substructure (MCS) for each document.
+
+For each unique document in the benchmark dataset, fetches all compounds
+and computes the MCS across them. This MCS will be used as the fragment
+constraint in docking workflows.
+
+Input: data/chembl_docking_benchmark.csv
+Output: data/mcs_results.csv (separate document with document_chembl_id and mcs_smiles)
+"""
+import pandas as pd
+import argparse
+from tqdm import tqdm
+import time
+from collections import defaultdict
+from datetime import datetime
+import multiprocessing
+
+from rdkit import Chem
+from rdkit.Chem import rdFMCS
+
+
+def fetch_document_compounds(document_chembl_id: str, target_chembl_id: str = None):
+    """
+    Fetch all compounds from a ChEMBL document.
+    
+    Returns: list of unique SMILES strings
+    """
+    from chembl_webresource_client.new_client import new_client
+    
+    try:
+        activities = new_client.activity.filter(
+            document_chembl_id=document_chembl_id
+        ).only('canonical_smiles')
+        
+        smiles_set = set()
+        for act in activities:
+            smiles = act.get('canonical_smiles')
+            if smiles:
+                smiles_set.add(smiles)
+        
+        return list(smiles_set)
+        
+    except Exception as e:
+        print(f"  [!] Error fetching compounds for document {document_chembl_id}: {e}")
+        return []
+
+
+def fetch_with_timeout(doc_id, timeout=60):
+    """Fetch compounds with a hard timeout to prevent API hangs."""
+    # Use multiprocessing to allow killing the hanging network call
+    with multiprocessing.Pool(processes=1) as pool:
+        result = pool.apply_async(fetch_document_compounds, (doc_id,))
+        try:
+            return result.get(timeout=timeout)
+        except multiprocessing.TimeoutError:
+            print(f"  [!] API Timeout for {doc_id} after {timeout}s. Skipping.")
+            return []
+        except Exception as e:
+            print(f"  [!] Error in fetch wrapper for {doc_id}: {e}")
+            return []
+
+
+def compute_mcs(smiles_list: list, reference_smiles: str = None, max_compounds: int = 100, timeout: int = 10):
+    """
+    Compute Maximum Common Substructure across a list of SMILES.
+    
+    Args:
+        smiles_list: List of SMILES strings
+        reference_smiles: SMILES string to use as template for SMILES extraction
+        max_compounds: Maximum number of compounds to use (for performance)
+        timeout: Timeout in seconds for MCS computation
+    
+    Returns: Clean SMILES string of the MCS, or None if computation fails
+    """
+    if not smiles_list:
+        return None
+    
+    # Limit to first max_compounds for performance
+    if len(smiles_list) > max_compounds:
+        smiles_list = smiles_list[:max_compounds]
+    
+    # Convert SMILES to molecules
+    mols = []
+    for smiles in smiles_list:
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                continue
+            mols.append(mol)
+        except:
+            continue
+    
+    if len(mols) < 2:
+        # Need at least 2 molecules for MCS
+        if len(mols) == 1:
+            return Chem.MolToSmiles(mols[0])
+        return None
+    
+    try:
+        # Compute MCS with strict parameters for chemical meaningfulness
+        mcs = rdFMCS.FindMCS(
+            mols,
+            threshold=0.8,
+            timeout=timeout,
+            atomCompare=rdFMCS.AtomCompare.CompareElements,
+            bondCompare=rdFMCS.BondCompare.CompareOrder,
+            matchValences=True,
+            ringMatchesRingOnly=True,
+            completeRingsOnly=True
+        )
+        
+        if mcs.numAtoms == 0:
+            # Try with lower threshold
+            mcs = rdFMCS.FindMCS(
+                mols,
+                threshold=0.5,
+                timeout=timeout,
+                atomCompare=rdFMCS.AtomCompare.CompareElements,
+                bondCompare=rdFMCS.BondCompare.CompareOrder,
+                matchValences=True,
+                ringMatchesRingOnly=True,
+                completeRingsOnly=True
+            )
+        
+        if mcs.numAtoms == 0:
+            return None
+        
+        # 2. Convert result SMARTS to a Query Molecule
+        mcs_query = Chem.MolFromSmarts(mcs.smartsString)
+        if mcs_query is None:
+            return None
+
+        # 3. Match against reference (crystal ligand) to extract clean SMILES
+        # Fall back to first molecule in list if no reference provided
+        ref_mol = None
+        if reference_smiles:
+            ref_mol = Chem.MolFromSmiles(reference_smiles)
+        
+        if ref_mol is None:
+            ref_mol = mols[0]
+
+        match_atoms = ref_mol.GetSubstructMatch(mcs_query)
+        if not match_atoms:
+            # Fallback: just return SMARTS if match fails
+            return Chem.MolToSmiles(mcs.queryMol) if mcs.queryMol else None
+
+        # 4. Extract specific atoms from the real molecule to generate SMILES
+        # We Kekulize a copy of the reference molecule first to ensure 
+        # the resulting fragment SMILES uses standard bonds (C, N) 
+        # instead of aromatic markers (c, n) which can be invalid in fragments.
+        ref_copy = Chem.Mol(ref_mol)
+        Chem.Kekulize(ref_copy, clearAromaticFlags=True)
+        
+        fragment_smiles = Chem.MolFragmentToSmiles(
+            ref_copy, 
+            atomsToUse=match_atoms, 
+            canonical=True, 
+            isomericSmiles=False,
+            kekuleSmiles=True
+        )
+        
+        # Final validation: ensure the SMILES is parseable
+        if fragment_smiles and Chem.MolFromSmiles(fragment_smiles):
+            return fragment_smiles
+        
+        # Fallback to original method if Kekulization fails for some reason
+        return Chem.MolFragmentToSmiles(
+            ref_mol, 
+            atomsToUse=match_atoms, 
+            canonical=True, 
+            isomericSmiles=False
+        )
+        
+    except Exception as e:
+        print(f"  [!] Error computing MCS: {e}")
+        return None
+
+
+def merge_mcs_results(mcs_results_csv: str, mapping_pattern: str, output_csv: str):
+    """
+    Merge MCS mapping files into the MCS results CSV.
+    
+    Args:
+        mcs_results_csv: Path to existing MCS results CSV (or will create new)
+        mapping_pattern: Glob pattern for mapping files (e.g., "data/mcs_mapping_*.csv")
+        output_csv: Output path for merged MCS results CSV
+    """
+    import glob
+    from pathlib import Path
+    
+    # Load existing MCS results if they exist
+    existing_results = {}
+    if Path(mcs_results_csv).exists():
+        try:
+            existing_df = pd.read_csv(mcs_results_csv)
+            if 'document_chembl_id' in existing_df.columns:
+                for _, row in existing_df.iterrows():
+                    existing_results[row['document_chembl_id']] = row.to_dict()
+            print(f"Loaded {len(existing_results)} existing MCS results")
+        except Exception as e:
+            print(f"  [!] Could not load existing MCS results: {e}")
+    
+    # Load all mapping files
+    mapping_files = sorted(glob.glob(mapping_pattern))
+    print(f"Found {len(mapping_files)} mapping files to merge")
+    
+    for mapping_file in mapping_files:
+        try:
+            mapping_df = pd.read_csv(mapping_file)
+            if 'document_chembl_id' not in mapping_df.columns or 'mcs_smiles' not in mapping_df.columns:
+                print(f"  [!] Skipping {mapping_file}: missing required columns")
+                continue
+            
+            # Add to results
+            for _, row in mapping_df.iterrows():
+                doc_id = row['document_chembl_id']
+                existing_results[doc_id] = {
+                    'document_chembl_id': doc_id,
+                    'mcs_smiles': row['mcs_smiles'],
+                    'n_compounds': None,
+                    'status': 'merged',
+                    'timestamp': datetime.now().isoformat()
+                }
+            
+            print(f"  Merged {mapping_file}")
+        except Exception as e:
+            print(f"  [!] Error merging {mapping_file}: {e}")
+    
+    # Save merged results
+    if existing_results:
+        merged_df = pd.DataFrame(list(existing_results.values()))
+        merged_df = merged_df.sort_values('document_chembl_id')
+        merged_df.to_csv(output_csv, index=False)
+        print(f"\nMerged results saved to {output_csv}")
+        print(f"Total documents with MCS: {merged_df['mcs_smiles'].notna().sum()}")
+        print(f"Total documents: {len(merged_df)}")
+    else:
+        print("\nNo results to save")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Compute MCS for benchmark documents")
+    parser.add_argument("--input", default="data/chembl_docking_benchmark.csv", help="Input CSV")
+    parser.add_argument("--output", default="data/mcs_results.csv", help="Output CSV for MCS results")
+    parser.add_argument("--max-compounds", type=int, default=100, 
+                        help="Maximum compounds per document to use for MCS")
+    parser.add_argument("--timeout", type=int, default=10, 
+                        help="Timeout in seconds for MCS computation")
+    parser.add_argument("--delay", type=float, default=0.5, help="Delay between ChEMBL API calls")
+    parser.add_argument("--start", type=int, default=0, help="Start index (for parallelization)")
+    parser.add_argument("--end", type=int, default=None, help="End index")
+    parser.add_argument("--merge", action="store_true", 
+                        help="Merge mapping files instead of computing MCS")
+    parser.add_argument("--mapping-pattern", default="data/mcs_mapping_*.csv",
+                        help="Glob pattern for mapping files (used with --merge)")
+    args = parser.parse_args()
+    
+    # Handle merge mode
+    if args.merge:
+        merge_mcs_results(args.input, args.mapping_pattern, args.output)
+        return
+
+    print(f"Configuration:")
+    print(f"  Max Compounds per Document: {args.max_compounds}")
+    print(f"  MCS Timeout: {args.timeout}s")
+    print(f"  API Delay: {args.delay}s")
+
+    # Check if input file exists
+    from pathlib import Path
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"\nERROR: Input file does not exist: {args.input}")
+        print("Please run step 4 first and merge the results.")
+        return
+    
+    if input_path.stat().st_size == 0:
+        print(f"\nERROR: Input file is empty: {args.input}")
+        print("Please run step 4 first and merge the results.")
+        return
+
+    # Load benchmark data
+    try:
+        df = pd.read_csv(args.input)
+        if len(df) == 0:
+            print(f"\nERROR: Input file has no data rows: {args.input}")
+            return
+    except pd.errors.EmptyDataError:
+        print(f"\nERROR: Input file has no columns or is empty: {args.input}")
+        print("Please run step 4 first and merge the results.")
+        return
+    except Exception as e:
+        print(f"\nERROR: Failed to read input file: {e}")
+        return
+    
+    print(f"\nLoaded {len(df)} benchmark entries from {args.input}")
+
+    # Check for required column
+    if 'document_chembl_id' not in df.columns:
+        print(f"\nERROR: Required column 'document_chembl_id' not found in input file.")
+        print(f"Available columns: {', '.join(df.columns)}")
+        return
+
+    # Get unique documents
+    unique_docs = df['document_chembl_id'].unique()
+    print(f"Unique documents: {len(unique_docs)}")
+
+    # Subset if specified
+    if args.end:
+        unique_docs = unique_docs[args.start:args.end]
+        print(f"Processing subset: indices {args.start} to {args.end} ({len(unique_docs)} documents)")
+
+    # Load existing MCS results if they exist
+    from pathlib import Path
+    output_path = Path(args.output)
+    existing_mcs = {}
+    if output_path.exists():
+        try:
+            existing_df = pd.read_csv(output_path)
+            if 'document_chembl_id' in existing_df.columns and 'mcs_smiles' in existing_df.columns:
+                existing_mcs = dict(zip(existing_df['document_chembl_id'], existing_df['mcs_smiles']))
+                print(f"Loaded {len(existing_mcs)} existing MCS results from {output_path}")
+        except Exception as e:
+            print(f"  [!] Could not load existing MCS results: {e}")
+
+    # Cache for document compounds (to avoid redundant API calls)
+    doc_compounds_cache = {}
+
+    # Track results for new document
+    mcs_results = []
+    
+    # Process each document
+    processed = 0
+    skipped = 0
+    for doc_id in tqdm(unique_docs, desc="Processing documents"):
+        # Get crystal ligand SMILES for this document (used as template)
+        # Note: multiple PDBs might match one doc, we just pick the first one
+        doc_rows = df[df['document_chembl_id'] == doc_id]
+        crystal_smiles = doc_rows['crystal_smiles'].iloc[0] if 'crystal_smiles' in doc_rows.columns else None
+
+        # Check if already computed in existing results
+        if doc_id in existing_mcs and pd.notna(existing_mcs[doc_id]):
+            skipped += 1
+            continue
+        
+        # Fetch compounds for this document
+        if doc_id not in doc_compounds_cache:
+            print(f"-> Fetching compounds for {doc_id}...")
+            compounds = fetch_with_timeout(doc_id, timeout=60)
+            doc_compounds_cache[doc_id] = compounds
+            time.sleep(args.delay)
+        else:
+            compounds = doc_compounds_cache[doc_id]
+        
+        if not compounds:
+            print(f"  [!] No compounds found for document {doc_id}")
+            mcs_results.append({
+                'document_chembl_id': doc_id,
+                'mcs_smiles': None,
+                'n_compounds': 0,
+                'status': 'no_compounds',
+                'timestamp': datetime.now().isoformat()
+            })
+            continue
+        
+        # Compute MCS
+        mcs_smiles = compute_mcs(compounds, reference_smiles=crystal_smiles, 
+                                max_compounds=args.max_compounds, timeout=args.timeout)
+        
+        if mcs_smiles:
+            mcs_results.append({
+                'document_chembl_id': doc_id,
+                'mcs_smiles': mcs_smiles,
+                'n_compounds': len(compounds),
+                'status': 'success',
+                'timestamp': datetime.now().isoformat()
+            })
+            processed += 1
+        else:
+            print(f"  [!] Could not compute MCS for document {doc_id}")
+            mcs_results.append({
+                'document_chembl_id': doc_id,
+                'mcs_smiles': None,
+                'n_compounds': len(compounds),
+                'status': 'failed',
+                'timestamp': datetime.now().isoformat()
+            })
+
+    print(f"\nComputed MCS for {processed} new documents")
+    if skipped > 0:
+        print(f"Skipped {skipped} documents (already computed)")
+
+    # Combine existing and new results
+    if mcs_results:
+        new_df = pd.DataFrame(mcs_results)
+        
+        # Merge with existing results
+        if existing_mcs:
+            existing_df = pd.DataFrame([
+                {
+                    'document_chembl_id': doc_id,
+                    'mcs_smiles': mcs_val,
+                    'n_compounds': None,
+                    'status': 'existing',
+                    'timestamp': None
+                }
+                for doc_id, mcs_val in existing_mcs.items()
+            ])
+            # Combine and deduplicate (new results take precedence)
+            combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+            combined_df = combined_df.drop_duplicates(subset=['document_chembl_id'], keep='last')
+        else:
+            combined_df = new_df
+        
+        # Handle partial runs - write mapping file for merging
+        if args.start > 0 or args.end:
+            # For parallel runs, write a mapping file
+            mapping_path = Path(args.output).parent / f"mcs_mapping_{args.start}_{args.end}.csv"
+            mapping_df = new_df[['document_chembl_id', 'mcs_smiles']].copy()
+            mapping_df.to_csv(mapping_path, index=False)
+            print(f"\nMCS mapping saved to {mapping_path}")
+            print(f"Run merge to combine all partial results into {args.output}")
+        else:
+            # For sequential runs, write full results CSV
+            combined_df = combined_df.sort_values('document_chembl_id')
+            combined_df.to_csv(output_path, index=False)
+            print(f"\nResults saved to {output_path}")
+            print(f"Total documents with MCS: {combined_df['mcs_smiles'].notna().sum()}")
+            print(f"Total documents processed: {len(combined_df)}")
+    else:
+        print("\nNo new MCS results to save")
+
+
+if __name__ == "__main__":
+    main()

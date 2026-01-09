@@ -15,7 +15,7 @@ def plot_docking_results(
     activity_col: str = "standard_value", 
     valid_col: str = "valid_pose_found",
     output_path: Optional[str] = None,
-    activity_units: str = "nM"
+    activity_units: Optional[str] = None
 ):
     """
     Plot docking scores vs activity values.
@@ -27,6 +27,8 @@ def plot_docking_results(
         valid_col: Column name for boolean validity (used for coloring).
         output_path: If provided, save the plot to this path.
         activity_units: Units of the activity values ('nM', 'uM', 'mM', 'M').
+                       Only required if data is not pchembl_value. If None and
+                       pchembl_value column exists, uses pchembl directly.
     """
     
     # Filter out failed scores (999.9), nulls, and NaNs for both columns
@@ -51,15 +53,35 @@ def plot_docking_results(
     else:
         is_valid = np.ones(len(scores), dtype=bool)
 
-    # Log transform activity (pActivity = -log10(Molar))
-    unit_offsets = {
-        "nM": 9,
-        "uM": 6,
-        "mM": 3,
-        "M": 0
-    }
-    offset = unit_offsets.get(activity_units, 9) 
-    p_activities = offset - np.log10(activities + 1e-12)
+    # Check if we have pchembl_value (unit-agnostic) or need to convert
+    # pchembl_value is already -log10(M), so we can use it directly
+    # Note: data.py creates both pchembl_value and standard_value when pchembl is available
+    # We check the original column name to determine if conversion is needed
+    has_pchembl = 'pchembl_value' in df.columns
+    
+    if has_pchembl and activity_col == 'pchembl_value':
+        # Use pchembl_value directly (already in pActivity units)
+        p_activities = activities
+        activity_label = "pActivity (from pchembl_value)"
+    elif has_pchembl and activity_col == 'standard_value':
+        # standard_value was created from pchembl_value, so it's already in pActivity units
+        p_activities = activities
+        activity_label = "pActivity (from pchembl_value)"
+    else:
+        # Convert from standard_value using units
+        if activity_units is None:
+            activity_units = "nM"  # Default fallback
+            print(f"WARNING: No units specified, assuming {activity_units}")
+        
+        unit_offsets = {
+            "nM": 9,
+            "uM": 6,
+            "mM": 3,
+            "M": 0
+        }
+        offset = unit_offsets.get(activity_units, 9) 
+        p_activities = offset - np.log10(activities + 1e-12)
+        activity_label = f"pActivity (-log10 {activity_units} -> M)"
 
     plt.figure(figsize=(10, 6))
     
@@ -88,7 +110,7 @@ def plot_docking_results(
     
     plt.title(f"pActivity vs Docking Score\nR²: {r_squared:.3f}, Pearson: {pearson_corr:.3f}, Spearman: {spearman_corr:.3f}")
     plt.xlabel("Docking Score (Predicted)")
-    plt.ylabel(f"pActivity (-log10 experimental {activity_units} -> M)")
+    plt.ylabel(activity_label)
     plt.legend()
     plt.grid(True, alpha=0.3)
     
@@ -104,10 +126,18 @@ def plot_activity_distribution(
     df: pl.DataFrame,
     activity_col: str = "standard_value",
     output_path: Optional[str] = None,
-    activity_units: str = "nM"
+    activity_units: Optional[str] = None
 ):
     """
     Plot the distribution of bioactivity values.
+    
+    Args:
+        df: Polars DataFrame containing activity data.
+        activity_col: Column name for activity values.
+        output_path: If provided, save the plot to this path.
+        activity_units: Units of the activity values ('nM', 'uM', 'mM', 'M').
+                       Only required if data is not pchembl_value. If None and
+                       pchembl_value column exists, uses pchembl directly.
     """
     # Filter nulls
     clean_df = df.filter(pl.col(activity_col).is_not_null())
@@ -118,16 +148,36 @@ def plot_activity_distribution(
 
     activities = clean_df.get_column(activity_col).to_numpy()
     
-    # Calculate pActivity for the histogram
-    unit_offsets = {"nM": 9, "uM": 6, "mM": 3, "M": 0}
-    offset = unit_offsets.get(activity_units, 9)
-    p_activities = offset - np.log10(activities + 1e-12)
+    # Check if we have pchembl_value (unit-agnostic) or need to convert
+    has_pchembl = 'pchembl_value' in df.columns
+    
+    if has_pchembl and activity_col == 'pchembl_value':
+        # Use pchembl_value directly (already in pActivity units)
+        p_activities = activities
+        activity_label = "pActivity (from pchembl_value)"
+        title_suffix = "pchembl_value"
+    elif has_pchembl and activity_col == 'standard_value':
+        # standard_value was created from pchembl_value, so it's already in pActivity units
+        p_activities = activities
+        activity_label = "pActivity (from pchembl_value)"
+        title_suffix = "pchembl_value"
+    else:
+        # Convert from standard_value using units
+        if activity_units is None:
+            activity_units = "nM"  # Default fallback
+            print(f"WARNING: No units specified, assuming {activity_units}")
+        
+        unit_offsets = {"nM": 9, "uM": 6, "mM": 3, "M": 0}
+        offset = unit_offsets.get(activity_units, 9)
+        p_activities = offset - np.log10(activities + 1e-12)
+        activity_label = f"pActivity (offset={offset})"
+        title_suffix = f"Units: {activity_units}"
 
     plt.figure(figsize=(10, 6))
     sns.histplot(p_activities, kde=True, bins=30, color='skyblue')
     
-    plt.title(f"Distribution of Experimental Activity (converted to pActivity)\nUnits: {activity_units}, Total compounds: {len(p_activities)}")
-    plt.xlabel(f"pActivity (offset={offset})")
+    plt.title(f"Distribution of Experimental Activity (converted to pActivity)\n{title_suffix}, Total compounds: {len(p_activities)}")
+    plt.xlabel(activity_label)
     plt.ylabel("Count")
     plt.grid(True, alpha=0.3)
     
