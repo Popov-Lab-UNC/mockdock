@@ -7,6 +7,18 @@ import sys
 from typing import Union, Optional, Tuple, List
 import numpy as np
 
+class PDBDownloadError(Exception):
+    """Raised when a PDB file cannot be downloaded from RCSB."""
+    pass
+
+class LigandNotFoundError(Exception):
+    """Raised when the specified ligand resname is not found in the structure."""
+    pass
+
+class GridPrepError(Exception):
+    """Raised when mk_prepare_receptor or AutoGrid fails."""
+    pass
+
 try:
     from prody import fetchPDB, parsePDB, writePDB, writePDBStream, confProDy
     confProDy(verbosity='error')
@@ -35,11 +47,14 @@ def extract_protein_and_ligand(
     if pdb_path is None:
         print(f"   Falling back to direct RCSB download...")
         url = f"https://files.rcsb.org/download/{pdb_id.upper()}.pdb"
-        response = requests.get(url)
-        response.raise_for_status()
-        pdb_path = output_dir / f"{pdb_id.lower()}.pdb"
-        with open(pdb_path, "w") as f:
-            f.write(response.text)
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            pdb_path = output_dir / f"{pdb_id.lower()}.pdb"
+            with open(pdb_path, "w") as f:
+                f.write(response.text)
+        except Exception as e:
+            raise PDBDownloadError(f"Failed to download PDB {pdb_id}: {e}")
     
     structure = parsePDB(str(pdb_path), altloc='first')
     
@@ -51,7 +66,7 @@ def extract_protein_and_ligand(
         # First, find which chain(s) contain this ligand
         all_ligands = structure.select(f"resname {ligand_resname}")
         if all_ligands is None:
-            raise ValueError(f"Ligand with resname {ligand_resname} not found in PDB {pdb_id}")
+            raise LigandNotFoundError(f"Ligand with resname {ligand_resname} not found in PDB {pdb_id}")
         
         # Get the FIRST ligand instance and store it
         ligand_res = all_ligands.getHierView().iterResidues().__next__()
@@ -166,7 +181,7 @@ class ReceptorPreparer:
         result = subprocess.run(cmd, cwd=str(grid_dir))
         
         if result.returncode != 0:
-            raise RuntimeError(f"Receptor preparation failed. Check output above.")
+            raise GridPrepError(f"Receptor preparation failed (mk_prepare_receptor.py returned {result.returncode}).")
         
         gpf_path = grid_dir / f"{base_name}.gpf"
         glg_path = grid_dir / f"{base_name}.glg"
@@ -189,7 +204,7 @@ class ReceptorPreparer:
         ag_result = subprocess.run(ag_cmd, cwd=str(grid_dir))
         
         if ag_result.returncode != 0:
-            raise RuntimeError(f"AutoGrid4 failed. Check {glg_path} for details.")
+            raise GridPrepError(f"AutoGrid4 failed (returned {ag_result.returncode}). Check {glg_path} for details.")
             
         fld_path = grid_dir / f"{base_name}.maps.fld"
         return fld_path

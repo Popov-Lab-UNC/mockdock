@@ -129,32 +129,56 @@ class AutoDockGPUOracle:
     def score_batch(self, smiles_list: List[str], batch_size: int = 100) -> dict[str, float]:
         """
         Score a batch of SMILES strings. Returns a dictionary {smiles: score}.
-        Only returns scores for molecules that match the fragment constraint.
+        Only docks molecules that match the 2D fragment constraint if provided.
         """
-        # We no longer filter by fragment here to ensure all compounds are in the output CSV
-        valid_smiles = smiles_list
-        if self.fragment_mol:
-            match_count = sum(1 for smi in smiles_list if (m := Chem.MolFromSmiles(smi)) and m.HasSubstructMatch(self.fragment_mol))
-            print(f"Fragment matching (2D): {match_count}/{len(smiles_list)} compounds match {self.fragment_smiles}")
-
-        all_results = []
+        # 2D Pre-filtering: Only dock compounds that match the fragment
+        valid_smiles = []
+        skipped_results = []
         
-        # Process in chunks to avoid overwhelming file system or args
-        for i in range(0, len(valid_smiles), batch_size):
-            chunk = valid_smiles[i : i + batch_size]
-            print(f"Processing batch {i // batch_size + 1}/{(len(valid_smiles) - 1) // batch_size + 1} ({len(chunk)} compounds)...", flush=True)
-            chunk_results = self._process_chunk(chunk, chunk_idx=i // batch_size)
-            all_results.extend(chunk_results)
+        if self.fragment_mol:
+            print(f"-> Performing 2D fragment pre-filtering for {len(smiles_list)} compounds...")
+            for smi in smiles_list:
+                mol = Chem.MolFromSmiles(smi)
+                if mol and mol.HasSubstructMatch(self.fragment_mol):
+                    valid_smiles.append(smi)
+                else:
+                    # Record skipped compound
+                    skipped_results.append({
+                        "smiles": smi,
+                        "docking_score": float('nan'),
+                        "score_valid": float('nan'),
+                        "score_best_any": float('nan'),
+                        "dlg_path": None,
+                        "dlg_path_valid": None,
+                        "dlg_path_any": None,
+                        "valid_pose_found": False,
+                        "fragment_precheck": False,
+                        "n_conformers": 0,
+                        "skip_reason": "2D fragment mismatch" if mol else "Invalid SMILES"
+                    })
+            
+            print(f"   Matches Fragment (2D): {len(valid_smiles)}/{len(smiles_list)} compounds")
+            if skipped_results:
+                print(f"   Skipping {len(skipped_results)} compounds that do not match the fragment.")
+        else:
+            valid_smiles = smiles_list
+
+        all_results = skipped_results
+        
+        # Process valid smiles in chunks
+        if valid_smiles:
+            for i in range(0, len(valid_smiles), batch_size):
+                chunk = valid_smiles[i : i + batch_size]
+                print(f"Processing batch {i // batch_size + 1}/{(len(valid_smiles) - 1) // batch_size + 1} ({len(chunk)} compounds)...", flush=True)
+                chunk_results = self._process_chunk(chunk, chunk_idx=i // batch_size)
+                all_results.extend(chunk_results)
             
         # Store detailed results in a DataFrame
         self.results_df = pl.DataFrame(all_results)
         
         # Return dictionary mapping smiles to best docking score
-        # Note: We now prioritize passing valid score, but also keep invalid score for reporting
         smile_to_score = {}
         for row in self.results_df.iter_rows(named=True):
-             # The 'docking_score' column now already contains the logic (valid if found, else best any)
-             # So we can just use it directly.
              ds = row['docking_score']
              if ds is not None and not math.isnan(ds):
                  smile_to_score[row['smiles']] = ds
@@ -512,7 +536,8 @@ class AutoDockGPUOracle:
                     "dlg_path_any": best_any_dlg_path,
                     "valid_pose_found": valid_pose_found, # Boolean flag
                     "fragment_precheck": fragment_precheck,
-                    "n_conformers": n_states                  # Metadata: Number of states/conformers docked
+                    "n_conformers": n_states,                 # Metadata: Number of states/conformers docked
+                    "skip_reason": None
                 })
             
             return chunk_results

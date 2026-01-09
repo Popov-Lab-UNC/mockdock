@@ -42,7 +42,7 @@ def plot_docking_results(
     
     if len(clean_df) < 2:
         print("Not enough data points to plot after filtering failed scores/NaNs.")
-        return
+        return None
 
     # Extract columns
     scores = clean_df.get_column(score_col).to_numpy()
@@ -121,6 +121,16 @@ def plot_docking_results(
         plt.show()
     
     plt.close()
+    
+    return {
+        "score_col": score_col,
+        "activity_col": activity_col,
+        "activity_units": activity_units,
+        "n_points": int(len(clean_df)),
+        "pearson": float(pearson_corr),
+        "spearman": float(spearman_corr),
+        "r2": float(r_squared),
+    }
 
 def plot_activity_distribution(
     df: pl.DataFrame,

@@ -5,6 +5,11 @@ import yaml
 import polars as pl
 import os
 import sys
+import time
+import traceback
+import json
+from dataclasses import dataclass, asdict
+from enum import Enum
 from docking_benchmark import (
     fetch_chembl_data,
     AutoDockGPUOracle,
@@ -14,6 +19,33 @@ from docking_benchmark import (
     fetch_ligand_expo_sdf,
     assign_bond_orders_from_template
 )
+from docking_benchmark.receptor import PDBDownloadError, LigandNotFoundError, GridPrepError
+
+class WorkflowStatus(Enum):
+    SUCCESS = "SUCCESS"
+    FAILED_RETRIEVAL = "FAILED_RETRIEVAL"
+    FAILED_PDB_404 = "FAILED_PDB_404"
+    FAILED_LIGAND_MISSING = "FAILED_LIGAND_MISSING"
+    FAILED_GRID_PREP = "FAILED_GRID_PREP"
+    FAILED_REF_MATCH = "FAILED_REF_MATCH"
+    FAILED_DOCKING = "FAILED_DOCKING"
+    FAILED_ANALYSIS = "FAILED_ANALYSIS"
+
+@dataclass
+class WorkflowResult:
+    config_file: str
+    target_id: str
+    pdb_id: str
+    doc_id: str
+    fragment_smiles: str
+    status: str
+    error_message: str = ""
+    n_compounds_total: int = 0
+    n_compounds_standardized: int = 0
+    n_compounds_matched_2d: int = 0
+    n_compounds_docked: int = 0
+    n_valid_poses: int = 0
+    runtime_seconds: float = 0.0
 
 def load_config(config_path: str) -> dict:
     with open(config_path, "r") as f:
@@ -31,15 +63,12 @@ def main():
     # User-friendly robustness arguments
     parser.add_argument("--smarts", type=str, help="Override SMARTS string for fragment filtering.")
     parser.add_argument("--no_isomers", action="store_true", help="Disable stereoisomer generation (respect input stereo).")
+    parser.add_argument("--run-dir", type=str, help="Base directory for the benchmark run (organized outputs)")
 
     args = parser.parse_args()
+    start_time = time.time()
 
     config = load_config(args.config)
-
-    # Override config with CLI args
-    if args.smarts:
-        config["fragment_smiles"] = args.smarts
-        print(f"Overriding fragment SMARTS with: {args.smarts}")
 
     # 1. Configuration
     target_id = config.get("target_id")
@@ -50,8 +79,19 @@ def main():
     activity_units = config.get("activity_units", "nM")
     activity_col = config.get("activity_column", "standard_value")
 
-    # Output directory
-    work_dir = Path(config.get("output_dir", f"{pdb_id}_workflow"))
+    # Output directory organization
+    target_pdb_name = f"{target_id}_{pdb_id}"
+    if args.run_dir:
+        run_base = Path(args.run_dir)
+        run_base.mkdir(exist_ok=True, parents=True)
+        work_dir = run_base / target_pdb_name
+        # Create debug directory in run-dir
+        debug_dir = run_base / "debug"
+        debug_dir.mkdir(exist_ok=True)
+    else:
+        work_dir = Path(config.get("output_dir", f"{target_pdb_name}_workflow"))
+        debug_dir = None
+
     work_dir.mkdir(exist_ok=True, parents=True)
 
     # Optional local files
@@ -61,6 +101,50 @@ def main():
     # Filtering parameters
     fragment_smiles = config.get("fragment_smiles")
     rmsd_threshold = config.get("rmsd_threshold", 2.0)
+
+    # Result tracking
+    result = WorkflowResult(
+        config_file=args.config,
+        target_id=target_id,
+        pdb_id=pdb_id,
+        doc_id=doc_id,
+        fragment_smiles=fragment_smiles or "",
+        status=WorkflowStatus.SUCCESS.value
+    )
+
+    def save_debug_info(error_type, pdb_id, message, extra_files=None):
+        if not debug_dir:
+            return
+        type_dir = debug_dir / error_type
+        type_dir.mkdir(exist_ok=True)
+        
+        info_path = type_dir / f"{pdb_id}_error.txt"
+        with open(info_path, "w") as f:
+            f.write(f"PDB: {pdb_id}\n")
+            f.write(f"Error: {message}\n")
+            f.write("-" * 20 + "\n")
+            f.write(traceback.format_exc())
+            
+        if extra_files:
+            import shutil
+            for ef in extra_files:
+                if Path(ef).exists():
+                    shutil.copy2(ef, type_dir / f"{pdb_id}_{Path(ef).name}")
+
+    def append_to_summary():
+        if not args.run_dir:
+            return
+        summary_path = Path(args.run_dir) / "benchmark_summary.csv"
+        result.runtime_seconds = time.time() - start_time
+        
+        row = asdict(result)
+        df_row = pl.DataFrame([row])
+        
+        # Use file locking/append mode if possible. 
+        # For simplicity with polars, we check if exists
+        header = not summary_path.exists()
+        with open(summary_path, "a") as f:
+            df_row.write_csv(f, include_header=header)
 
     # Determine naming prefix for output files
     if target_id and doc_id:
@@ -83,39 +167,62 @@ def main():
     if args.stage in ["all", "retrieve"]:
         print(f"[STAGE 1] Data Retrieval")
         print(f"------------------------")
-        if config.get("ligand_csv_path"):
-            csv_path = Path(config.get("ligand_csv_path"))
-            print(f"-> Loading local ligand data from: {csv_path}")
-            if not csv_path.exists():
-                raise FileNotFoundError(f"Ligand CSV not found: {csv_path}")
-            df = pl.read_csv(csv_path)
-            
-            # 1. Standardize SMILES column
-            # If canonical_smiles is missing, look for common names
-            if "canonical_smiles" not in df.columns:
-                smi_fallbacks = ["smiles", "SMILES", "SMILE", "canonical_smiles"]
-                for col in smi_fallbacks:
-                    if col in df.columns:
-                        df = df.rename({col: "canonical_smiles"})
-                        print(f"   Note: Using '{col}' as the SMILES column.")
-                        break
+        try:
+            if config.get("ligand_csv_path"):
+                csv_path = Path(config.get("ligand_csv_path"))
+                print(f"-> Loading local ligand data from: {csv_path}")
+                if not csv_path.exists():
+                    raise FileNotFoundError(f"Ligand CSV not found: {csv_path}")
+                df = pl.read_csv(csv_path)
+                
+                # 1. Standardize SMILES column
+                # If canonical_smiles is missing, look for common names
+                if "canonical_smiles" not in df.columns:
+                    smi_fallbacks = ["smiles", "SMILES", "SMILE", "canonical_smiles"]
+                    for col in smi_fallbacks:
+                        if col in df.columns:
+                            df = df.rename({col: "canonical_smiles"})
+                            print(f"   Note: Using '{col}' as the SMILES column.")
+                            break
 
-            # 2. Standardize Activity column
-            # Priority: 1. YAML specified activity_column, 2. "standard_value", 3. Common fallbacks
-            if activity_col in df.columns:
-                if activity_col != "standard_value":
-                    df = df.rename({activity_col: "standard_value"})
-                    print(f"   Note: Using '{activity_col}' as the activity column.")
-            elif "standard_value" not in df.columns:
-                act_fallbacks = ["ic50", "pic50", "value", "activity", "Ki", "IC50", "KI"]
-                for col in act_fallbacks:
-                    if col in df.columns:
-                        df = df.rename({col: "standard_value"})
-                        print(f"   Note: Identified '{col}' as activity column and mapped to 'standard_value'.")
-                        break
-        else:
-            print(f"-> Fetching ChEMBL data for {target_id} (Units: {activity_units})...")
-            df = fetch_chembl_data(target_id, doc_id, units=activity_units)
+                # 2. Standardize Activity column
+                # Priority: 1. YAML specified activity_column, 2. "standard_value", 3. Common fallbacks
+                if activity_col in df.columns:
+                    if activity_col != "standard_value":
+                        df = df.rename({activity_col: "standard_value"})
+                        print(f"   Note: Using '{activity_col}' as the activity column.")
+                elif "standard_value" not in df.columns:
+                    act_fallbacks = ["ic50", "pic50", "value", "activity", "Ki", "IC50", "KI"]
+                    for col in act_fallbacks:
+                        if col in df.columns:
+                            df = df.rename({col: "standard_value"})
+                            print(f"   Note: Identified '{col}' as activity column and mapped to 'standard_value'.")
+                            break
+            else:
+                print(f"-> Fetching ChEMBL data for {target_id} (Units: {activity_units})...")
+                # Capture printed info for standardization stats
+                df, stats = fetch_chembl_data(target_id, doc_id, units=activity_units, return_stats=True)
+                result.n_compounds_total = stats.get("n_total", 0)
+                result.n_compounds_standardized = stats.get("n_standardized", 0)
+
+            if df is None or df.is_empty():
+                print("ERROR: No data retrieved.")
+                result.status = WorkflowStatus.FAILED_RETRIEVAL.value
+                result.error_message = "No data retrieved from ChEMBL or CSV"
+                append_to_summary()
+                sys.exit(1)
+            
+            # For local CSV, we set total/standardized here if not already set
+            if result.n_compounds_total == 0:
+                result.n_compounds_total = len(df)
+                result.n_compounds_standardized = len(df)
+        except Exception as e:
+            print(f"ERROR during data retrieval: {e}")
+            result.status = WorkflowStatus.FAILED_RETRIEVAL.value
+            result.error_message = str(e)
+            save_debug_info("FAILED_RETRIEVAL", pdb_id, str(e))
+            append_to_summary()
+            sys.exit(1)
 
         # Verify we have the required columns
         if "canonical_smiles" not in df.columns:
@@ -176,8 +283,40 @@ def main():
             )
             print(f"-> Grid maps generated at: {fld_path}")
 
+        except PDBDownloadError as e:
+            err_msg = str(e)
+            print(f"ERROR: PDB download failed: {err_msg}")
+            result.status = WorkflowStatus.FAILED_PDB_404.value
+            result.error_message = err_msg
+            save_debug_info("FAILED_PDB_404", pdb_id, err_msg)
+            append_to_summary()
+            sys.exit(1)
+
+        except LigandNotFoundError as e:
+            err_msg = str(e)
+            print(f"ERROR: Ligand not found: {err_msg}")
+            result.status = WorkflowStatus.FAILED_LIGAND_MISSING.value
+            result.error_message = err_msg
+            save_debug_info("FAILED_LIGAND_MISSING", pdb_id, err_msg)
+            append_to_summary()
+            sys.exit(1)
+
+        except GridPrepError as e:
+            err_msg = str(e)
+            print(f"ERROR during grid preparation: {err_msg}")
+            result.status = WorkflowStatus.FAILED_GRID_PREP.value
+            result.error_message = err_msg
+            glg_files = list((work_dir / "grid").glob("*.glg"))
+            save_debug_info("FAILED_GRID_PREP", pdb_id, err_msg, extra_files=glg_files)
+            append_to_summary()
+            sys.exit(1)
+
         except Exception as e:
-            print(f"ERROR during receptor preparation: {e}")
+            err_msg = str(e)
+            print(f"ERROR during receptor preparation: {err_msg}")
+            result.status = WorkflowStatus.FAILED_GRID_PREP.value
+            result.error_message = err_msg
+            append_to_summary()
             sys.exit(1)
 
         # Determine reference ligand path for RMSD calculation
@@ -229,6 +368,38 @@ def main():
         if reference_ligand_path and reference_ligand_path.exists():
              print(f"-> Found reference ligand: {reference_ligand_path}")
 
+    # Reference Ligand Fragment Validation
+    if args.stage in ["all", "docking"] and fragment_smiles and reference_ligand_path:
+        print(f"-> Validating reference ligand against fragment pattern: {fragment_smiles}")
+        try:
+            if str(reference_ligand_path).endswith(".sdf"):
+                suppl = Chem.SDMolSupplier(str(reference_ligand_path), removeHs=False)
+                ref_mol = next(iter(suppl), None)
+            else:
+                ref_mol = Chem.MolFromPDBFile(str(reference_ligand_path), removeHs=False)
+            
+            fragment_mol = Chem.MolFromSmiles(fragment_smiles) or Chem.MolFromSmarts(fragment_smiles)
+            
+            if ref_mol and fragment_mol:
+                # Use a robust matching if possible, but basic HasSubstructMatch is a good start
+                if not ref_mol.HasSubstructMatch(fragment_mol):
+                    # Try adjusting query properties for robustness (similar to what's in docking.py)
+                    params = Chem.AdjustQueryParameters()
+                    params.makeBondsGeneric = True
+                    params.aromatizeIfPossible = True
+                    loose_fragment = Chem.AdjustQueryProperties(fragment_mol, params)
+                    
+                    if not ref_mol.HasSubstructMatch(loose_fragment):
+                        print("FATAL: Crystal ligand does not contain the fragment pattern!")
+                        result.status = WorkflowStatus.FAILED_REF_MATCH.value
+                        result.error_message = f"Crystal ligand ({reference_ligand_path.name}) missing fragment substructure"
+                        save_debug_info("FAILED_REF_MATCH", pdb_id, result.error_message)
+                        append_to_summary()
+                        sys.exit(0) # Exit gracefully as this is an expected incompatibility
+            print("   Reference ligand validation successful.")
+        except Exception as e:
+            print(f"Warning during reference validation: {e}")
+
     # STAGE 3: Docking
     if args.stage in ["all", "docking"]:
         print(f"\n[STAGE 3] Docking Execution")
@@ -269,6 +440,10 @@ def main():
             valid_poses = len(results_df.filter(pl.col("valid_pose_found") == True))
             fragment_matched = len(results_df.filter(pl.col("fragment_precheck") == True))
             total_conformers = results_df["n_conformers"].sum()
+            
+            # Compounds actually docked are those that were NOT skipped
+            # Actually, results_df has a fragment_precheck column
+            n_docked = len(results_df.filter(pl.col("skip_reason").is_null()))
 
             print("\nDocking Statistics:")
             print(f"  - Total Unique Compounds: {total}")
@@ -281,7 +456,8 @@ def main():
             results_df_renamed = results_df.rename({"smiles": "canonical_smiles"})
             
             # Select relevant columns from results. 
-            df = df.join(results_df_renamed.select(["canonical_smiles", "docking_score", "score_valid", "score_best_any", "dlg_path_valid", "dlg_path_any", "valid_pose_found", "n_conformers"]),
+            # Added skip_reason
+            df = df.join(results_df_renamed.select(["canonical_smiles", "docking_score", "score_valid", "score_best_any", "dlg_path_valid", "dlg_path_any", "valid_pose_found", "n_conformers", "skip_reason"]),
                          on="canonical_smiles", how="left")
 
             # Fill nulls in validity column for plotting consistency
@@ -314,10 +490,18 @@ def main():
                 dlg_col="dlg_path_any"
             )
 
+            # Update results for summary
+            result.n_compounds_matched_2d = fragment_matched
+            result.n_compounds_docked = n_docked
+            result.n_valid_poses = valid_poses
+
         except Exception as e:
             print(f"FATAL ERROR during docking step: {e}")
-            import traceback
             traceback.print_exc()
+            result.status = WorkflowStatus.FAILED_DOCKING.value
+            result.error_message = str(e)
+            save_debug_info("FAILED_DOCKING", pdb_id, str(e))
+            append_to_summary()
             sys.exit(1)
 
     # STAGE 4: Analysis
@@ -348,11 +532,12 @@ def main():
 
         # 1. Plot Unconstrained (Best Any)
         plot_any_path = work_dir / f"{data_prefix}_vs_{pdb_id}_analysis_best_any.png"
+        best_any_metrics = None
         if plot_act_col in df.columns:
             print(f"-> Generating Unconstrained Activity vs Score plot...")
             # Use None for activity_units if we have pchembl_value (unit-agnostic)
             plot_units = None if "pchembl_value" in df.columns else activity_units
-            plot_docking_results(
+            best_any_metrics = plot_docking_results(
                 df,
                 score_col="score_best_any",
                 activity_col=plot_act_col,
@@ -363,11 +548,12 @@ def main():
         
         # 2. Plot RMSD-constrained (with fallback)
         plot_valid_path = work_dir / f"{data_prefix}_vs_{pdb_id}_analysis_rmsd_constrained.png"
+        rmsd_constrained_metrics = None
         if plot_act_col in df.columns:
             print(f"-> Generating RMSD-Constrained Activity vs Score plot...")
             # Use None for activity_units if we have pchembl_value (unit-agnostic)
             plot_units = None if "pchembl_value" in df.columns else activity_units
-            plot_docking_results(
+            rmsd_constrained_metrics = plot_docking_results(
                 df,
                 score_col="docking_score", # Use the fallback-enabled score
                 activity_col=plot_act_col,
@@ -376,9 +562,35 @@ def main():
                 activity_units=plot_units
             )
 
+        # Save metrics.json (uses the same metrics as plotted)
+        try:
+            metrics_payload = {
+                "target_id": target_id,
+                "doc_id": doc_id,
+                "pdb_id": pdb_id,
+                "fragment_smiles": fragment_smiles,
+                "activity_col": plot_act_col,
+                "activity_units": (None if "pchembl_value" in df.columns else activity_units),
+                "n_compounds_total": result.n_compounds_total,
+                "n_compounds_standardized": result.n_compounds_standardized,
+                "n_compounds_matched_2d": result.n_compounds_matched_2d,
+                "n_compounds_docked": result.n_compounds_docked,
+                "n_valid_poses": result.n_valid_poses,
+                "metrics": {
+                    "best_any": best_any_metrics,
+                    "rmsd_constrained": rmsd_constrained_metrics,
+                },
+            }
+            metrics_path = work_dir / "metrics.json"
+            metrics_path.write_text(json.dumps(metrics_payload, indent=2))
+        except Exception as e:
+            print(f"Warning: failed to write metrics.json: {e}")
+
     print(f"\n" + "="*50)
     print(f"Workflow Complete. All results available in: {work_dir}")
     print("="*50 + "\n")
+    
+    append_to_summary()
 
 if __name__ == "__main__":
     main()

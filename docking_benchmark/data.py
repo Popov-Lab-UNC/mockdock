@@ -1,6 +1,34 @@
 import polars as pl
+from rdkit import Chem
+from rdkit.Chem.MolStandardize import rdMolStandardize
+from typing import Optional, Union, Tuple
 
-def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str = "nM") -> pl.DataFrame:
+def standardize_smiles(smiles: str) -> Optional[str]:
+    """
+    Strip salts, neutralize, and canonicalize a SMILES string.
+    Returns None if the SMILES is invalid.
+    """
+    if not smiles or not isinstance(smiles, str):
+        return None
+        
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return None
+        
+        # 1. Keep largest fragment (removes [Na+], [Cl-], etc.)
+        mol = rdMolStandardize.LargestFragmentChooser().choose(mol)
+        
+        # 2. Uncharge (neutralize where chemically sensible)
+        uncharger = rdMolStandardize.Uncharger()
+        mol = uncharger.uncharge(mol)
+        
+        # 3. Return canonical SMILES
+        return Chem.MolToSmiles(mol, canonical=True)
+    except Exception:
+        return None
+
+def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str = "nM", return_stats: bool = False) -> Union[pl.DataFrame, Tuple[pl.DataFrame, dict]]:
     """
     Fetch bioactivity data from ChEMBL for a specific target and document.
     
@@ -11,6 +39,7 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
         target_chembl_id: ChEMBL target ID
         document_chembl_id: ChEMBL document ID
         units: Only used for custom data fallback (default: "nM")
+        return_stats: If True, return (DataFrame, stats_dict)
     
     Returns:
         DataFrame with canonical_smiles, molecule_chembl_id, and either:
@@ -32,9 +61,10 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
     )
 
     data = list(res)
+    stats = {"n_total": 0, "n_standardized": 0}
     
     if not data:
-        return pl.DataFrame()
+        return (pl.DataFrame(), stats) if return_stats else pl.DataFrame()
 
     df = pl.from_dicts(data, infer_schema_length=None)
 
@@ -47,6 +77,16 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
     has_pchembl = 'pchembl_value' in df.columns
     has_standard = 'standard_value' in df.columns
     
+    def apply_standardization(temp_df):
+        n_orig = len(temp_df)
+        temp_df = temp_df.with_columns(
+            pl.col("canonical_smiles").map_elements(standardize_smiles, return_dtype=pl.String)
+        ).drop_nulls(subset=["canonical_smiles"])
+        n_clean = len(temp_df)
+        if n_orig > n_clean:
+            print(f"   Standardization: Removed {n_orig - n_clean} invalid/failed compounds.")
+        return temp_df, n_orig, n_clean
+
     if has_pchembl:
         # Use pchembl_value (preferred - unit-agnostic)
         existing_cols = [c for c in preferred_cols if c in df.columns]
@@ -57,6 +97,12 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
             )
         # Drop rows with missing SMILES or pchembl
         df = df.drop_nulls(subset=['canonical_smiles', 'pchembl_value'])
+        
+        # Apply standardization
+        df, n_orig, n_clean = apply_standardization(df)
+        stats["n_total"] = n_orig
+        stats["n_standardized"] = n_clean
+            
         # Also create standard_value column for compatibility (pchembl is already in pActivity units)
         df = df.with_columns(
             pl.col('pchembl_value').alias('standard_value')
@@ -72,6 +118,12 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
             )
         # Drop rows with missing SMILES or Activity
         df = df.drop_nulls(subset=['canonical_smiles', 'standard_value'])
+        
+        # Apply standardization
+        df, n_orig, n_clean = apply_standardization(df)
+        stats["n_total"] = n_orig
+        stats["n_standardized"] = n_clean
+            
         # Filter for specified units if standard_units column exists
         if 'standard_units' in df.columns:
             df = df.filter(pl.col('standard_units') == units)
@@ -80,6 +132,6 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
             print(f"   Using standard_value (no units column, assuming {units})")
     else:
         print("   WARNING: No activity data (pchembl_value or standard_value) found")
-        return pl.DataFrame()
+        return (pl.DataFrame(), stats) if return_stats else pl.DataFrame()
 
-    return df
+    return (df, stats) if return_stats else df
