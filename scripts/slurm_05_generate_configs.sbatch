@@ -34,7 +34,7 @@ echo "Generating YAML configs..."
 python scripts/05_generate_benchmark_configs.py \
     --input data/chembl_docking_benchmark.csv \
     --output-dir generated_configs \
-    --top-n 200 \
+    --top-n 0 \
     --require-crystal-in-doc \
     --max-resolution 3.0 \
     --min-compounds 30

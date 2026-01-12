@@ -44,7 +44,12 @@ def main():
     parser = argparse.ArgumentParser(description="Generate docking workflow configs")
     parser.add_argument("--input", default="data/chembl_docking_benchmark.csv", help="Input CSV")
     parser.add_argument("--output-dir", default="generated_configs", help="Output directory")
-    parser.add_argument("--top-n", type=int, default=100, help="Generate configs for top N entries")
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=100,
+        help="Generate configs for top N entries (set to 0 for no limit / all)",
+    )
     parser.add_argument("--require-crystal-in-doc", action="store_true", default=True,
                         help="Only include entries where crystal ligand is in the document (default: True)")
     parser.add_argument("--no-require-crystal-in-doc", dest="require-crystal-in-doc", action="store_false",
@@ -93,8 +98,12 @@ def main():
     print(f"After MCS quality filter: {len(df)}")
 
     # Sort by resolution and select top N
-    df = df.sort_values('resolution').head(args.top_n)
-    print(f"Selected top {len(df)} entries by resolution")
+    df = df.sort_values('resolution')
+    if args.top_n and args.top_n > 0:
+        df = df.head(args.top_n)
+        print(f"Selected top {len(df)} entries by resolution")
+    else:
+        print(f"Selected all {len(df)} entries by resolution (no top-N limit)")
 
     # Create output directory
     output_dir = Path(args.output_dir)
