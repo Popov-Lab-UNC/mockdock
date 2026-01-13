@@ -177,15 +177,20 @@ class AutoDockGPUOracle:
         self.results_df = pl.DataFrame(all_results)
         
         # Return dictionary mapping smiles to best docking score
-        smile_to_score = {}
-        for row in self.results_df.iter_rows(named=True):
-             ds = row['docking_score']
-             if ds is not None and not math.isnan(ds):
-                 smile_to_score[row['smiles']] = ds
-             else:
-                 smile_to_score[row['smiles']] = float('nan')
-             
-        return smile_to_score
+        df_scores = self.results_df.select(["smiles", "docking_score"])
+
+        # Create a boolean mask for valid scores (not null and not NaN)
+        valid_scores_mask = pl.col("docking_score").is_not_null() & pl.col("docking_score").is_not_nan()
+
+        # Create the dictionary using a conditional expression
+        smile_to_score_df = df_scores.with_columns(
+            pl.when(valid_scores_mask)
+            .then(pl.col("docking_score"))
+            .otherwise(pl.lit(float('nan')))
+            .alias("docking_score")
+        )
+
+        return dict(zip(smile_to_score_df["smiles"], smile_to_score_df["docking_score"]))
 
     def _prepare_single_ligand(self, args: Tuple[str, int, Path]) -> List[Tuple[str, str]]:
         """
@@ -668,14 +673,14 @@ class AutoDockGPUOracle:
             else:
                 key_col = "smiles" # Fallback
             
-            for row in df_metadata.iter_rows(named=True):
+            for row in df_metadata.to_dicts():
                  if row.get(key_col):
                      meta_map[row[key_col]] = row
 
         # Sort results by score_col (ascending = more negative = better)
         sorted_results = self.results_df.sort(score_col, descending=False)
 
-        for row in sorted_results.iter_rows(named=True):
+        for row in sorted_results.to_dicts():
             if row[score_col] is None or math.isnan(row[score_col]) or row[score_col] >= 999.0 or row[dlg_col] is None:
                 continue
             
