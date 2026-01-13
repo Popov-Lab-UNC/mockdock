@@ -16,8 +16,60 @@ dependencies = [
     "prody>=2.4.1",
     "molscrub>=0.2.2",
     "pyyaml>=6.0.3",
+    "tqdm>=4.67.1",
 ]
 
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# This repo has many top-level output folders (data/, logs/, benchmark_runs/, etc.).
+# Restrict package discovery to the actual Python package(s) only.
+where = ["."]
+include = ["docking_benchmark*"]
+exclude = [
+    "data*",
+    "logs*",
+    "benchmark_runs*",
+    "generated_configs*",
+    "custom_data*",
+    "custom_configs*",
+    "*_workflow*",
+]
+
+[tool.ruff]
+# Avoid linting large/generated artifacts.
+extend-exclude = [
+    ".venv",
+    "benchmark_runs",
+    "generated_configs",
+    "data",
+    "logs",
+]
+
+[tool.black]
+# Keep formatting focused on source code only.
+extend-exclude = """
+(
+  \\.venv
+| benchmark_runs
+| generated_configs
+| data
+| logs
+)
+"""
+
+[tool.mypy]
+# Type-check source only (ignore run outputs / generated files).
+exclude = "(^\\.venv/|^benchmark_runs/|^generated_configs/|^data/|^logs/)"
+
+[tool.pytest.ini_options]
+# Prevent pytest from recursing into large output directories.
+norecursedirs = [
+    ".venv",
+    "benchmark_runs",
+    "generated_configs",
+    "data",
+    "logs",
+]

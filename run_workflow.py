@@ -84,13 +84,27 @@ def main():
     if args.run_dir:
         run_base = Path(args.run_dir)
         run_base.mkdir(exist_ok=True, parents=True)
-        work_dir = run_base / target_pdb_name
+        # Organize as:
+        #   <run_dir>/<target_id>_<pdb_id>/grid/...            (shared per receptor/PDB)
+        #   <run_dir>/<target_id>_<pdb_id>/<doc_id>/...       (doc-specific outputs)
+        target_pdb_dir = run_base / target_pdb_name
+        target_pdb_dir.mkdir(exist_ok=True, parents=True)
+
+        # Doc-specific directory prevents overwrites when multiple docs share same target+PDB
+        if doc_id:
+            work_dir = target_pdb_dir / str(doc_id)
+        else:
+            work_dir = target_pdb_dir
+
+        # Grid (receptor maps) should be shared across docs for same PDB
+        grid_base_dir = target_pdb_dir
         # Create debug directory in run-dir
         debug_dir = run_base / "debug"
         debug_dir.mkdir(exist_ok=True)
     else:
         work_dir = Path(config.get("output_dir", f"{target_pdb_name}_workflow"))
         debug_dir = None
+        grid_base_dir = work_dir
 
     work_dir.mkdir(exist_ok=True, parents=True)
 
@@ -147,7 +161,12 @@ def main():
             df_row.write_csv(f, include_header=header)
 
     # Determine naming prefix for output files
-    if target_id and doc_id:
+    # Prefer a fully qualified prefix so filenames are self-explanatory even outside folder context.
+    if target_id and pdb_id and doc_id:
+        data_prefix = f"{target_id}_{pdb_id}_{doc_id}"
+    elif target_id and pdb_id:
+        data_prefix = f"{target_id}_{pdb_id}"
+    elif target_id and doc_id:
         data_prefix = f"{target_id}_{doc_id}"
     elif target_id:
         data_prefix = f"{target_id}"
@@ -275,7 +294,7 @@ def main():
             fld_path = preparer.prepare_receptor_and_grid(
                 pdb_id,
                 chain=chain,
-                output_dir=work_dir,
+                output_dir=grid_base_dir,
                 allow_bad_res=True,
                 ligand_resname=ligand_resname,
                 protein_pdb_path=protein_pdb_path,
@@ -321,9 +340,9 @@ def main():
 
         # Determine reference ligand path for RMSD calculation
         if ligand_pdb_path:
-             reference_ligand_path = work_dir / "grid" / Path(ligand_pdb_path).name
+             reference_ligand_path = grid_base_dir / "grid" / Path(ligand_pdb_path).name
         else:
-             reference_ligand_path = work_dir / "grid" / f"{pdb_id}_ligand.pdb"
+             reference_ligand_path = grid_base_dir / "grid" / f"{pdb_id}_ligand.pdb"
 
              if ligand_resname:
                 print(f"-> Attempting to assign bond orders for '{ligand_resname}' using Ligand Expo template...")
@@ -338,7 +357,7 @@ def main():
                          if pdb_mol and template_mol:
                             corrected_mol = assign_bond_orders_from_template(pdb_mol, template_mol)
                             if corrected_mol:
-                                corrected_path = work_dir / "grid" / f"{pdb_id}_ligand_corrected.sdf"
+                                corrected_path = grid_base_dir / "grid" / f"{pdb_id}_ligand_corrected.sdf"
                                 w = Chem.SDWriter(str(corrected_path))
                                 w.write(corrected_mol)
                                 w.close()
@@ -354,16 +373,16 @@ def main():
 
     # Recovery of paths if skipping stages
     if args.stage not in ["all", "grid"]:
-        possible_flds = list((work_dir / "grid").glob("*.maps.fld"))
+        possible_flds = list((grid_base_dir / "grid").glob("*.maps.fld"))
         if possible_flds:
             fld_path = possible_flds[0]
             print(f"-> Found existing grid map: {fld_path}")
         
-        corrected = work_dir / "grid" / f"{pdb_id}_ligand_corrected.sdf"
+        corrected = grid_base_dir / "grid" / f"{pdb_id}_ligand_corrected.sdf"
         if corrected.exists():
              reference_ligand_path = corrected
         else:
-             reference_ligand_path = work_dir / "grid" / f"{pdb_id}_ligand.pdb"
+             reference_ligand_path = grid_base_dir / "grid" / f"{pdb_id}_ligand.pdb"
 
         if reference_ligand_path and reference_ligand_path.exists():
              print(f"-> Found reference ligand: {reference_ligand_path}")
@@ -466,12 +485,12 @@ def main():
             )
 
             # Save results
-            detailed_path = work_dir / f"{data_prefix}_vs_{pdb_id}_results_full.csv"
+            detailed_path = work_dir / f"{data_prefix}_results_full.csv"
             df.write_csv(detailed_path)
             print(f"\n-> Full docking results saved to: {detailed_path}")
 
             # 1. Save RMSD-constrained poses (with fallback to best any if none valid)
-            poses_valid_path = work_dir / f"{data_prefix}_vs_{pdb_id}_poses_rmsd_constrained.sdf"
+            poses_valid_path = work_dir / f"{data_prefix}_poses_rmsd_constrained.sdf"
             oracle.save_best_poses_sdf(
                 output_path=poses_valid_path, 
                 df_metadata=df, 
@@ -481,7 +500,7 @@ def main():
             )
 
             # 2. Save Absolute Best poses (regardless of RMSD)
-            poses_any_path = work_dir / f"{data_prefix}_vs_{pdb_id}_poses_best_any.sdf"
+            poses_any_path = work_dir / f"{data_prefix}_poses_best_any.sdf"
             oracle.save_best_poses_sdf(
                 output_path=poses_any_path, 
                 df_metadata=df, 
@@ -509,7 +528,7 @@ def main():
         print(f"\n[STAGE 4] Analysis & Plotting")
         print(f"----------------------------")
 
-        detailed_path = work_dir / f"{data_prefix}_vs_{pdb_id}_results_full.csv"
+        detailed_path = work_dir / f"{data_prefix}_results_full.csv"
         if args.stage == "analysis":
             if not detailed_path.exists():
                 print(f"ERROR: Detailed results {detailed_path} not found. Run 'docking' stage first.")
@@ -531,7 +550,7 @@ def main():
             sys.exit(1)
 
         # 1. Plot Unconstrained (Best Any)
-        plot_any_path = work_dir / f"{data_prefix}_vs_{pdb_id}_analysis_best_any.png"
+        plot_any_path = work_dir / f"{data_prefix}_analysis_best_any.png"
         best_any_metrics = None
         if plot_act_col in df.columns:
             print(f"-> Generating Unconstrained Activity vs Score plot...")
@@ -547,7 +566,7 @@ def main():
             )
         
         # 2. Plot RMSD-constrained (with fallback)
-        plot_valid_path = work_dir / f"{data_prefix}_vs_{pdb_id}_analysis_rmsd_constrained.png"
+        plot_valid_path = work_dir / f"{data_prefix}_analysis_rmsd_constrained.png"
         rmsd_constrained_metrics = None
         if plot_act_col in df.columns:
             print(f"-> Generating RMSD-Constrained Activity vs Score plot...")

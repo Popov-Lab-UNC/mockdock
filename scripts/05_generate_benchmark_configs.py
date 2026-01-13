@@ -157,8 +157,8 @@ def main():
 
     print(f"\nGenerated {generated} YAML configs in {output_dir}/")
 
-    # Also save a summary table
-    summary_path = output_dir / "benchmark_summary.csv"
+    # Also save a config index table (this is NOT a benchmark run summary)
+    summary_path = output_dir / "config_index.csv"
     summary_cols = ['chembl_target_id', 'target_name', 'pdb_id', 'resolution', 'ligand_resname',
                     'document_chembl_id', 'document_type', 'n_compounds_in_doc', 
                     'best_similarity', 'crystal_in_document']
@@ -167,7 +167,7 @@ def main():
     if 'activity_units' in df.columns:
         summary_cols.append('activity_units')
     df[summary_cols].to_csv(summary_path, index=False)
-    print(f"Summary saved to {summary_path}")
+    print(f"Config index saved to {summary_path}")
 
 
 if __name__ == "__main__":

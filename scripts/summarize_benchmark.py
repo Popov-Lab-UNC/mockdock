@@ -25,40 +25,51 @@ def main():
 
     # Load per-workflow correlation metrics from metrics.json (if present)
     # We store best-any and RMSD-constrained metrics as columns in the same table.
-    metrics_by_workflow = {}
-    for wf_dir in run_dir.iterdir():
-        if not wf_dir.is_dir():
-            continue
-        if wf_dir.name == "debug":
-            continue
-        mj = wf_dir / "metrics.json"
-        if not mj.exists():
+    #
+    # New layout (recommended):
+    #   run_dir/<target_id>_<pdb_id>/<doc_id>/metrics.json
+    # Legacy layout:
+    #   run_dir/<target_id>_<pdb_id>/metrics.json
+    #
+    # Index by a stable key derived from the payload: <target_id>_<pdb_id>_<doc_id>
+    metrics_by_key = {}
+    metric_paths = []
+    metric_paths.extend(list(run_dir.glob("*/metrics.json")))
+    metric_paths.extend(list(run_dir.glob("*/*/metrics.json")))
+
+    for mj in metric_paths:
+        # Skip debug folder (and anything under it)
+        if "debug" in mj.parts:
             continue
         try:
             payload = json.loads(mj.read_text())
-            metrics_by_workflow[wf_dir.name] = payload.get("metrics") or {}
+            tid = payload.get("target_id")
+            pid = payload.get("pdb_id")
+            did = payload.get("doc_id")
+            if tid and pid and did:
+                metrics_by_key[f"{tid}_{pid}_{did}"] = payload.get("metrics") or {}
         except Exception:
             continue
 
-    def _get_metric(workflow_dir: str, metric_type: str, key: str):
-        m = metrics_by_workflow.get(workflow_dir) or {}
+    def _get_metric(workflow_key: str, metric_type: str, key: str):
+        m = metrics_by_key.get(workflow_key) or {}
         d = m.get(metric_type) or {}
         return d.get(key)
 
-    # workflow_dir is derived from target_id + pdb_id in run_workflow.py
-    df["workflow_dir"] = df.apply(lambda r: f"{r.get('target_id')}_{r.get('pdb_id')}", axis=1)
+    # workflow_key is derived from target_id + pdb_id + doc_id in run_workflow.py
+    df["workflow_key"] = df.apply(lambda r: f"{r.get('target_id')}_{r.get('pdb_id')}_{r.get('doc_id')}", axis=1)
 
     # Best-any metrics
-    df["best_any_n_points"] = df["workflow_dir"].apply(lambda w: _get_metric(w, "best_any", "n_points"))
-    df["best_any_pearson"] = df["workflow_dir"].apply(lambda w: _get_metric(w, "best_any", "pearson"))
-    df["best_any_spearman"] = df["workflow_dir"].apply(lambda w: _get_metric(w, "best_any", "spearman"))
-    df["best_any_r2"] = df["workflow_dir"].apply(lambda w: _get_metric(w, "best_any", "r2"))
+    df["best_any_n_points"] = df["workflow_key"].apply(lambda w: _get_metric(w, "best_any", "n_points"))
+    df["best_any_pearson"] = df["workflow_key"].apply(lambda w: _get_metric(w, "best_any", "pearson"))
+    df["best_any_spearman"] = df["workflow_key"].apply(lambda w: _get_metric(w, "best_any", "spearman"))
+    df["best_any_r2"] = df["workflow_key"].apply(lambda w: _get_metric(w, "best_any", "r2"))
 
     # RMSD-constrained metrics
-    df["rmsd_n_points"] = df["workflow_dir"].apply(lambda w: _get_metric(w, "rmsd_constrained", "n_points"))
-    df["rmsd_pearson"] = df["workflow_dir"].apply(lambda w: _get_metric(w, "rmsd_constrained", "pearson"))
-    df["rmsd_spearman"] = df["workflow_dir"].apply(lambda w: _get_metric(w, "rmsd_constrained", "spearman"))
-    df["rmsd_r2"] = df["workflow_dir"].apply(lambda w: _get_metric(w, "rmsd_constrained", "r2"))
+    df["rmsd_n_points"] = df["workflow_key"].apply(lambda w: _get_metric(w, "rmsd_constrained", "n_points"))
+    df["rmsd_pearson"] = df["workflow_key"].apply(lambda w: _get_metric(w, "rmsd_constrained", "pearson"))
+    df["rmsd_spearman"] = df["workflow_key"].apply(lambda w: _get_metric(w, "rmsd_constrained", "spearman"))
+    df["rmsd_r2"] = df["workflow_key"].apply(lambda w: _get_metric(w, "rmsd_constrained", "r2"))
 
     print("\n" + "="*40)
     print("=== Benchmark Run Summary ===")
