@@ -8,6 +8,7 @@ import sys
 import time
 import traceback
 import json
+import asyncio
 from dataclasses import dataclass, asdict
 from enum import Enum
 from docking_benchmark import (
@@ -348,7 +349,8 @@ def main():
                 print(f"-> Attempting to assign bond orders for '{ligand_resname}' using Ligand Expo template...")
                 template_sdf_path = None
                 try:
-                     template_sdf_path = fetch_ligand_expo_sdf(ligand_resname, work_dir)
+                     # Use asyncio.run for the async function
+                     template_sdf_path = asyncio.run(fetch_ligand_expo_sdf(ligand_resname, work_dir))
                      if template_sdf_path:
                          pdb_mol = Chem.MolFromPDBFile(str(reference_ligand_path), removeHs=False)
                          suppl = Chem.SDMolSupplier(str(template_sdf_path), removeHs=False)

@@ -4,7 +4,8 @@ import polars as pl
 import numpy as np
 from scipy.stats import pearsonr, spearmanr
 from typing import Optional
-import requests
+import aiohttp
+import asyncio
 from pathlib import Path
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -199,25 +200,46 @@ def plot_activity_distribution(
     
     plt.close()
 
-def fetch_ligand_expo_sdf(resname: str, output_dir: Path) -> Optional[Path]:
+async def fetch_ligand_expo_sdf(
+    resname: str,
+    output_dir: Path,
+    session: Optional[aiohttp.ClientSession] = None
+) -> Optional[Path]:
     """
     Fetch the ideal SDF for a ligand from RCSB Ligand Expo.
+
+    Args:
+        resname: The 3-letter ligand residue name (e.g., 'ATP').
+        output_dir: Directory where the SDF file should be saved.
+        session: Optional aiohttp ClientSession to reuse connections.
     """
     # Sanitize resname
     resname = resname.upper()
     url = f"https://files.rcsb.org/ligands/view/{resname}_ideal.sdf"
+
+    should_close_session = False
+    if session is None:
+        session = aiohttp.ClientSession()
+        should_close_session = True
+
     try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            out_path = output_dir / f"{resname}_ideal.sdf"
-            out_path.write_text(response.text)
-            return out_path
-        else:
-            print(f"Failed to fetch SDF for {resname} from Ligand Expo: {response.status_code}")
-            return None
+        async with session.get(url) as response:
+            if response.status == 200:
+                out_path = output_dir / f"{resname}_ideal.sdf"
+                text = await response.text()
+                # Use synchronous write for now as file is small;
+                # running in executor or using aiofiles is an option for strict async
+                out_path.write_text(text)
+                return out_path
+            else:
+                print(f"Failed to fetch SDF for {resname} from Ligand Expo: {response.status}")
+                return None
     except Exception as e:
         print(f"Error fetching SDF for {resname}: {e}")
         return None
+    finally:
+        if should_close_session:
+            await session.close()
 
 def assign_bond_orders_from_template(pdb_mol: Chem.Mol, template_mol: Chem.Mol) -> Optional[Chem.Mol]:
     """
