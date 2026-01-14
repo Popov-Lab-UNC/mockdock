@@ -17,7 +17,7 @@ mkdir -p data logs
 # First merge all chunks
 echo "Merging PDB map chunks..."
 python scripts/merge_results.py \
-    --pattern "data/chembl_pdb_map_*.csv" \
+    --pattern "data/intermediate/chembl_pdb_map/chunk_*.csv" \
     --output data/chembl_pdb_map.csv \
     --dedup-cols pdb_id ligand_resname
 

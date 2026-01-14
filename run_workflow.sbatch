@@ -29,6 +29,8 @@ cd /work/users/s/h/shuhang/benchmark
 #   export SKIP_STATUSES="SUCCESS,FAILED_REF_MATCH,FAILED_PDB_404,FAILED_LIGAND_MISSING"
 #SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS,FAILED_REF_MATCH,FAILED_LIGAND_MISSING}"
 SKIP_STATUSES="${SKIP_STATUSES:-}"
+# Make sure the Python skip-scanner can see it.
+export SKIP_STATUSES
 
 # Build a lookup table of (target_id|pdb_id|doc_id) keys to skip
 declare -A SKIP_KEYS

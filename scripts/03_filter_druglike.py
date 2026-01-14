@@ -11,6 +11,7 @@ import pandas as pd
 import argparse
 from pathlib import Path
 from tqdm import tqdm
+import sys
 
 from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
@@ -72,6 +73,26 @@ def main():
         df.to_csv(merged_path, index=False)
         print(f"Merged {len(df)} rows to {merged_path}")
     else:
+        # If the merged file doesn't exist (common when step2 ran as chunks),
+        # auto-merge from the standard intermediate chunk directory.
+        input_path = Path(args.input)
+        if not input_path.exists():
+            intermediate_dir = input_path.parent / "intermediate" / input_path.stem
+            chunk_files = sorted(intermediate_dir.glob("chunk_*.csv"))
+            if chunk_files:
+                print(f"Input {args.input} not found; merging {len(chunk_files)} chunk files from {intermediate_dir}...")
+                dfs = [pd.read_csv(f) for f in chunk_files]
+                df = pd.concat(dfs, ignore_index=True)
+                df = df.drop_duplicates(subset=['pdb_id', 'ligand_resname'])
+                input_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_csv(input_path, index=False)
+                print(f"Merged {len(df)} rows to {input_path}")
+            else:
+                print(f"ERROR: Input file not found: {args.input}")
+                print(f"Also found 0 chunk files under: {intermediate_dir}")
+                print("If you ran step2 as a SLURM array, make sure it produced chunk_*.csv files there.")
+                sys.exit(1)
+
         df = pd.read_csv(args.input)
         print(f"Loaded {len(df)} rows from {args.input}")
 

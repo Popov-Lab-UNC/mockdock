@@ -18,10 +18,20 @@ source .venv/bin/activate
 
 mkdir -p data logs
 
-# Check if input file exists and has data
+# Step 4 runs as chunks and writes to data/intermediate/chembl_docking_benchmark/chunk_*.csv.
+# Ensure the merged input exists for step 4b.
+if [ ! -f data/chembl_docking_benchmark.csv ] || [ ! -s data/chembl_docking_benchmark.csv ]; then
+    echo "Merged benchmark file missing; merging step 4 chunks..."
+    python scripts/merge_results.py \
+        --pattern "data/intermediate/chembl_docking_benchmark/chunk_*.csv" \
+        --output data/chembl_docking_benchmark.csv \
+        --dedup-cols chembl_target_id pdb_id document_chembl_id
+fi
+
+# Check again after merge attempt
 if [ ! -f data/chembl_docking_benchmark.csv ] || [ ! -s data/chembl_docking_benchmark.csv ]; then
     echo "ERROR: data/chembl_docking_benchmark.csv does not exist or is empty!"
-    echo "Please run step 4 first and merge the results."
+    echo "Step 4 may not have produced any chunk outputs under data/intermediate/chembl_docking_benchmark/."
     exit 1
 fi
 

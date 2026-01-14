@@ -76,7 +76,6 @@ def main():
     target_id = config.get("target_id")
     doc_id = config.get("doc_id")
     pdb_id = config.get("pdb_id")
-    chain = config.get("chain", "A")
     ligand_resname = config.get("ligand_resname")
     activity_units = config.get("activity_units", "nM")
     activity_col = config.get("activity_column", "standard_value")
@@ -291,11 +290,10 @@ def main():
         print(f"-------------------------------------")
         preparer = ReceptorPreparer()
 
-        print(f"-> Preparing receptor from PDB: {pdb_id} (Chain: {chain})")
+        print(f"-> Preparing receptor from PDB: {pdb_id}")
         try:
             fld_path = preparer.prepare_receptor_and_grid(
                 pdb_id,
-                chain=chain,
                 output_dir=grid_base_dir,
                 allow_bad_res=True,
                 ligand_resname=ligand_resname,

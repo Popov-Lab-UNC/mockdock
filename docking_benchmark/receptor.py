@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Union, Optional, Tuple, List
+from typing import Union, Optional, Tuple
 import numpy as np
 
 class PDBDownloadError(Exception):
@@ -25,90 +25,214 @@ try:
 except ImportError:
     pass
 
-def extract_protein_and_ligand(
-    pdb_id: str, 
-    chain: str = 'A', 
-    output_dir: Union[str, Path] = ".",
-    ligand_resname: Optional[str] = None
-) -> Tuple[Path, Path]:
+def _download_mmcif(pdb_id: str, output_dir: Path) -> Path:
     """
-    Fetch a PDB structure (using mmCIF format) and save cleaned protein (specific chain)
-    and the specified ligand to PDB files (required for AutoGrid/AutoDock).
+    Download an mmCIF for a PDB id into output_dir and return the local path.
+    Prefer ProDy's fetchPDB; fall back to direct RCSB download.
     """
-    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     structure_path = None
-    # Use mmCIF format as requested
     try:
+        # ProDy returns the downloaded file path or None
         structure_path = fetchPDB(pdb_id, folder=str(output_dir), compressed=False, format='cif')
     except Exception as e:
         print(f"   ProDy fetchPDB (cif) failed: {e}")
-    
-    # fetchPDB can return None instead of raising exception, so check explicitly
+
     if structure_path is None:
-        print(f"   Falling back to direct RCSB download (mmCIF)...")
+        print("   Falling back to direct RCSB download (mmCIF)...")
         url = f"https://files.rcsb.org/download/{pdb_id.upper()}.cif"
         try:
             response = requests.get(url)
             response.raise_for_status()
             structure_path = output_dir / f"{pdb_id.lower()}.cif"
-            with open(structure_path, "w") as f:
-                f.write(response.text)
+            structure_path.write_text(response.text)
         except Exception as e:
             raise PDBDownloadError(f"Failed to download PDB structure {pdb_id}: {e}")
-    
-    # Parse mmCIF
+
+    return Path(structure_path)
+
+
+def _parse_mmcif(structure_path: Path):
+    """
+    Parse mmCIF with ProDy and keep all altlocs.
+    """
     try:
-        structure = parseMMCIF(str(structure_path), altloc='first')
+        return parseMMCIF(str(structure_path), altloc="all")
     except Exception as e:
-        # Fallback to PDB if mmCIF fails (though we downloaded cif?)
-        # Or maybe the user provided a PDB file manually and the function logic needs to handle that?
-        # But here we just downloaded .cif.
-        raise ValueError(f"Failed to parse mmCIF file {structure_path}: {e}")
-    
-    # Auto-detect the correct chain based on ligand location if ligand_resname is provided
-    detected_chain = chain
-    ligand_res = None
-    
+        # Provide a higher-signal error message for common ProDy failures.
+        raise ValueError(
+            f"Failed to parse mmCIF with ProDy: {structure_path} ({type(e).__name__}: {e}). "
+            "If this is the ProDy+NumPy issue, prefer using a compatible NumPy/ProDy stack "
+            "or switch to PDB download/parse."
+        )
+
+
+def _choose_altloc_token(sel) -> Optional[str]:
+    """
+    Decide which altloc to use for a selection.
+
+    Returns:
+    - '_' to represent blank altloc in ProDy selections
+    - 'A'/'B'/... for letter altlocs
+    - None if selection has no altloc info or decision fails
+    """
+    try:
+        altlocs = [str(a) for a in sel.getAltlocs()]
+        if not altlocs:
+            return None
+        # Prefer blank altloc if present
+        if " " in altlocs:
+            return "_"
+        from collections import Counter
+        return Counter(altlocs).most_common(1)[0][0]
+    except Exception:
+        return None
+
+
+def _pick_ligand_instance(structure, ligand_resname: str) -> Tuple[str, str, int, Optional[str]]:
+    """
+    Find the first instance of a ligand resname and return (chain_id, resname, resnum, altloc_token).
+    """
+    all_ligands = structure.select(f"resname {ligand_resname}")
+    if all_ligands is None:
+        raise LigandNotFoundError(f"Ligand with resname {ligand_resname} not found in structure")
+
+    altloc_token = _choose_altloc_token(all_ligands)
+    ligands_for_res = all_ligands.select(f"altloc {altloc_token}") if altloc_token else all_ligands
+    ligand_res = ligands_for_res.getHierView().iterResidues().__next__()
+    return ligand_res.getChid(), ligand_res.getResname(), ligand_res.getResnum(), altloc_token
+
+
+def _pick_default_ligand(structure) -> Tuple[str, str, int, Optional[str]]:
+    """
+    Fallback ligand choice when ligand_resname isn't provided.
+    Picks the first non-protein, non-water residue.
+    """
+    ligands = structure.select("not protein and not water")
+    if ligands is None:
+        raise ValueError("No ligands found (not protein and not water)")
+
+    altloc_token = _choose_altloc_token(ligands)
+    ligands_for_res = ligands.select(f"altloc {altloc_token}") if altloc_token else ligands
+    res = ligands_for_res.getHierView().iterResidues().__next__()
+    return res.getChid(), res.getResname(), res.getResnum(), altloc_token
+
+
+def _select_protein(structure, chain_id: str):
+    """
+    Select protein atoms for a chain. Prefer blank altloc (to avoid duplicates), but fall back
+    to any altloc if blank selection is empty.
+    """
+    sel = structure.select(f"protein and chain {chain_id} and altloc _")
+    if sel is None:
+        sel = structure.select(f"protein and chain {chain_id}")
+    if sel is None:
+        raise ValueError(f"No protein atoms found in chain {chain_id}")
+    return sel
+
+
+def _select_ligand(structure, chain_id: str, resname: str, resnum: int, altloc_token: Optional[str]):
+    """
+    Select ligand atoms for a specific residue instance.
+    """
+    if altloc_token:
+        sel = structure.select(f"chain {chain_id} and resname {resname} and resnum {resnum} and altloc {altloc_token}")
+        if sel is not None:
+            return sel
+    sel = structure.select(f"chain {chain_id} and resname {resname} and resnum {resnum}")
+    if sel is None:
+        raise ValueError(f"Failed to select ligand {resname} {chain_id} {resnum}")
+    return sel
+
+def _pick_receptor_chain_from_ligand(structure, ligand_sel) -> str:
+    """
+    Decide which *protein* chain to dock against using geometric proximity.
+
+    mmCIF/PDB chain naming is inconsistent. We identify the protein chain
+    whose atoms are closest (minimum distance) to the ligand atoms.
+    """
+    # Protein atoms (prefer blank altloc to avoid duplicates)
+    prot_all = structure.select("protein and altloc _")
+    if prot_all is None:
+        prot_all = structure.select("protein")
+    if prot_all is None:
+        raise ValueError("No protein atoms found in structure")
+
+    protein_chains = sorted(set(prot_all.getChids()))
+    if not protein_chains:
+        raise ValueError("No protein chains found in structure")
+
+    # If there is only one protein chain, use it
+    if len(protein_chains) == 1:
+        return protein_chains[0]
+
+    # Multiple chains: find the one closest to the ligand
+    lig_coords = ligand_sel.getCoords()
+    if lig_coords is None or len(lig_coords) == 0:
+        # Should not happen if ligand_sel is valid, but fallback to first
+        return protein_chains[0]
+
+    best_chain = protein_chains[0]
+    best_min_d2 = float("inf")
+
+    for ch in protein_chains:
+        psel = structure.select(f"protein and chain {ch} and altloc _")
+        if psel is None:
+            psel = structure.select(f"protein and chain {ch}")
+        if psel is None:
+            continue
+        pcoords = psel.getCoords()
+        if pcoords is None or len(pcoords) == 0:
+            continue
+
+        # Minimum squared distance between any protein atom and any ligand atom
+        d2 = ((pcoords[:, None, :] - lig_coords[None, :, :]) ** 2).sum(axis=2)
+        min_d2 = float(d2.min())
+        if min_d2 < best_min_d2:
+            best_min_d2 = min_d2
+            best_chain = ch
+
+    return best_chain
+
+def extract_protein_and_ligand(
+    pdb_id: str, 
+    output_dir: Union[str, Path] = ".",
+    ligand_resname: Optional[str] = None
+) -> Tuple[Path, Path]:
+    """
+    mmCIF-first receptor/ligand extraction:
+    - Download mmCIF (ProDy fetchPDB if possible, else direct RCSB)
+    - Parse with ProDy
+    - Detect ligand instance + correct chain
+    - Write `*_protein.pdb` and `*_ligand.pdb` via ProDy selections (required for AutoGrid/AutoDock)
+    """
+    outdir = Path(output_dir)
+    structure_path = _download_mmcif(pdb_id, outdir)
+    structure = _parse_mmcif(structure_path)
+
+    protein_pdb = outdir / f"{pdb_id}_protein.pdb"
+    ligand_pdb = outdir / f"{pdb_id}_ligand.pdb"
+
     if ligand_resname:
-        # First, find which chain(s) contain this ligand
-        all_ligands = structure.select(f"resname {ligand_resname}")
-        if all_ligands is None:
-            raise LigandNotFoundError(f"Ligand with resname {ligand_resname} not found in PDB {pdb_id}")
-        
-        # Get the FIRST ligand instance and store it
-        ligand_res = all_ligands.getHierView().iterResidues().__next__()
-        detected_chain = ligand_res.getChid()
-        
-        if detected_chain != chain:
-            print(f"   Note: Ligand '{ligand_resname}' found in chain {detected_chain} (not {chain}). Using chain {detected_chain}.")
-    
-    # Select protein atoms from the detected chain
-    protein_sel = structure.select(f'protein and chain {detected_chain}')
-    if protein_sel is None:
-        raise ValueError(f"No protein atoms found in chain {detected_chain} for PDB {pdb_id}")
-    
-    protein_pdb = output_dir / f"{pdb_id}_protein.pdb"
-    writePDB(str(protein_pdb), protein_sel)
-    
-    # Select ligand
-    if ligand_resname:
-        # Use the SAME first instance we found above
-        ligand_sel = structure.select(f"chain {ligand_res.getChid()} and resname {ligand_res.getResname()} and resnum {ligand_res.getResnum()}")
+        lig_chain, lig_resname, lig_resnum, altloc_token = _pick_ligand_instance(structure, ligand_resname)
     else:
-        # Fallback to first non-protein, non-water residue
-        ligands = structure.select('not protein and not water')
-        if ligands is None:
-            raise ValueError(f"No ligands found in PDB {pdb_id}")
-        
-        # Get the first residue in the ligand selection
-        res = ligands.getHierView().iterResidues().__next__()
-        ligand_sel = structure.select(f"chain {res.getChid()} and resname {res.getResname()} and resnum {res.getResnum()}")
+        lig_chain, lig_resname, lig_resnum, altloc_token = _pick_default_ligand(structure)
+
+    ligand_sel = _select_ligand(structure, lig_chain, lig_resname, lig_resnum, altloc_token)
+
+    detected_chain = _pick_receptor_chain_from_ligand(structure, ligand_sel)
     
-    ligand_pdb = output_dir / f"{pdb_id}_ligand.pdb"
+    if lig_chain != detected_chain:
+        # Common for mmCIF: ligand chain differs from polymer chain
+        print(f"   Note: ligand '{lig_resname}' is in chain '{lig_chain}' (mmCIF asym-id); receptor protein chain is '{detected_chain}'.")
+    else:
+        print(f"   Note: using receptor protein chain '{detected_chain}'.")
+
+    protein_sel = _select_protein(structure, detected_chain)
+    writePDB(str(protein_pdb), protein_sel)
     writePDB(str(ligand_pdb), ligand_sel)
-    
+
     return protein_pdb, ligand_pdb
 
 class ReceptorPreparer:
@@ -117,24 +241,23 @@ class ReceptorPreparer:
 
         # Fallback if shutil.which didn't find it but it's a relative path or in current dir
         if self.autogrid_executable is None:
-             if Path(autogrid_executable).exists():
-                 self.autogrid_executable = str(Path(autogrid_executable).resolve())
-             elif Path.cwd().joinpath(autogrid_executable).exists():
-                 self.autogrid_executable = str(Path.cwd().joinpath(autogrid_executable).resolve())
-             else:
-                 # Last ditch: keep it as is, maybe subprocess finds it?
-                 self.autogrid_executable = autogrid_executable
+            if Path(autogrid_executable).exists():
+                self.autogrid_executable = str(Path(autogrid_executable).resolve())
+            elif Path.cwd().joinpath(autogrid_executable).exists():
+                self.autogrid_executable = str(Path.cwd().joinpath(autogrid_executable).resolve())
+            else:
+                # Last ditch: keep it as is, maybe subprocess finds it?
+                self.autogrid_executable = autogrid_executable
         else:
-             # Ensure absolute path even if found by which, if it looks relative
-             if not Path(self.autogrid_executable).is_absolute():
-                  self.autogrid_executable = str(Path(self.autogrid_executable).resolve())
+            # Ensure absolute path even if found by which, if it looks relative
+            if not Path(self.autogrid_executable).is_absolute():
+                 self.autogrid_executable = str(Path(self.autogrid_executable).resolve())
 
         self.mk_prepare_receptor_executable = shutil.which(mk_prepare_receptor_executable) or mk_prepare_receptor_executable
 
     def prepare_receptor_and_grid(
         self, 
         pdb_id: str, 
-        chain: str = 'A', 
         output_dir: Union[str, Path] = ".", 
         allow_bad_res: bool = False,
         ligand_resname: Optional[str] = None,
@@ -170,7 +293,7 @@ class ReceptorPreparer:
             print(f"Using provided protein ({protein_pdb.name}) and ligand ({ligand_pdb.name})")
 
         else:
-            protein_pdb, ligand_pdb = extract_protein_and_ligand(pdb_id, chain=chain, output_dir=grid_dir, ligand_resname=ligand_resname)
+            protein_pdb, ligand_pdb = extract_protein_and_ligand(pdb_id, output_dir=grid_dir, ligand_resname=ligand_resname)
         
         # 2. Run mk_prepare_receptor.py
         base_name = f"rec_{pdb_id.lower()}"
@@ -219,11 +342,11 @@ class ReceptorPreparer:
         return fld_path
 
     # Keep compatibility with previous API if needed, but redirects to the new one
-    def prepare_receptor(self, pdb_id: str, chain: str = 'A', output_dir: Union[str, Path] = ".", allow_bad_res: bool = False) -> Path:
+    def prepare_receptor(self, pdb_id: str, output_dir: Union[str, Path] = ".", allow_bad_res: bool = False) -> Path:
         # For compatibility, returns the pdbqt path
         grid_dir = Path(output_dir) / "grid"
         if not (grid_dir / f"{pdb_id}_receptor.pdbqt").exists():
-            self.prepare_receptor_and_grid(pdb_id, chain, output_dir, allow_bad_res)
+            self.prepare_receptor_and_grid(pdb_id, output_dir, allow_bad_res)
         return grid_dir / f"{pdb_id}_receptor.pdbqt"
 
     def generate_grid(self, receptor_pdbqt: Union[str, Path], *args, **kwargs) -> Path:

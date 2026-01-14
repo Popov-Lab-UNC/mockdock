@@ -133,7 +133,6 @@ def main():
             'activity_units': activity_units,
             'activity_column': 'standard_value',
             'id_column': 'molecule_chembl_id',
-            'chain': 'A',
             'ligand_resname': row['ligand_resname'],
             'protein_pdb_path': None,
             'ligand_pdb_path': None,

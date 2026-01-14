@@ -277,7 +277,9 @@ def main():
     parser.add_argument("--end", type=int, default=None, help="End index")
     parser.add_argument("--merge", action="store_true", 
                         help="Merge mapping files instead of computing MCS")
-    parser.add_argument("--mapping-pattern", default="data/mcs_mapping_*.csv",
+    parser.add_argument(
+        "--mapping-pattern",
+        default="data/intermediate/mcs_results/chunk_*.csv",
                         help="Glob pattern for mapping files (used with --merge)")
     args = parser.parse_args()
     

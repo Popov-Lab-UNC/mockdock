@@ -11,7 +11,6 @@ activity_column: "ic50"
 id_column: "id"
 
 # STAGE 2: Grid Preparation
-chain: "A"
 ligand_resname: "D16"
 protein_pdb_path: null
 ligand_pdb_path: null
