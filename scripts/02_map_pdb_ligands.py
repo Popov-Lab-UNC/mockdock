@@ -14,6 +14,11 @@ import time
 from tqdm import tqdm
 import argparse
 from pathlib import Path
+import sys
+
+# Add script directory to path to import utils
+sys.path.append(str(Path(__file__).parent))
+from utils import get_chunk_output_path
 
 # Common crystallization artifacts to skip
 SKIP_LIGANDS = {
@@ -188,10 +193,11 @@ def main():
     # Save
     df_out = pd.DataFrame(results)
     
-    # If this is a partial run, append to existing or save with suffix
-    output_path = Path(args.output)
+    # If this is a partial run, save to intermediate folder
     if args.start > 0 or args.end:
-        output_path = output_path.with_stem(f"{output_path.stem}_{args.start}_{args.end}")
+        output_path = get_chunk_output_path(args.output, args.start, args.end)
+    else:
+        output_path = Path(args.output)
     
     df_out.to_csv(output_path, index=False)
     print(f"\nSaved {len(df_out)} rows to {output_path}")
