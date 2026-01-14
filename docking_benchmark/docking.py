@@ -86,6 +86,8 @@ class AutoDockGPUOracle:
         self.rmsd_threshold = rmsd_threshold
         self.ref_mol = None
         self.fragment_mol = None
+        self.ref_match = None
+        self.ref_coords = None
 
         if self.reference_ligand_path and self.fragment_smiles:
             self.reference_ligand_path = Path(self.reference_ligand_path)
@@ -111,12 +113,19 @@ class AutoDockGPUOracle:
                     raise ValueError(f"Invalid fragment SMILES/SMARTS string: {self.fragment_smiles}")
 
             # Verify reference matches Fragment
-            if not self._get_robust_match(self.ref_mol, self.fragment_mol):
+            self.ref_match = self._get_robust_match(self.ref_mol, self.fragment_mol)
+            if not self.ref_match:
                 print(f"WARNING: Reference ligand ({self.reference_ligand_path.name}) does not match fragment SMILES!")
                 print("This is likely due to missing/incorrect bond orders in the PDB file.")
                 print("RMSD filtering will fail for all compounds.")
             else:
                 print("Reference ligand loaded and matches fragment SMILES.")
+                # Cache reference coordinates
+                ref_conf = self.ref_mol.GetConformer()
+                self.ref_coords = []
+                for idx in self.ref_match:
+                    pos = ref_conf.GetAtomPosition(idx)
+                    self.ref_coords.append((pos.x, pos.y, pos.z))
 
 
     def __call__(self, smiles: str) -> float:
@@ -337,33 +346,32 @@ class AutoDockGPUOracle:
         if self.ref_mol is None or self.fragment_mol is None:
             return 0.0 # No constraint, RMSD is 0
 
-        # Find matches using robust matcher
-        ref_match = self._get_robust_match(self.ref_mol, self.fragment_mol)
+        # Use cached reference match if available
+        if not self.ref_match:
+             return 999.9 # Reference didn't match fragment
+
         probe_match = self._get_robust_match(probe_mol, self.fragment_mol)
 
-        if not ref_match or not probe_match:
+        if not probe_match:
             return 999.9 # Constraint not matched in topology
 
         # Get coordinates
-        ref_conf = self.ref_mol.GetConformer()
         probe_conf = probe_mol.GetConformer()
+        probe_coords = []
 
-        # Get positions as numpy arrays
-        ref_all_pos = ref_conf.GetPositions()
-        probe_all_pos = probe_conf.GetPositions()
-
-        # Select specific atoms using numpy indexing
-        # Note: ref_match and probe_match are tuples/lists of indices
-        ref_coords = ref_all_pos[list(ref_match)]
-        probe_coords = probe_all_pos[list(probe_match)]
+        for idx in probe_match:
+            pos = probe_conf.GetAtomPosition(idx)
+            probe_coords.append((pos.x, pos.y, pos.z))
 
         # Calculate RMSD
         # Manual RMSD to avoid alignment (we want absolute position check)
-        diff = ref_coords - probe_coords
-        sq_diff = np.sum(diff**2)
+        sq_diff = 0
+        # Use cached ref_coords
+        for (rx, ry, rz), (px, py, pz) in zip(self.ref_coords, probe_coords):
+            sq_diff += (rx - px)**2 + (ry - py)**2 + (rz - pz)**2
 
-        rmsd = np.sqrt(sq_diff / len(ref_coords))
-        return float(rmsd)
+        rmsd = math.sqrt(sq_diff / len(self.ref_coords))
+        return rmsd
 
     def _process_chunk(self, smiles_list: List[str], chunk_idx: int) -> List[dict]:
         # Create temp dir for this chunk
