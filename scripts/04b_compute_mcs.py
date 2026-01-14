@@ -52,6 +52,43 @@ def fetch_document_compounds(document_chembl_id: str, target_chembl_id: str = No
         print(f"  [!] Error fetching compounds for document {document_chembl_id}: {e}")
         return []
 
+def fetch_document_compounds_batch(document_ids: list):
+    """
+    Fetch all compounds for a list of ChEMBL documents.
+
+    Returns: dict {document_chembl_id: list of unique SMILES}
+    """
+    from chembl_webresource_client.new_client import new_client
+
+    try:
+        activities = new_client.activity.filter(
+            document_chembl_id__in=document_ids
+        ).only('document_chembl_id', 'canonical_smiles')
+
+        doc_smiles = defaultdict(set)
+        for act in activities:
+            doc_id = act.get('document_chembl_id')
+            smiles = act.get('canonical_smiles')
+            if doc_id and smiles:
+                doc_smiles[doc_id].add(smiles)
+
+        return {k: list(v) for k, v in doc_smiles.items()}
+
+    except Exception as e:
+        print(f"  [!] Error fetching compounds batch: {e}")
+        return None
+
+def fetch_batch_with_timeout(doc_ids, timeout=120):
+    """Fetch compounds for a batch of documents with a timeout."""
+    try:
+        # Since run_with_timeout is designed for single argument, we pass the list as one arg
+        return run_with_timeout(fetch_document_compounds_batch, args=(doc_ids,), timeout=timeout)
+    except TimeoutError:
+        print(f"  [!] API Timeout for batch of {len(doc_ids)} documents after {timeout}s.")
+        return None
+    except Exception as e:
+        print(f"  [!] Error in batch fetch wrapper: {e}")
+        return None
 
 def fetch_with_timeout(doc_id, timeout=60):
     """Fetch compounds with a hard timeout to prevent API hangs."""
@@ -330,6 +367,39 @@ def main():
     # Cache for document compounds (to avoid redundant API calls)
     doc_compounds_cache = {}
 
+    # Identify docs that need to be fetched
+    docs_to_fetch = []
+    for doc_id in unique_docs:
+        # Check if already computed in existing results
+        if doc_id in existing_mcs and pd.notna(existing_mcs[doc_id]):
+            continue
+        docs_to_fetch.append(doc_id)
+
+    print(f"Documents to fetch: {len(docs_to_fetch)}")
+
+    # Batch fetch compounds
+    batch_size = 20
+    if docs_to_fetch:
+        print("Pre-fetching compounds in batches...")
+        for i in range(0, len(docs_to_fetch), batch_size):
+            batch = docs_to_fetch[i:i+batch_size]
+            print(f"  Fetching batch {i//batch_size + 1}/{(len(docs_to_fetch)-1)//batch_size + 1} ({len(batch)} docs)...")
+            batch_results = fetch_batch_with_timeout(batch, timeout=120)
+
+            # Update cache
+            if batch_results is not None:
+                doc_compounds_cache.update(batch_results)
+
+                # Explicitly mark docs that returned no results as having empty list
+                # only if the batch fetch itself was successful (not None)
+                for doc_id in batch:
+                    if doc_id not in doc_compounds_cache:
+                        doc_compounds_cache[doc_id] = []
+
+            # If batch_results is None, we don't update cache, effectively marking them for retry/fallback
+
+            time.sleep(args.delay)
+
     # Track results for new document
     mcs_results = []
     
@@ -347,15 +417,18 @@ def main():
             skipped += 1
             continue
         
-        # Fetch compounds for this document
-        if doc_id not in doc_compounds_cache:
-            print(f"-> Fetching compounds for {doc_id}...")
-            compounds = fetch_with_timeout(doc_id, timeout=60)
-            doc_compounds_cache[doc_id] = compounds
-            time.sleep(args.delay)
-        else:
-            compounds = doc_compounds_cache[doc_id]
+        # Compounds should be in cache now
+        compounds = doc_compounds_cache.get(doc_id, [])
         
+        # Fallback to single fetch if not in cache
+        if not compounds and doc_id not in doc_compounds_cache:
+             # Only log if we expect it to be there (i.e. it wasn't in cache before batch fetch)
+             # But here if it's not in cache, it means batch fetch failed or skipped it.
+             print(f"-> Fetching compounds for {doc_id} (fallback)...")
+             compounds = fetch_with_timeout(doc_id, timeout=60)
+             doc_compounds_cache[doc_id] = compounds
+             time.sleep(args.delay)
+
         if not compounds:
             print(f"  [!] No compounds found for document {doc_id}")
             mcs_results.append({
