@@ -8,6 +8,7 @@ from typing import List, Optional, Union, Tuple
 import gzip
 import time
 import math
+import numpy as np
 
 import polars as pl
 from molscrub import Scrub
