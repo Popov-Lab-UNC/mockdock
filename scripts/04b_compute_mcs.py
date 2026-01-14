@@ -133,13 +133,10 @@ def compute_mcs(smiles_list: list, reference_smiles: str = None, max_compounds: 
             continue
     
     if len(mols) < 2:
-        # Need at least 2 molecules for MCS
-        if len(mols) == 1:
-            return Chem.MolToSmiles(mols[0])
         return None
     
     try:
-        # Compute MCS with strict parameters for chemical meaningfulness
+        # Compute MCS with strict parameters
         mcs = rdFMCS.FindMCS(
             mols,
             threshold=1.0,
@@ -150,19 +147,6 @@ def compute_mcs(smiles_list: list, reference_smiles: str = None, max_compounds: 
             ringMatchesRingOnly=True,
             completeRingsOnly=True
         )
-        
-        if mcs.numAtoms == 0:
-            # Try with lower threshold
-            mcs = rdFMCS.FindMCS(
-                mols,
-                threshold=0.5,
-                timeout=timeout,
-                atomCompare=rdFMCS.AtomCompare.CompareElements,
-                bondCompare=rdFMCS.BondCompare.CompareOrder,
-                matchValences=True,
-                ringMatchesRingOnly=True,
-                completeRingsOnly=True
-            )
         
         if mcs.numAtoms == 0:
             return None

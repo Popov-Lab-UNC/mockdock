@@ -45,6 +45,7 @@ class WorkflowResult:
     n_compounds_standardized: int = 0
     n_compounds_matched_2d: int = 0
     n_compounds_docked: int = 0
+    n_conformers_docked: int = 0
     n_valid_poses: int = 0
     runtime_seconds: float = 0.0
 
@@ -460,11 +461,12 @@ def main():
             total = len(results_df)
             valid_poses = len(results_df.filter(pl.col("valid_pose_found") == True))
             fragment_matched = len(results_df.filter(pl.col("fragment_precheck") == True))
-            total_conformers = results_df["n_conformers"].sum()
+            docked_df = results_df.filter(pl.col("skip_reason").is_null())
+            total_conformers = int(docked_df["n_conformers"].sum()) if len(docked_df) else 0
             
             # Compounds actually docked are those that were NOT skipped
             # Actually, results_df has a fragment_precheck column
-            n_docked = len(results_df.filter(pl.col("skip_reason").is_null()))
+            n_docked = len(docked_df)
 
             print("\nDocking Statistics:")
             print(f"  - Total Unique Compounds: {total}")
@@ -514,6 +516,7 @@ def main():
             # Update results for summary
             result.n_compounds_matched_2d = fragment_matched
             result.n_compounds_docked = n_docked
+            result.n_conformers_docked = total_conformers
             result.n_valid_poses = valid_poses
 
         except Exception as e:
@@ -596,6 +599,7 @@ def main():
                 "n_compounds_standardized": result.n_compounds_standardized,
                 "n_compounds_matched_2d": result.n_compounds_matched_2d,
                 "n_compounds_docked": result.n_compounds_docked,
+                "n_conformers_docked": result.n_conformers_docked,
                 "n_valid_poses": result.n_valid_poses,
                 "metrics": {
                     "best_any": best_any_metrics,

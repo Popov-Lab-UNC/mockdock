@@ -18,6 +18,8 @@ dependencies = [
     "pyyaml>=6.0.3",
     "tqdm>=4.67.1",
     "aiohttp>=3.9.0",
+    "asttokens>=3.0.1",
+    "comm>=0.2.3",
 ]
 
 [build-system]
