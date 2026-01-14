@@ -16,6 +16,12 @@ import time
 from collections import defaultdict
 from datetime import datetime
 import multiprocessing
+import sys
+from pathlib import Path
+
+# Add script directory to path to import utils
+sys.path.append(str(Path(__file__).parent))
+from utils import get_chunk_output_path, run_with_timeout
 
 from rdkit import Chem
 from rdkit.Chem import rdFMCS
@@ -49,17 +55,14 @@ def fetch_document_compounds(document_chembl_id: str, target_chembl_id: str = No
 
 def fetch_with_timeout(doc_id, timeout=60):
     """Fetch compounds with a hard timeout to prevent API hangs."""
-    # Use multiprocessing to allow killing the hanging network call
-    with multiprocessing.Pool(processes=1) as pool:
-        result = pool.apply_async(fetch_document_compounds, (doc_id,))
-        try:
-            return result.get(timeout=timeout)
-        except multiprocessing.TimeoutError:
-            print(f"  [!] API Timeout for {doc_id} after {timeout}s. Skipping.")
-            return []
-        except Exception as e:
-            print(f"  [!] Error in fetch wrapper for {doc_id}: {e}")
-            return []
+    try:
+        return run_with_timeout(fetch_document_compounds, args=(doc_id,), timeout=timeout)
+    except TimeoutError:
+        print(f"  [!] API Timeout for {doc_id} after {timeout}s. Skipping.")
+        return []
+    except Exception as e:
+        print(f"  [!] Error in fetch wrapper for {doc_id}: {e}")
+        return []
 
 
 def compute_mcs(smiles_list: list, reference_smiles: str = None, max_compounds: int = 100, timeout: int = 10):
@@ -102,7 +105,7 @@ def compute_mcs(smiles_list: list, reference_smiles: str = None, max_compounds: 
         # Compute MCS with strict parameters for chemical meaningfulness
         mcs = rdFMCS.FindMCS(
             mols,
-            threshold=0.8,
+            threshold=1.0,
             timeout=timeout,
             atomCompare=rdFMCS.AtomCompare.CompareElements,
             bondCompare=rdFMCS.BondCompare.CompareOrder,
@@ -416,7 +419,7 @@ def main():
         # Handle partial runs - write mapping file for merging
         if args.start > 0 or args.end:
             # For parallel runs, write a mapping file
-            mapping_path = Path(args.output).parent / f"mcs_mapping_{args.start}_{args.end}.csv"
+            mapping_path = get_chunk_output_path(args.output, args.start, args.end)
             mapping_df = new_df[['document_chembl_id', 'mcs_smiles']].copy()
             mapping_df.to_csv(mapping_path, index=False)
             print(f"\nMCS mapping saved to {mapping_path}")

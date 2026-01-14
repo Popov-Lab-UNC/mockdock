@@ -13,6 +13,12 @@ import argparse
 from tqdm import tqdm
 import time
 from collections import defaultdict
+import sys
+from pathlib import Path
+
+# Add script directory to path to import utils
+sys.path.append(str(Path(__file__).parent))
+from utils import get_chunk_output_path
 
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
@@ -245,10 +251,10 @@ def main():
         df_out = df_out.sort_values(['resolution', 'best_similarity'], ascending=[True, False])
     
     # Handle partial runs
-    from pathlib import Path
-    output_path = Path(args.output)
     if args.start > 0 or args.end:
-        output_path = output_path.with_stem(f"{output_path.stem}_{args.start}_{args.end}")
+        output_path = get_chunk_output_path(args.output, args.start, args.end)
+    else:
+        output_path = Path(args.output)
 
     df_out.to_csv(output_path, index=False)
 

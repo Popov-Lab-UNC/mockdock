@@ -126,7 +126,7 @@ def main():
 
         config = {
             'pdb_id': pdb_id,
-            'output_dir': f"{target_id}_{pdb_id}_workflow",
+            'output_dir': f"{pdb_id}_workflow",
             'target_id': target_id,
             'doc_id': doc_id,
             'ligand_csv_path': None,

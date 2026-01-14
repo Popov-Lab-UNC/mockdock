@@ -20,7 +20,7 @@ class GridPrepError(Exception):
     pass
 
 try:
-    from prody import fetchPDB, parsePDB, writePDB, writePDBStream, confProDy
+    from prody import fetchPDB, parsePDB, parseMMCIF, writePDB, writePDBStream, confProDy
     confProDy(verbosity='error')
 except ImportError:
     pass
@@ -32,31 +32,40 @@ def extract_protein_and_ligand(
     ligand_resname: Optional[str] = None
 ) -> Tuple[Path, Path]:
     """
-    Fetch a PDB and save cleaned protein (specific chain) and the specified ligand to PDB files.
+    Fetch a PDB structure (using mmCIF format) and save cleaned protein (specific chain)
+    and the specified ligand to PDB files (required for AutoGrid/AutoDock).
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    pdb_path = None
+    structure_path = None
+    # Use mmCIF format as requested
     try:
-        pdb_path = fetchPDB(pdb_id, folder=str(output_dir), compressed=False)
+        structure_path = fetchPDB(pdb_id, folder=str(output_dir), compressed=False, format='cif')
     except Exception as e:
-        print(f"   ProDy fetchPDB failed: {e}")
+        print(f"   ProDy fetchPDB (cif) failed: {e}")
     
     # fetchPDB can return None instead of raising exception, so check explicitly
-    if pdb_path is None:
-        print(f"   Falling back to direct RCSB download...")
-        url = f"https://files.rcsb.org/download/{pdb_id.upper()}.pdb"
+    if structure_path is None:
+        print(f"   Falling back to direct RCSB download (mmCIF)...")
+        url = f"https://files.rcsb.org/download/{pdb_id.upper()}.cif"
         try:
             response = requests.get(url)
             response.raise_for_status()
-            pdb_path = output_dir / f"{pdb_id.lower()}.pdb"
-            with open(pdb_path, "w") as f:
+            structure_path = output_dir / f"{pdb_id.lower()}.cif"
+            with open(structure_path, "w") as f:
                 f.write(response.text)
         except Exception as e:
-            raise PDBDownloadError(f"Failed to download PDB {pdb_id}: {e}")
+            raise PDBDownloadError(f"Failed to download PDB structure {pdb_id}: {e}")
     
-    structure = parsePDB(str(pdb_path), altloc='first')
+    # Parse mmCIF
+    try:
+        structure = parseMMCIF(str(structure_path), altloc='first')
+    except Exception as e:
+        # Fallback to PDB if mmCIF fails (though we downloaded cif?)
+        # Or maybe the user provided a PDB file manually and the function logic needs to handle that?
+        # But here we just downloaded .cif.
+        raise ValueError(f"Failed to parse mmCIF file {structure_path}: {e}")
     
     # Auto-detect the correct chain based on ligand location if ligand_resname is provided
     detected_chain = chain
