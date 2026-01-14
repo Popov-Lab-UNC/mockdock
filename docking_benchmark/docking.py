@@ -8,6 +8,7 @@ from typing import List, Optional, Union, Tuple
 import gzip
 import time
 import math
+import numpy as np
 
 import polars as pl
 from molscrub import Scrub
@@ -347,25 +348,22 @@ class AutoDockGPUOracle:
         ref_conf = self.ref_mol.GetConformer()
         probe_conf = probe_mol.GetConformer()
 
-        ref_coords = []
-        probe_coords = []
+        # Get positions as numpy arrays
+        ref_all_pos = ref_conf.GetPositions()
+        probe_all_pos = probe_conf.GetPositions()
 
-        for idx in ref_match:
-            pos = ref_conf.GetAtomPosition(idx)
-            ref_coords.append((pos.x, pos.y, pos.z))
-
-        for idx in probe_match:
-            pos = probe_conf.GetAtomPosition(idx)
-            probe_coords.append((pos.x, pos.y, pos.z))
+        # Select specific atoms using numpy indexing
+        # Note: ref_match and probe_match are tuples/lists of indices
+        ref_coords = ref_all_pos[list(ref_match)]
+        probe_coords = probe_all_pos[list(probe_match)]
 
         # Calculate RMSD
         # Manual RMSD to avoid alignment (we want absolute position check)
-        sq_diff = 0
-        for (rx, ry, rz), (px, py, pz) in zip(ref_coords, probe_coords):
-            sq_diff += (rx - px)**2 + (ry - py)**2 + (rz - pz)**2
+        diff = ref_coords - probe_coords
+        sq_diff = np.sum(diff**2)
 
-        rmsd = math.sqrt(sq_diff / len(ref_coords))
-        return rmsd
+        rmsd = np.sqrt(sq_diff / len(ref_coords))
+        return float(rmsd)
 
     def _process_chunk(self, smiles_list: List[str], chunk_idx: int) -> List[dict]:
         # Create temp dir for this chunk
