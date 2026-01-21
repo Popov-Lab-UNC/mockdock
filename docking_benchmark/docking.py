@@ -56,7 +56,6 @@ class AutoDockGPUOracle:
         self.ph_low = ph_low
         self.ph_high = ph_high
         self.generate_isomers = generate_isomers
-        
         # Tracking results
         self.results_df = None
         
@@ -282,13 +281,7 @@ class AutoDockGPUOracle:
                     # Basic cleanup and 3D embedding for each state
                     mol_state = Chem.AddHs(mol_state)
                     if AllChem.EmbedMolecule(mol_state, randomSeed=42) != 0:
-                        AllChem.Compute2DCoords(mol_state)
-                    
-                    # 2. Use Meeko to prepare each state
-                    mol_setups = preparator.prepare(mol_state)
-                    
-                    for mol_setup in mol_setups:
-                        # Use PDBQTWriterLegacy for compatibility with ADGPU
+                    if AllChem.EmbedMolecule(mol_state, randomSeed=42) != 0:
                         pdbqt_string, ok, error_msg = PDBQTWriterLegacy.write_string(mol_setup)
                         
                         if ok:

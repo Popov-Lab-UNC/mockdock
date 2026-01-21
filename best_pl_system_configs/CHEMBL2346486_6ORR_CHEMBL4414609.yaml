@@ -1,0 +1,21 @@
+# ChEMBL Target: Nicotinamide N-methyltransferase
+# UniProt: P40261
+# PDB: 6ORR (Resolution: 2.25 Å)
+# Document: CHEMBL4414609 (patent, 35 compounds)
+# Crystal Ligand: N37 (c1cc(cc(c1)C(=O)N)C#C[C@@H](CC[C@@H](C(=O)O)N)C[C@@H]2[C@H](...)
+# Best Match Similarity: 1.000
+# MCS Fragment: OC1COCC1O
+
+pdb_id: 6ORR
+output_dir: 6ORR_workflow
+target_id: CHEMBL2346486
+doc_id: CHEMBL4414609
+ligand_csv_path: null
+activity_units: nM
+activity_column: standard_value
+id_column: molecule_chembl_id
+ligand_resname: N37
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: OC1COCC1O
+rmsd_threshold: 2.0
