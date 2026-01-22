@@ -227,9 +227,9 @@ async def fetch_ligand_expo_sdf(
             if response.status == 200:
                 out_path = output_dir / f"{resname}_ideal.sdf"
                 text = await response.text()
-                # Use synchronous write for now as file is small;
-                # running in executor or using aiofiles is an option for strict async
-                out_path.write_text(text)
+                # Run file I/O in executor to avoid blocking the event loop
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, out_path.write_text, text)
                 return out_path
             else:
                 print(f"Failed to fetch SDF for {resname} from Ligand Expo: {response.status}")
