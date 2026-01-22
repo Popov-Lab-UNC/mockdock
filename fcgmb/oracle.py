@@ -31,7 +31,7 @@ class FCGMBOracle:
             budget: Total number of compounds allowed to be scored.
             adgpu_executable: Path to the AutoDock-GPU executable.
             scratch_dir: Directory to store benchmark data (grids, results, etc.). 
-                         Defaults to 'fcgmb_benchmarks' in the current working directory.
+                         Defaults to '.fcgmb' in the current working directory.
         """
         self.benchmark_name = benchmark_name
         self.max_budget = budget
@@ -59,7 +59,6 @@ class FCGMBOracle:
                         f"Available internal benchmarks: {available}"
                     )
         
-        print(f"[FCGMB] Loading benchmark configuration: {benchmark_name}")
         with open(config_path, "r") as f:
             self.config = yaml.safe_load(f)
             
@@ -71,18 +70,27 @@ class FCGMBOracle:
         self.ligand_resname = self.config.get("ligand_resname")
         self.activity_units = self.config.get("activity_units", "nM")
         
-        # Data storage
+        # Data storage organization
         if scratch_dir:
             self.scratch_dir = Path(scratch_dir).resolve()
         else:
-            self.scratch_dir = Path.cwd() / "fcgmb_benchmarks"
+            self.scratch_dir = Path.cwd() / ".fcgmb"
             
-        self.base_dir = self.scratch_dir / benchmark_name
-        self.grid_dir = self.base_dir / "grid"
-        self.results_dir = self.base_dir / "results"
+        # Specific subdirectories as requested
+        self.grids_base_dir = self.scratch_dir / "grids"
+        # ReceptorPreparer adds "grid" to the output_dir, so we define grid_dir accordingly
+        self.grid_dir = self.grids_base_dir / self.pdb_id / "grid"
+        self.ligand_data_dir = self.scratch_dir / "ligand_data"
+        self.benchmark_run_dir = self.scratch_dir / "benchmarks" / benchmark_name
+        self.results_dir = self.benchmark_run_dir / "results"
         
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure directories exist
+        self.grid_dir.mkdir(parents=True, exist_ok=True)
+        self.ligand_data_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"[FCGMB] Initialized benchmark: {benchmark_name}")
+        print(f"[FCGMB] Scratch directory: {self.scratch_dir}")
         
         self.oracle = None
         self.adgpu_executable = adgpu_executable
@@ -99,9 +107,19 @@ class FCGMBOracle:
         """
         Retrieves the initial set of compounds for the benchmark.
         These are compounds from the document with bioactivity values in the lowest quartile.
+        Caches the data in ligand_data directory.
         """
-        print(f"[FCGMB] Fetching initial compounds from ChEMBL for {self.benchmark_name}...")
-        df = fetch_chembl_data(self.target_id, self.doc_id, units=self.activity_units)
+        cache_file = self.ligand_data_dir / f"{self.benchmark_name}_chembl.csv"
+        
+        if cache_file.exists():
+            print(f"[FCGMB] Loading cached ChEMBL data from {cache_file.name}")
+            df = pl.read_csv(cache_file)
+        else:
+            print(f"[FCGMB] Downloading bioactivity data from ChEMBL for target {self.target_id}...")
+            df = fetch_chembl_data(self.target_id, self.doc_id, units=self.activity_units)
+            if not df.is_empty():
+                df.write_csv(cache_file)
+                print(f"[FCGMB] Saved ChEMBL data to {cache_file}")
         
         if df.is_empty():
             print("[FCGMB] Warning: No compounds found for this benchmark.")
@@ -116,7 +134,7 @@ class FCGMBOracle:
         threshold = min_v + 0.25 * (max_v - min_v)
         
         initial_df = df.filter(pl.col(act_col) <= threshold)
-        print(f"[FCGMB] Found {len(initial_df)} initial compounds (threshold {act_col} <= {threshold:.2f})")
+        print(f"[FCGMB] Prepared {len(initial_df)} initial compounds (threshold {act_col} <= {threshold:.2f})")
         return initial_df
 
     def _ensure_oracle(self):
@@ -127,24 +145,24 @@ class FCGMBOracle:
         # Check if grid exists
         fld_files = list(self.grid_dir.glob("*.maps.fld"))
         if not fld_files:
-            print(f"[FCGMB] Grid not found in {self.grid_dir}. Preparing receptor and grids...")
+            print(f"[FCGMB] Grid not found. Preparing receptor and protein-ligand grids for {self.pdb_id}...")
             preparer = ReceptorPreparer()
             fld_path = preparer.prepare_receptor_and_grid(
                 self.pdb_id,
-                output_dir=self.base_dir,
+                output_dir=self.grids_base_dir / self.pdb_id, 
                 allow_bad_res=True,
                 ligand_resname=self.ligand_resname
             )
         else:
             fld_path = fld_files[0]
-            print(f"[FCGMB] Using existing grid: {fld_path.name}")
+            print(f"[FCGMB] Using existing grids for {self.pdb_id}")
             
         # Reference ligand for RMSD
         ref_path = self.grid_dir / f"{self.pdb_id}_ligand_corrected.sdf"
         if not ref_path.exists():
              ref_path = self.grid_dir / f"{self.pdb_id}_ligand.pdb"
              
-        # Check sub-grid dir just in case (legacy)
+        # Check sub-grid dir just in case (legacy or standard behavior)
         if not ref_path.exists():
             ref_path = self.grid_dir / "grid" / f"{self.pdb_id}_ligand_corrected.sdf"
             if not ref_path.exists():
