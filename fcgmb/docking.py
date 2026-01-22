@@ -13,8 +13,11 @@ import numpy as np
 import polars as pl
 from molscrub import Scrub
 from meeko import MoleculePreparation, PDBQTMolecule, PDBQTWriterLegacy, RDKitMolCreate
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem
+
+# Silence RDKit noise
+RDLogger.DisableLog('rdApp.*')
 
 class AutoDockGPUOracle:
     def __init__(
@@ -208,96 +211,116 @@ class AutoDockGPUOracle:
         """
         smiles, idx, pdbqt_dir = args
         results = []
+        
         try:
+            # 1. Sanitize Input
             mol = Chem.MolFromSmiles(smiles)
             if mol is None:
                 return []
+
+            # 2. Analyze Stereo
+            # We generate a canonical isomeric SMILES of the input to compare against later.
+            # This solves the "Scrub reorders atoms" problem.
+            input_iso_smiles = Chem.MolToSmiles(mol, isomericSmiles=True, canonical=True)
             
-            # Check for explicit stereochemistry
-            has_stereo = False
             centers = Chem.FindMolChiralCenters(mol, includeUnassigned=False)
-            if centers:
-                has_stereo = True
+            has_stereo = bool(centers)
 
-            # Determine if we should use Scrub for isomers or try to preserve input
-            # Logic: If generate_isomers is False AND stereo is explicitly defined, we want to AVOID generating stereoisomers.
-            # Scrub generates states. We can filter them.
-
-            # Initialize Scrubber locally
+            # 3. Generate States (Scrub)
             scrubber = Scrub(ph_low=self.ph_low, ph_high=self.ph_high)
-            
             mol_states = []
 
             try:
-                # If we want to restrict isomers (user flag or explicit stereo), we need to be careful with Scrub
-                use_scrub_generated = True
-
+                # Generate all protomers/tautomers
                 scrub_results = list(scrubber(mol))
 
                 if (not self.generate_isomers) and has_stereo:
-                    # Filter: Keep only those matching original stereo
+                    # FILTERING LOGIC:
+                    # Instead of matching atom IDs (which break on reordering),
+                    # we match the Canonical Isometric SMILES string.
                     filtered_states = []
-                    # Get original tags (atom idx -> tag)
-                    orig_tags = dict(centers)
-
+                    
                     for s_mol in scrub_results:
-                        s_centers = Chem.FindMolChiralCenters(s_mol, includeUnassigned=False)
-                        s_tags = dict(s_centers)
-
-                        match = True
-                        for idx, tag in orig_tags.items():
-                            # Note: Scrub might reorder atoms?
-                            # If atoms are reordered, index matching is invalid.
-                            # Assuming Scrub preserves atom ordering or we rely on InChI/SMILES equality?
-                            # SMILES with chirality should match.
-                            if idx not in s_tags or s_tags[idx] != tag:
-                                match = False
-                                break
-                        if match:
+                        # Generate iso smiles for the state
+                        s_iso = Chem.MolToSmiles(s_mol, isomericSmiles=True, canonical=True)
+                        
+                        # Logic: If the starting molecule had defined stereo, we only keep states
+                        # that preserve that specific stereo configuration.
+                        # Note: Tautomers might change the SMILES string significantly, 
+                        # so this is a strict filter. 
+                        if input_iso_smiles == s_iso:
                             filtered_states.append(s_mol)
+                        
+                        # Fallback check: If SMILES doesn't match due to tautomerism,
+                        # check if the Chiral Tags on the backbone match (harder to do without mapping).
+                        # For now, the SMILES check is the safest "strict" mode.
 
                     if filtered_states:
                         mol_states = filtered_states
                     else:
-                        # Fallback: Just use original mol (with Hs)
+                        # If filter removed everything (e.g. Scrub inverted a center), fallback to input
                         mol_states = [mol]
                 else:
                     mol_states = scrub_results
 
             except Exception as e:
                 print(f"Scrub failed for {smiles}: {e}", flush=True)
-                mol_states = [mol] # Fallback to original mol
-            
-            # Limit states
+                mol_states = [mol]
+
+            # Limit states to prevent explosion
             if len(mol_states) > 16:
-                print(f"Warning: {smiles} produced {len(mol_states)} states. Limiting to 16.", flush=True)
                 mol_states = mol_states[:16]
 
-            preparator = MoleculePreparation()
-            
+            # 4. 3D Embedding and Meeko Prep
             state_counter = 0
+            
+            # Instantiate Meeko once (unless you need different params per mol)
+            preparator = MoleculePreparation()
+
             for mol_state in mol_states:
                 try:
-                    # Basic cleanup and 3D embedding for each state
                     mol_state = Chem.AddHs(mol_state)
-                    if AllChem.EmbedMolecule(mol_state, randomSeed=42) != 0:
-                        pdbqt_string, ok, error_msg = PDBQTWriterLegacy.write_string(mol_setup)
+                    
+                    # IMPROVED EMBEDDING:
+                    # Use ETKDGv3 (or v2) logic which uses experimental torsion data.
+                    # using EmbedMultipleConfs(numConfs=1) is often more robust than EmbedMolecule.
+                    params = AllChem.ETKDGv3()
+                    params.randomSeed = 42
+                    params.useSmallRingTorsions = True
+                    
+                    # Attempt to generate 1 conformer
+                    res = AllChem.EmbedMultipleConfs(mol_state, numConfs=1, params=params)
+                    
+                    if not res:
+                        # Retry with random coords if ETKDG fails
+                        params.useRandomCoords = True
+                        res = AllChem.EmbedMultipleConfs(mol_state, numConfs=1, params=params)
                         
-                        if ok:
-                            results.append((pdbqt_string, f"s{state_counter}"))
-                            state_counter += 1
-                        else:
-                            print(f"Meeko write failed for state {state_counter} of {smiles}: {error_msg}", flush=True)
-                        
-                        if state_counter >= 32:
-                            break
+                    if not res:
+                        print(f"RDKit embed failed for state {state_counter} of {smiles}", flush=True)
+                        continue
+
+                    # MEEKO PREPARATION:
+                    # prepare() analyzes the molecule.
+                    preparator.prepare(mol_state)
+                    
+                    # Get the PDBQT string directly.
+                    # Meeko v0.5+ handles the "setup" and legacy writing internally here.
+                    pdbqt_string = preparator.write_pdbqt_string()
+                    
+                    if pdbqt_string:
+                        results.append((pdbqt_string, f"s{state_counter}"))
+                        state_counter += 1
+                    
                     if state_counter >= 32:
                         break
+
                 except Exception as e:
                     print(f"Error preparing state {state_counter} for {smiles}: {e}", flush=True)
                     continue
                     
             return results
+
         except Exception as e:
             print(f"Error in _prepare_single_ligand for {smiles}: {e}", flush=True)
             return []

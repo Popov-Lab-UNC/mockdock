@@ -12,6 +12,13 @@ from typing import List, Optional, Union, Dict, Any
 import asyncio
 from dataclasses import dataclass, asdict
 from enum import Enum
+from rdkit import RDLogger
+import warnings
+
+# Silence RDKit noise
+RDLogger.DisableLog('rdApp.*')
+# Silence general warnings (like multiprocessing/fork deprecations)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Use relative imports when inside the package
 try:
@@ -73,7 +80,8 @@ def run_docking_workflow(
     smarts: Optional[str] = None,
     no_isomers: bool = False,
     run_dir: Optional[Union[str, Path]] = None,
-    config_file_path: Optional[str] = None
+    config_file_path: Optional[str] = None,
+    quiet: bool = False
 ) -> WorkflowResult:
     """
     Core function to run the docking workflow.
@@ -163,16 +171,17 @@ def run_docking_workflow(
     else:
         data_prefix = "workflow_data"
 
-    print(f"\n" + "="*50)
-    print(f"--- Starting Docking Workflow: {pdb_id} ---")
-    print(f"Output Directory: {work_dir}")
-    print(f"Workflow Prefix: {data_prefix}")
-    print(f"Stage: {stage}")
-    print("="*50 + "\n")
+    if not quiet:
+        print(f"\n" + "="*50)
+        print(f"--- Starting Docking Workflow: {pdb_id} ---")
+        print(f"Output Directory: {work_dir}")
+        print(f"Workflow Prefix: {data_prefix}")
+        print(f"Stage: {stage}")
+        print("="*50 + "\n")
 
     # STAGE 1: Retrieval
     if stage in ["all", "retrieve"]:
-        print(f"[STAGE 1] Data Retrieval")
+        if not quiet: print(f"[STAGE 1] Data Retrieval")
         try:
             if config.get("ligand_csv_path"):
                 df = pl.read_csv(Path(config.get("ligand_csv_path")))
@@ -219,7 +228,7 @@ def run_docking_workflow(
     reference_ligand_path = None
 
     if stage in ["all", "grid"]:
-        print(f"\n[STAGE 2] Receptor & Grid Preparation")
+        if not quiet: print(f"\n[STAGE 2] Receptor & Grid Preparation")
         preparer = ReceptorPreparer()
         try:
             fld_path = preparer.prepare_receptor_and_grid(
@@ -257,7 +266,7 @@ def run_docking_workflow(
 
     # STAGE 3: Docking
     if stage in ["all", "docking"]:
-        print(f"\n[STAGE 3] Docking Execution")
+        if not quiet: print(f"\n[STAGE 3] Docking Execution")
         raw_csv_path = work_dir / f"{data_prefix}_cleaned_data.csv"
         df = pl.read_csv(raw_csv_path)
         
@@ -323,6 +332,7 @@ def main():
     parser.add_argument("--smarts", type=str, help="Override SMARTS string for fragment filtering.")
     parser.add_argument("--no_isomers", action="store_true", help="Disable stereoisomer generation.")
     parser.add_argument("--run-dir", type=str, help="Base directory for the benchmark run.")
+    parser.add_argument("--quiet", action="store_true", help="Minimal output.")
 
     args = parser.parse_args()
     config = load_config(args.config)
@@ -333,7 +343,8 @@ def main():
         smarts=args.smarts,
         no_isomers=args.no_isomers,
         run_dir=args.run_dir,
-        config_file_path=args.config
+        config_file_path=args.config,
+        quiet=args.quiet
     )
 
 if __name__ == "__main__":

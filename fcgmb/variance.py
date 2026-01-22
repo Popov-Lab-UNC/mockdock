@@ -46,8 +46,15 @@ def run_variance_tests(
         print(f"No configs found in {config_dir}")
         return
 
+    print(f"\n" + "="*60)
+    print(f"VARIANCE BENCHMARK: Running {len(configs)} systems, {n_iterations} iterations each")
+    print(f"Base Directory: {run_base_dir}")
+    print("="*60 + "\n")
+
     for config_path in configs:
-        print(f"\n>>> Processing system: {config_path.stem}")
+        config_data = yaml.safe_load(config_path.read_text())
+        pdb_id = config_data.get("pdb_id", config_path.stem)
+        print(f"[{pdb_id}] Initializing maps and data...")
         
         # 1. Run initialization (retrieve + grid) ONCE
         init_run_dir = run_base_dir / "init"
@@ -55,20 +62,23 @@ def run_variance_tests(
             "python", workflow_script,
             "--config", str(config_path),
             "--stage", "retrieve",
-            "--run-dir", str(init_run_dir)
+            "--run-dir", str(init_run_dir),
+            "--quiet"
         ])
         
         subprocess.run([
             "python", workflow_script,
             "--config", str(config_path),
             "--stage", "grid",
-            "--run-dir", str(init_run_dir)
+            "--run-dir", str(init_run_dir),
+            "--quiet"
         ])
 
+        print(f"[{pdb_id}] Running {n_iterations} docking iterations:")
         # 2. Run docking n_iterations times
         for i in range(1, n_iterations + 1):
             iter_run_dir = run_base_dir / f"run_{i}"
-            print(f"  -> Iteration {i}/{n_iterations}...")
+            print(f"  -> Iteration {i}/{n_iterations}...", end=" ", flush=True)
             
             config = yaml.safe_load(config_path.read_text())
             target_id = config.get("target_id")
@@ -103,13 +113,14 @@ def run_variance_tests(
                     import shutil
                     shutil.copy2(src_work / data_file, dst_work / data_file)
 
-            # Run docking
             subprocess.run([
                 "python", workflow_script,
                 "--config", str(config_path),
                 "--stage", "docking",
-                "--run-dir", str(iter_run_dir)
+                "--run-dir", str(iter_run_dir),
+                "--quiet"
             ])
+            print("DONE.")
 
 def analyze_variance_results(
     run_base_dir: Path = Path("variance_runs"),
