@@ -4,6 +4,7 @@ import polars as pl
 from pathlib import Path
 from typing import List, Dict, Optional, Union
 import numpy as np
+from rdkit import Chem
 from .docking import AutoDockGPUOracle
 from .data import fetch_chembl_data
 from .receptor import ReceptorPreparer
@@ -69,6 +70,14 @@ class FCGMBOracle:
         self.rmsd_threshold = self.config.get("rmsd_threshold", 2.0)
         self.ligand_resname = self.config.get("ligand_resname")
         self.activity_units = self.config.get("activity_units", "nM")
+        
+        # Prepare fragment molecule for pre-checks
+        self.fragment_mol = None
+        if self.fragment_smiles:
+            self.fragment_mol = Chem.MolFromSmiles(self.fragment_smiles)
+            if self.fragment_mol is None:
+                # Fallback to SMARTS if SMILES fails (e.g. for general patterns)
+                self.fragment_mol = Chem.MolFromSmarts(self.fragment_smiles)
         
         # Data storage organization
         if scratch_dir:
@@ -181,7 +190,7 @@ class FCGMBOracle:
     def score(self, smiles_list: List[str]) -> Dict[str, float]:
         """
         Dock a list of SMILES and return their scores.
-        Only docks if the budget has not been exceeded.
+        Only docks if the budget has not been exceeded and the molecule matches the constraint.
         """
         if self.finished:
             print("[FCGMB] Oracle budget exhausted. Returning 0.0 for all scores.")
@@ -189,34 +198,68 @@ class FCGMBOracle:
 
         self._ensure_oracle()
         
+        # 1. Pre-evaluation: Substructure match and SMILES validity
+        print(f"[FCGMB] Evaluating {len(smiles_list)} compounds for substructure match...")
+        
+        valid_compounds = []
+        invalid_results = {}
+        
+        for smi in smiles_list:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                invalid_results[smi] = 0.0
+                continue
+                
+            if self.fragment_mol and not mol.HasSubstructMatch(self.fragment_mol):
+                invalid_results[smi] = 0.0
+                continue
+            
+            valid_compounds.append(smi)
+            
+        n_invalid = len(smiles_list) - len(valid_compounds)
+        if n_invalid > 0:
+            print(f"[FCGMB] Warning: {n_invalid} compounds are invalid or do not match the fragment constraint. Returning 0.0 for these (not counted against budget).")
+
+        if not valid_compounds:
+            return invalid_results
+
+        # 2. Budget check and docking for valid compounds
         remaining = self.max_budget - self.budget_used
         if remaining <= 0:
             self.finished = True
-            return {smi: 0.0 for smi in smiles_list}
+            print("[FCGMB] Oracle budget exhausted. Returning 0.0 for remaining compounds.")
+            for smi in valid_compounds:
+                invalid_results[smi] = 0.0
+            return invalid_results
             
         # Only process what fits in budget
-        process_list = smiles_list[:remaining]
-        skipped_list = smiles_list[remaining:]
+        process_list = valid_compounds[:remaining]
+        skipped_list = valid_compounds[remaining:]
         
         if skipped_list:
             print(f"[FCGMB] Warning: {len(skipped_list)} compounds exceeds budget and will not be docked.")
 
-        print(f"[FCGMB] Scoring {len(process_list)} compounds (Budget used: {self.budget_used}/{self.max_budget})...")
+        print(f"[FCGMB] Scoring {len(process_list)} valid compounds (Budget used: {self.budget_used}/{self.max_budget})...")
         print(f"[FCGMB] Preparing Ligands for Docking and running AutoDock-GPU...")
         
-        results = self.oracle.score_batch(process_list)
+        docking_results = self.oracle.score_batch(process_list)
         
+        # Update budget with compounds that were actually sent to the docking engine
         self.budget_used += len(process_list)
+        
+        # 3. Assemble final results
+        final_results = invalid_results
+        final_results.update(docking_results)
         
         # Fill results with 0.0 for those beyond budget
         for smi in skipped_list:
-            results[smi] = 0.0
+            final_results[smi] = 0.0
             
         if self.budget_used >= self.max_budget:
             self.finished = True
             print("[FCGMB] Budget limit reached. Oracle status set to finished.")
             
-        return results
+        return final_results
 
     @property
     def status(self) -> str:
