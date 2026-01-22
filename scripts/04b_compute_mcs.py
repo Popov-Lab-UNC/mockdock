@@ -214,15 +214,15 @@ def merge_mcs_results(mcs_results_csv: str, mapping_pattern: str, output_csv: st
     import glob
     from pathlib import Path
     
+    dfs = []
+
     # Load existing MCS results if they exist
-    existing_results = {}
     if Path(mcs_results_csv).exists():
         try:
             existing_df = pd.read_csv(mcs_results_csv)
             if 'document_chembl_id' in existing_df.columns:
-                for _, row in existing_df.iterrows():
-                    existing_results[row['document_chembl_id']] = row.to_dict()
-            print(f"Loaded {len(existing_results)} existing MCS results")
+                dfs.append(existing_df)
+                print(f"Loaded {len(existing_df)} existing MCS results")
         except Exception as e:
             print(f"  [!] Could not load existing MCS results: {e}")
     
@@ -230,6 +230,8 @@ def merge_mcs_results(mcs_results_csv: str, mapping_pattern: str, output_csv: st
     mapping_files = sorted(glob.glob(mapping_pattern))
     print(f"Found {len(mapping_files)} mapping files to merge")
     
+    current_time = datetime.now().isoformat()
+
     for mapping_file in mapping_files:
         try:
             mapping_df = pd.read_csv(mapping_file)
@@ -237,24 +239,26 @@ def merge_mcs_results(mcs_results_csv: str, mapping_pattern: str, output_csv: st
                 print(f"  [!] Skipping {mapping_file}: missing required columns")
                 continue
             
-            # Add to results
-            for _, row in mapping_df.iterrows():
-                doc_id = row['document_chembl_id']
-                existing_results[doc_id] = {
-                    'document_chembl_id': doc_id,
-                    'mcs_smiles': row['mcs_smiles'],
-                    'n_compounds': None,
-                    'status': 'merged',
-                    'timestamp': datetime.now().isoformat()
-                }
+            # Prepare the DataFrame to match structure
+            mapping_df['n_compounds'] = None
+            mapping_df['status'] = 'merged'
+            mapping_df['timestamp'] = current_time
+
+            # Select only necessary columns
+            cols_to_keep = ['document_chembl_id', 'mcs_smiles', 'n_compounds', 'status', 'timestamp']
+            mapping_df = mapping_df[cols_to_keep]
+
+            dfs.append(mapping_df)
             
             print(f"  Merged {mapping_file}")
         except Exception as e:
             print(f"  [!] Error merging {mapping_file}: {e}")
     
     # Save merged results
-    if existing_results:
-        merged_df = pd.DataFrame(list(existing_results.values()))
+    if dfs:
+        merged_df = pd.concat(dfs, ignore_index=True)
+        # Deduplicate, keeping last
+        merged_df = merged_df.drop_duplicates(subset=['document_chembl_id'], keep='last')
         merged_df = merged_df.sort_values('document_chembl_id')
         merged_df.to_csv(output_csv, index=False)
         print(f"\nMerged results saved to {output_csv}")
