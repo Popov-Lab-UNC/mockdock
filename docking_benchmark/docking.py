@@ -281,7 +281,6 @@ class AutoDockGPUOracle:
                     # Basic cleanup and 3D embedding for each state
                     mol_state = Chem.AddHs(mol_state)
                     if AllChem.EmbedMolecule(mol_state, randomSeed=42) != 0:
-                    if AllChem.EmbedMolecule(mol_state, randomSeed=42) != 0:
                         pdbqt_string, ok, error_msg = PDBQTWriterLegacy.write_string(mol_setup)
                         
                         if ok:

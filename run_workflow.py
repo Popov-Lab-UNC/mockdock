@@ -456,6 +456,20 @@ def main():
             smile_to_score = oracle.score_batch(unique_smiles)
 
             results_df = oracle.results_df
+            if results_df is None:
+                raise RuntimeError("Docking results missing from oracle.")
+
+            # Ensure expected columns exist (older runs may omit them)
+            if "skip_reason" not in results_df.columns:
+                results_df = results_df.with_columns(pl.lit(None).cast(pl.Utf8).alias("skip_reason"))
+            if "dlg_path" not in results_df.columns:
+                results_df = results_df.with_columns(pl.lit(None).cast(pl.Utf8).alias("dlg_path"))
+            if "dlg_path_valid" not in results_df.columns:
+                results_df = results_df.with_columns(pl.lit(None).cast(pl.Utf8).alias("dlg_path_valid"))
+            if "dlg_path_any" not in results_df.columns:
+                results_df = results_df.with_columns(pl.lit(None).cast(pl.Utf8).alias("dlg_path_any"))
+            if "n_conformers" not in results_df.columns:
+                results_df = results_df.with_columns(pl.lit(0).cast(pl.Int64).alias("n_conformers"))
             total = len(results_df)
             valid_poses = len(results_df.filter(pl.col("valid_pose_found") == True))
             fragment_matched = len(results_df.filter(pl.col("fragment_precheck") == True))
@@ -478,7 +492,7 @@ def main():
             
             # Select relevant columns from results. 
             # Added skip_reason
-            df = df.join(results_df_renamed.select(["canonical_smiles", "docking_score", "score_valid", "score_best_any", "dlg_path_valid", "dlg_path_any", "valid_pose_found", "n_conformers", "skip_reason"]),
+            df = df.join(results_df_renamed.select(["canonical_smiles", "docking_score", "score_valid", "score_best_any", "dlg_path", "dlg_path_valid", "dlg_path_any", "valid_pose_found", "n_conformers", "skip_reason"]),
                          on="canonical_smiles", how="left")
 
             # Fill nulls in validity column for plotting consistency
