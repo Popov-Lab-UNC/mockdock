@@ -57,7 +57,7 @@ def main():
         return d.get(key)
 
     # workflow_key is derived from target_id + pdb_id + doc_id in run_workflow.py
-    df["workflow_key"] = df.apply(lambda r: f"{r.get('target_id')}_{r.get('pdb_id')}_{r.get('doc_id')}", axis=1)
+    df["workflow_key"] = df["target_id"].astype(str) + "_" + df["pdb_id"].astype(str) + "_" + df["doc_id"].astype(str)
 
     # Best-any metrics
     df["best_any_n_points"] = df["workflow_key"].apply(lambda w: _get_metric(w, "best_any", "n_points"))
