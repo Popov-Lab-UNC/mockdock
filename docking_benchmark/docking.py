@@ -476,12 +476,10 @@ class AutoDockGPUOracle:
                 valid_pose_found = False
                 
                 # Check 2D match
-                fragment_precheck = False
-                mol = Chem.MolFromSmiles(smi)
-                if mol and self.fragment_mol and mol.HasSubstructMatch(self.fragment_mol):
-                    fragment_precheck = True
-                elif not self.fragment_mol:
-                    fragment_precheck = True # No filter
+                # Redundant check: score_batch already filters by fragment_mol.
+                # If we are here, the SMILES is either valid and matches the fragment,
+                # or fragment_mol is None (no filter).
+                fragment_precheck = True
 
                 if i in idx_to_pdbqts:
                     for rel_path in idx_to_pdbqts[i]:
