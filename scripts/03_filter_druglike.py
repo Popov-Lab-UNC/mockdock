@@ -17,6 +17,9 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
 
 
+HETEROATOM_PATTERN = Chem.MolFromSmarts("[N,O]")
+
+
 def is_druglike(smiles: str) -> bool:
     """
     Check if a molecule is drug-like using basic filters:
@@ -39,8 +42,7 @@ def is_druglike(smiles: str) -> bool:
         if n_rings < 1:
             return False
 
-        atoms = [a.GetSymbol() for a in mol.GetAtoms()]
-        if 'N' not in atoms and 'O' not in atoms:
+        if not mol.HasSubstructMatch(HETEROATOM_PATTERN):
             return False
 
         logp = Descriptors.MolLogP(mol)
