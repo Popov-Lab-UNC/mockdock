@@ -1,6 +1,6 @@
 # FCGMB: Fragment-Constrained Generative Model Benchmark
 
-A benchmark package for generative molecular models, specifically using fragment-constrained docking evaluations as a benchmark.
+A benchmark package for generative molecular models, specifically using fragment-constrained docking with publicly available data and Autodock as a benchmark.
 
 ## Installation
 
@@ -12,6 +12,8 @@ pip install -e .
 
 or using UV:
 ```bash
+git clone https://github.com/Popov-Lab-UNC/fcgmb.git
+cd fcgmb
 uv venv
 uv sync
 ```
