@@ -16,7 +16,13 @@ class FCGMBOracle:
     against specific protein-ligand systems using fragment-constrained docking.
     """
     
-    def __init__(self, benchmark_name: str, budget: int = 5000, adgpu_executable: str = "adgpu"):
+    def __init__(
+        self, 
+        benchmark_name: str, 
+        budget: int = 5000, 
+        adgpu_executable: str = "adgpu",
+        scratch_dir: Optional[Union[str, Path]] = None
+    ):
         """
         Initialize the oracle for a specific benchmark.
         
@@ -24,20 +30,36 @@ class FCGMBOracle:
             benchmark_name: Name of the benchmark (e.g., 'CHEMBL205_1YDA_CHEMBL2331308')
             budget: Total number of compounds allowed to be scored.
             adgpu_executable: Path to the AutoDock-GPU executable.
+            scratch_dir: Directory to store benchmark data (grids, results, etc.). 
+                         Defaults to 'fcgmb_benchmarks' in the current working directory.
         """
         self.benchmark_name = benchmark_name
         self.max_budget = budget
         self.budget_used = 0
         self.finished = False
         
-        # Load configuration
-        config_path = Path("configs") / f"{benchmark_name}.yaml"
+        # Load configuration from internal package directory
+        internal_config_dir = Path(__file__).parent / "configs"
+        config_path = internal_config_dir / f"{benchmark_name}.yaml"
+        
         if not config_path.exists():
             # Try without .yaml extension
-            config_path = Path("configs") / benchmark_name
+            config_path = internal_config_dir / benchmark_name
             if not config_path.exists():
-                raise FileNotFoundError(f"Benchmark config not found: {config_path}")
+                # Fallback to current directory for user-provided configs
+                config_path = Path("configs") / f"{benchmark_name}.yaml"
+                if not config_path.exists():
+                    config_path = Path("configs") / benchmark_name
+                    
+                if not config_path.exists():
+                    available = self.list_benchmarks()
+                    raise FileNotFoundError(
+                        f"Benchmark config '{benchmark_name}' not found.\n"
+                        f"Looked in: {internal_config_dir}\n"
+                        f"Available internal benchmarks: {available}"
+                    )
         
+        print(f"[FCGMB] Loading benchmark configuration: {benchmark_name}")
         with open(config_path, "r") as f:
             self.config = yaml.safe_load(f)
             
@@ -49,8 +71,13 @@ class FCGMBOracle:
         self.ligand_resname = self.config.get("ligand_resname")
         self.activity_units = self.config.get("activity_units", "nM")
         
-        # Paths
-        self.base_dir = Path("benchmarks") / benchmark_name
+        # Data storage
+        if scratch_dir:
+            self.scratch_dir = Path(scratch_dir).resolve()
+        else:
+            self.scratch_dir = Path.cwd() / "fcgmb_benchmarks"
+            
+        self.base_dir = self.scratch_dir / benchmark_name
         self.grid_dir = self.base_dir / "grid"
         self.results_dir = self.base_dir / "results"
         
@@ -62,22 +89,22 @@ class FCGMBOracle:
 
     @classmethod
     def list_benchmarks(cls) -> List[str]:
-        """List all available benchmarks in the configs directory."""
-        config_dir = Path("configs")
+        """List all available benchmarks in the internal configs directory."""
+        config_dir = Path(__file__).parent / "configs"
         if not config_dir.exists():
             return []
-        return [f.stem for f in config_dir.glob("*.yaml")]
+        return sorted([f.stem for f in config_dir.glob("*.yaml")])
 
     def get_initial_compounds(self) -> pl.DataFrame:
         """
         Retrieves the initial set of compounds for the benchmark.
         These are compounds from the document with bioactivity values in the lowest quartile.
         """
-        print(f"Fetching initial compounds for {self.benchmark_name}...")
+        print(f"[FCGMB] Fetching initial compounds from ChEMBL for {self.benchmark_name}...")
         df = fetch_chembl_data(self.target_id, self.doc_id, units=self.activity_units)
         
         if df.is_empty():
-            print("Warning: No compounds found for this benchmark.")
+            print("[FCGMB] Warning: No compounds found for this benchmark.")
             return df
             
         # Preferred activity column
@@ -89,7 +116,7 @@ class FCGMBOracle:
         threshold = min_v + 0.25 * (max_v - min_v)
         
         initial_df = df.filter(pl.col(act_col) <= threshold)
-        print(f"Found {len(initial_df)} initial compounds (threshold {act_col} <= {threshold:.2f})")
+        print(f"[FCGMB] Found {len(initial_df)} initial compounds (threshold {act_col} <= {threshold:.2f})")
         return initial_df
 
     def _ensure_oracle(self):
@@ -100,7 +127,7 @@ class FCGMBOracle:
         # Check if grid exists
         fld_files = list(self.grid_dir.glob("*.maps.fld"))
         if not fld_files:
-            print(f"Grid not found in {self.grid_dir}. Preparing receptor...")
+            print(f"[FCGMB] Grid not found in {self.grid_dir}. Preparing receptor and grids...")
             preparer = ReceptorPreparer()
             fld_path = preparer.prepare_receptor_and_grid(
                 self.pdb_id,
@@ -110,9 +137,9 @@ class FCGMBOracle:
             )
         else:
             fld_path = fld_files[0]
+            print(f"[FCGMB] Using existing grid: {fld_path.name}")
             
         # Reference ligand for RMSD
-        # This mirrors run_workflow.py logic
         ref_path = self.grid_dir / f"{self.pdb_id}_ligand_corrected.sdf"
         if not ref_path.exists():
              ref_path = self.grid_dir / f"{self.pdb_id}_ligand.pdb"
@@ -123,6 +150,7 @@ class FCGMBOracle:
             if not ref_path.exists():
                 ref_path = self.grid_dir / "grid" / f"{self.pdb_id}_ligand.pdb"
 
+        print(f"[FCGMB] Initializing AutoDock-GPU Oracle...")
         self.oracle = AutoDockGPUOracle(
             receptor_file=fld_path,
             adgpu_executable=self.adgpu_executable,
@@ -138,6 +166,7 @@ class FCGMBOracle:
         Only docks if the budget has not been exceeded.
         """
         if self.finished:
+            print("[FCGMB] Oracle budget exhausted. Returning 0.0 for all scores.")
             return {smi: 0.0 for smi in smiles_list}
 
         self._ensure_oracle()
@@ -151,7 +180,12 @@ class FCGMBOracle:
         process_list = smiles_list[:remaining]
         skipped_list = smiles_list[remaining:]
         
-        print(f"Scoring {len(process_list)} compounds (Budget: {self.budget_used}/{self.max_budget})...")
+        if skipped_list:
+            print(f"[FCGMB] Warning: {len(skipped_list)} compounds exceeds budget and will not be docked.")
+
+        print(f"[FCGMB] Scoring {len(process_list)} compounds (Budget used: {self.budget_used}/{self.max_budget})...")
+        print(f"[FCGMB] Preparing Ligands for Docking and running AutoDock-GPU...")
+        
         results = self.oracle.score_batch(process_list)
         
         self.budget_used += len(process_list)
@@ -162,7 +196,7 @@ class FCGMBOracle:
             
         if self.budget_used >= self.max_budget:
             self.finished = True
-            print("Budget limit reached. Oracle status set to finished.")
+            print("[FCGMB] Budget limit reached. Oracle status set to finished.")
             
         return results
 
