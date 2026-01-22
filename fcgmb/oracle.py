@@ -225,3 +225,8 @@ class FCGMBOracle:
     @property
     def budget_remaining(self) -> int:
         return max(0, self.max_budget - self.budget_used)
+
+    @property
+    def fragment(self) -> str:
+        """Returns the fragment SMILES that molecules must adhere to."""
+        return self.fragment_smiles
