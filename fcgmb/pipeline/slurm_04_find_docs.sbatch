@@ -27,7 +27,7 @@ echo "Processing targets $START to $END (of $TOTAL_TARGETS unique)"
 
 # Configure: Include both patents and publications by default
 # Add --no-patents or --no-publications to exclude
-python scripts/04_find_matching_documents.py \
+python fcgmb/pipeline/find_matching_documents.py \
     --input data/chembl_pdb_druglike.csv \
     --output data/chembl_docking_benchmark.csv \
     --include-patents \

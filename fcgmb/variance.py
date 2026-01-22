@@ -1,17 +1,17 @@
-
 import os
+import subprocess
 import polars as pl
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import yaml
 from pathlib import Path
+from typing import List, Dict, Any, Optional
 from scipy.stats import pearsonr, spearmanr
 
-def get_pactivity(df, config_path):
+def get_pactivity(df: pl.DataFrame, config_path: Path):
     """
     Robustly convert activity to pActivity using ChEMBL pValue or YAML units.
-    Matches logic in docking_benchmark/utils.py
     """
     if "pchembl_value" in df.columns:
         return df.get_column("pchembl_value").to_numpy(), "pActivity (ChEMBL pValue)"
@@ -30,15 +30,100 @@ def get_pactivity(df, config_path):
     p_activities = offset - np.log10(activities + 1e-12)
     return p_activities, f"pActivity (-log10 {units})"
 
-def analyze_variance():
-    run_base_dir = Path("/work/users/s/h/shuhang/benchmark/variance_runs")
-    config_dir = Path("/work/users/s/h/shuhang/benchmark/best_pl_system_configs")
-    output_dir = Path("/work/users/s/h/shuhang/benchmark/variance_analysis")
-    output_dir.mkdir(exist_ok=True)
+def run_variance_tests(
+    config_dir: Path = Path("configs"),
+    run_base_dir: Path = Path("variance_runs"),
+    n_iterations: int = 5,
+    workflow_script: str = "run_workflow.py"
+):
+    """
+    Run docking multiple times for each benchmark to test variance.
+    """
+    run_base_dir.mkdir(exist_ok=True, parents=True)
+    configs = list(config_dir.glob("*.yaml"))
+    
+    if not configs:
+        print(f"No configs found in {config_dir}")
+        return
+
+    for config_path in configs:
+        print(f"\n>>> Processing system: {config_path.stem}")
+        
+        # 1. Run initialization (retrieve + grid) ONCE
+        init_run_dir = run_base_dir / "init"
+        subprocess.run([
+            "python", workflow_script,
+            "--config", str(config_path),
+            "--stage", "retrieve",
+            "--run-dir", str(init_run_dir)
+        ])
+        
+        subprocess.run([
+            "python", workflow_script,
+            "--config", str(config_path),
+            "--stage", "grid",
+            "--run-dir", str(init_run_dir)
+        ])
+
+        # 2. Run docking n_iterations times
+        for i in range(1, n_iterations + 1):
+            iter_run_dir = run_base_dir / f"run_{i}"
+            print(f"  -> Iteration {i}/{n_iterations}...")
+            
+            config = yaml.safe_load(config_path.read_text())
+            target_id = config.get("target_id")
+            pdb_id = config.get("pdb_id")
+            target_pdb_name = f"{target_id}_{pdb_id}"
+            
+            # Re-use grid and data from init
+            src_grid = init_run_dir / target_pdb_name / "grid"
+            dst_target_dir = iter_run_dir / target_pdb_name
+            dst_target_dir.mkdir(parents=True, exist_ok=True)
+            dst_grid = dst_target_dir / "grid"
+            
+            if src_grid.exists() and not dst_grid.exists():
+                try:
+                    os.symlink(src_grid.resolve(), dst_grid)
+                except OSError:
+                    import shutil
+                    shutil.copytree(src_grid, dst_grid)
+            
+            doc_id = config.get("doc_id")
+            src_work = init_run_dir / target_pdb_name / str(doc_id)
+            dst_work = dst_target_dir / str(doc_id)
+            dst_work.mkdir(parents=True, exist_ok=True)
+            
+            prefix = f"{target_id}_{pdb_id}_{doc_id}"
+            data_file = f"{prefix}_cleaned_data.csv"
+            
+            if (src_work / data_file).exists() and not (dst_work / data_file).exists():
+                try:
+                    os.symlink((src_work / data_file).resolve(), dst_work / data_file)
+                except OSError:
+                    import shutil
+                    shutil.copy2(src_work / data_file, dst_work / data_file)
+
+            # Run docking
+            subprocess.run([
+                "python", workflow_script,
+                "--config", str(config_path),
+                "--stage", "docking",
+                "--run-dir", str(iter_run_dir)
+            ])
+
+def analyze_variance_results(
+    run_base_dir: Path = Path("variance_runs"),
+    config_dir: Path = Path("configs"),
+    output_dir: Path = Path("variance_analysis")
+):
+    """
+    Analyze results from variance tests and generate plots.
+    """
+    output_dir.mkdir(exist_ok=True, parents=True)
 
     runs = sorted(list(run_base_dir.glob("run_*")))
     if not runs:
-        print("No runs found. Waiting for docking jobs...")
+        print("No runs found. Skipping analysis.")
         return
 
     system_data = {}
@@ -76,6 +161,7 @@ def analyze_variance():
         clean_merged = merged.filter(valid_mask)
         
         if clean_merged.is_empty():
+            print(f"  No valid scores found for {system_key}")
             continue
 
         # Calculate variance stats
@@ -91,7 +177,7 @@ def analyze_variance():
         plt.figure(figsize=(10, 7))
         sns.set_style("whitegrid")
         plt.errorbar(means, p_activities, xerr=stds, fmt='o', color='#2c7bb6', ecolor='#d7191c', 
-                    alpha=0.6, capsize=3, markersize=5, label='Ligand Variance (5 Runs)')
+                    alpha=0.6, capsize=3, markersize=5, label='Ligand Variance (Multiple Runs)')
         
         if len(means) > 1:
             p_corr, _ = pearsonr(means, p_activities)
@@ -104,6 +190,4 @@ def analyze_variance():
         plt.ylabel(activity_label, fontsize=11)
         plt.savefig(output_dir / f"{system_key}_variance_plot.png", dpi=300, bbox_inches="tight")
         plt.close()
-
-if __name__ == "__main__":
-    analyze_variance()
+        print(f"  Analysis saved to {output_dir / f'{system_key}_variance_plot.png'}")

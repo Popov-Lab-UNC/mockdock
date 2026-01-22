@@ -14,4 +14,4 @@ source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
 
 cd /work/users/s/h/shuhang/benchmark
 
-python run_variance_batch.py
+python run_variance.py

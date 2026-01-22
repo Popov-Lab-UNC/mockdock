@@ -1,7 +1,7 @@
 [project]
-name = "docking_benchmark"
-version = "0.1.0"
-description = "Benchmarking docking models against ChEMBL data"
+name = "fcgmb"
+version = "0.2.0"
+description = "Fragment-Constrained Generative Model Benchmark"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -30,7 +30,7 @@ build-backend = "setuptools.build_meta"
 # This repo has many top-level output folders (data/, logs/, benchmark_runs/, etc.).
 # Restrict package discovery to the actual Python package(s) only.
 where = ["."]
-include = ["docking_benchmark*"]
+include = ["fcgmb*"]
 exclude = [
     "data*",
     "logs*",
@@ -38,7 +38,10 @@ exclude = [
     "generated_configs*",
     "custom_data*",
     "custom_configs*",
+    "configs*",
     "*_workflow*",
+    "variance_runs*",
+    "variance_analysis*",
 ]
 
 [tool.ruff]
