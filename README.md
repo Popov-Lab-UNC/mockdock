@@ -1,12 +1,19 @@
 # FCGMB: Fragment-Constrained Generative Model Benchmark
 
-A benchmark package for molecular docking models, specifically designed for fragment-constrained docking evaluations and generative model benchmarking.
+A benchmark package for generative molecular models, specifically using fragment-constrained docking evaluations as a benchmark.
 
 ## Installation
 
 ```bash
-cd benchmark
+git clone https://github.com/Popov-Lab-UNC/fcgmb.git
+cd fcgmb
 pip install -e .
+```
+
+or using UV:
+```bash
+uv venv
+uv sync
 ```
 
 ## Core Features
@@ -53,7 +60,3 @@ python run_variance.py --iterations 5
 - `data/`: Raw and processed data files.
 - `benchmarks/`: Output directory for benchmark runs.
 - `variance_runs/`: Output directory for variance tests.
-
-## Development
-
-All logic is implemented using SWE best practices. For pipeline updates, see scripts in `fcgmb/pipeline/`.
