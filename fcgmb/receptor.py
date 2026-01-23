@@ -236,7 +236,7 @@ def extract_protein_and_ligand(
     return protein_pdb, ligand_pdb
 
 class ReceptorPreparer:
-    def __init__(self, autogrid_executable: str = "autogrid4", mk_prepare_receptor_executable: str = "mk_prepare_receptor.py"):
+    def __init__(self, autogrid_executable: str = "autogrid4", mk_prepare_receptor_executable: str = "mk_prepare_receptor.py", pdb2pqr_executable: str = "pdb2pqr"):
         self.autogrid_executable = shutil.which(autogrid_executable)
 
         # Fallback if shutil.which didn't find it but it's a relative path or in current dir
@@ -253,7 +253,11 @@ class ReceptorPreparer:
             if not Path(self.autogrid_executable).is_absolute():
                  self.autogrid_executable = str(Path(self.autogrid_executable).resolve())
 
+        if shutil.which("autogrid4") is None and self.autogrid_executable == "autogrid4":
+            print("   Warning: autogrid4 not found in PATH. You may need to run 'module load autogrid' or provide the path.")
+
         self.mk_prepare_receptor_executable = shutil.which(mk_prepare_receptor_executable) or mk_prepare_receptor_executable
+        self.pdb2pqr_executable = shutil.which(pdb2pqr_executable) or pdb2pqr_executable
 
     def prepare_receptor_and_grid(
         self, 
@@ -262,7 +266,9 @@ class ReceptorPreparer:
         allow_bad_res: bool = False,
         ligand_resname: Optional[str] = None,
         protein_pdb_path: Optional[Union[str, Path]] = None,
-        ligand_pdb_path: Optional[Union[str, Path]] = None
+        ligand_pdb_path: Optional[Union[str, Path]] = None,
+        use_pdb2pqr: bool = True,
+        ph: float = 7.4
     ) -> Path:
         """
         Prepare receptor PDBQT and GPF using mk_prepare_receptor.py and run AutoGrid4.
@@ -294,6 +300,13 @@ class ReceptorPreparer:
 
         else:
             protein_pdb, ligand_pdb = extract_protein_and_ligand(pdb_id, output_dir=grid_dir, ligand_resname=ligand_resname)
+        
+        # 1.5. Optional: Run PDB2PQR to add hydrogens and optimize H-bond network
+        if use_pdb2pqr:
+            fixed_pdb = protein_pdb.parent / f"{protein_pdb.stem}_fixed.pdb"
+            self._run_pdb2pqr(protein_pdb, fixed_pdb, ph=ph)
+            if fixed_pdb.exists():
+                protein_pdb = fixed_pdb
         
         # 2. Run mk_prepare_receptor.py
         base_name = f"rec_{pdb_id.lower()}"
@@ -340,6 +353,49 @@ class ReceptorPreparer:
             
         fld_path = grid_dir / f"{base_name}.maps.fld"
         return fld_path
+
+    def _run_pdb2pqr(self, input_pdb: Path, output_pdb: Path, ph: float = 7.4):
+        """
+        Run PDB2PQR to add hydrogens and optimize the H-bond network (pH 7.4).
+        """
+        pqr_path = output_pdb.with_suffix(".pqr")
+        
+        # Try direct execution first
+        cmd = [
+            self.pdb2pqr_executable,
+            "--ff", "AMBER",
+            "--titration-state-method", "propka",
+            "--with-ph", str(ph),
+            "--whitespace",
+            "--pdb-output", str(output_pdb),
+            str(input_pdb),
+            str(pqr_path)
+        ]
+        
+        print(f"Running PDB2PQR: {' '.join(cmd)}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(input_pdb.parent))
+            if result.returncode != 0:
+                print(f"   PDB2PQR primary attempt failed (code {result.returncode}): {result.stderr}")
+                
+                # Check if it's a 'not found' error and try the specific environment suggested by the user
+                if "not found" in result.stderr or result.returncode == 127:
+                    activate_cmd = f"conda activate py312 && source .venv/bin/activate && pdb2pqr --ff AMBER --titration-state-method propka --with-ph {ph} --whitespace --pdb-output {output_pdb.name} {input_pdb.name} {pqr_path.name}"
+                    print(f"   Attempting with environment activation: {activate_cmd}")
+                    # Note: conda activate requires shell=True and sourcing conda.sh which is complex.
+                    # As a simpler alternative, try to locate the pdb2pqr in the project's .venv
+                    venv_pdb2pqr = Path.cwd() / ".venv" / "bin" / "pdb2pqr"
+                    if venv_pdb2pqr.exists():
+                        cmd[0] = str(venv_pdb2pqr)
+                        print(f"   Found venv pdb2pqr at: {venv_pdb2pqr}")
+                        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(input_pdb.parent))
+                    
+            if result.returncode == 0:
+                print(f"   PDB2PQR successful: {output_pdb.name}")
+            else:
+                print(f"   Warning: PDB2PQR failed. Receptor may lack hydrogens or proper protonation.")
+        except Exception as e:
+            print(f"   Error running PDB2PQR: {e}")
 
     # Keep compatibility with previous API if needed, but redirects to the new one
     def prepare_receptor(self, pdb_id: str, output_dir: Union[str, Path] = ".", allow_bad_res: bool = False) -> Path:

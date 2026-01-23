@@ -20,6 +20,7 @@ dependencies = [
     "aiohttp>=3.9.0",
     "asttokens>=3.0.1",
     "comm>=0.2.3",
+    "pdb2pqr>=3.6.2",
 ]
 
 [build-system]
