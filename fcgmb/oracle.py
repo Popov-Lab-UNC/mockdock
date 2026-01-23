@@ -71,6 +71,10 @@ class FCGMBOracle:
         self.ligand_resname = self.config.get("ligand_resname")
         self.activity_units = self.config.get("activity_units", "nM")
         
+        # Normalization bounds
+        self.low_score = self.config.get("low_score")
+        self.high_score = self.config.get("high_score")
+        
         # Prepare fragment molecule for pre-checks
         self.fragment_mol = None
         if self.fragment_smiles:
@@ -247,9 +251,39 @@ class FCGMBOracle:
         # Update budget with compounds that were actually sent to the docking engine
         self.budget_used += len(process_list)
         
+        # Get detailed results to check for RMSD constraint
+        detailed_results = self.oracle.results_df
+        
+        normalized_results = {}
+        for row in detailed_results.to_dicts():
+            smi = row["smiles"]
+            raw_score = row["docking_score"]
+            valid_pose = row.get("valid_pose_found", False)
+            
+            # Application of FCGMB scoring logic:
+            # 1. 0.0 if RMSD constraint failed
+            # 2. Normalized score if RMSD passed
+            if not valid_pose or np.isnan(raw_score):
+                final_score = 0.0
+            else:
+                # Normalization: (low - raw) / (low - high)
+                # 1.0 = high_score (best), 0.0 = low_score (worst)
+                if self.low_score is not None and self.high_score is not None:
+                    denom = self.low_score - self.high_score
+                    if abs(denom) > 1e-6:
+                        final_score = (self.low_score - raw_score) / denom
+                    else:
+                        final_score = 1.0 if raw_score <= self.high_score else 0.0
+                else:
+                    # Fallback to raw if bounds not defined (though they should be now)
+                    final_score = raw_score
+            
+            normalized_results[smi] = final_score
+        
         # 3. Assemble final results
+        # Merge invalid_results (already 0.0) with normalized_results
         final_results = invalid_results
-        final_results.update(docking_results)
+        final_results.update(normalized_results)
         
         # Fill results with 0.0 for those beyond budget
         for smi in skipped_list:

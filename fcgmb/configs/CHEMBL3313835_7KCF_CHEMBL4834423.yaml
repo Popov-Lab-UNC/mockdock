@@ -1,21 +1,8 @@
-# ChEMBL Target: S-adenosylmethionine synthase isoform type-2
-# UniProt: P31153
-# PDB: 7KCF (Resolution: 1.10 Å)
-# Document: CHEMBL4834423 (patent, 44 compounds)
-# Crystal Ligand: J4A (CC1=C(C(=O)n2c(c(c(n2)c3ccccc3)N4CCCCC4)N1)c5ccc(cc5)O...)
-# Best Match Similarity: 1.000
-# MCS Fragment: O=C1C=CNC2=CC=NN12
-
 pdb_id: 7KCF
-output_dir: 7KCF_workflow
 target_id: CHEMBL3313835
 doc_id: CHEMBL4834423
-ligand_csv_path: null
-activity_units: nM
-activity_column: standard_value
-id_column: molecule_chembl_id
 ligand_resname: J4A
-protein_pdb_path: null
-ligand_pdb_path: null
 fragment_smiles: O=C1C=CNC2=CC=NN12
+low_score: -5.898
+high_score: -10.07
 rmsd_threshold: 2.0
