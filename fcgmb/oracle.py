@@ -2,7 +2,7 @@ import os
 import yaml
 import polars as pl
 from pathlib import Path
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Tuple
 import numpy as np
 from rdkit import Chem
 from .docking import AutoDockGPUOracle
@@ -122,6 +122,29 @@ class FCGMBOracle:
         These are compounds from the document with bioactivity values in the lowest quartile.
         Caches the data in ligand_data directory.
         """
+        df, threshold, act_col = self._get_full_data_and_threshold()
+        if df.is_empty():
+            return df
+            
+        initial_df = df.filter(pl.col(act_col) <= threshold)
+        print(f"[FCGMB] Prepared {len(initial_df)} initial compounds (threshold {act_col} <= {threshold:.2f})")
+        return initial_df
+
+    def get_validation_compounds(self) -> pl.DataFrame:
+        """
+        Retrieves the validation set of compounds for the benchmark.
+        These are compounds from the document with bioactivity values ABOVE the lowest quartile.
+        """
+        df, threshold, act_col = self._get_full_data_and_threshold()
+        if df.is_empty():
+            return df
+            
+        validation_df = df.filter(pl.col(act_col) > threshold)
+        print(f"[FCGMB] Prepared {len(validation_df)} validation compounds (threshold {act_col} > {threshold:.2f})")
+        return validation_df
+
+    def _get_full_data_and_threshold(self) -> Tuple[pl.DataFrame, float, str]:
+        """Internal helper to load data and compute the 25% threshold."""
         cache_file = self.ligand_data_dir / f"{self.benchmark_name}_chembl.csv"
         
         if cache_file.exists():
@@ -136,7 +159,7 @@ class FCGMBOracle:
         
         if df.is_empty():
             print("[FCGMB] Warning: No compounds found for this benchmark.")
-            return df
+            return df, 0.0, ""
             
         # Preferred activity column
         act_col = "pchembl_value" if "pchembl_value" in df.columns else "standard_value"
@@ -146,9 +169,7 @@ class FCGMBOracle:
         min_v, max_v = np.min(pvals), np.max(pvals)
         threshold = min_v + 0.25 * (max_v - min_v)
         
-        initial_df = df.filter(pl.col(act_col) <= threshold)
-        print(f"[FCGMB] Prepared {len(initial_df)} initial compounds (threshold {act_col} <= {threshold:.2f})")
-        return initial_df
+        return df, threshold, act_col
 
     def _ensure_oracle(self):
         """Initialize the AutoDock-GPU Oracle and prepare grid if necessary."""

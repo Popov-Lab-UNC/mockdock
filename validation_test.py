@@ -1,0 +1,76 @@
+import os
+import sys
+import polars as pl
+from fcgmb.oracle import FCGMBOracle
+
+def run_validation():
+    # The 3 best benchmarks
+    benchmarks = [
+        "CHEMBL4482_5XVA_CHEMBL4028914",
+        "CHEMBL4630_2R0U_CHEMBL1140535",
+        "CHEMBL3313835_7KCF_CHEMBL4834423"
+    ]
+    
+    # Path to AutoDock-GPU
+    adgpu_exe = os.environ.get("ADGPU_EXE", "adgpu")
+    
+    summary = []
+    
+    for bm_name in benchmarks:
+        print(f"\n{'='*60}")
+        print(f"VALIDATION TEST: {bm_name}")
+        print(f"{'='*60}")
+        
+        try:
+            # Initialize Oracle with a large budget for validation
+            oracle = FCGMBOracle(bm_name, budget=1000, adgpu_executable=adgpu_exe)
+            
+            # Get validation compounds (upper 3 quartiles)
+            val_df = oracle.get_validation_compounds()
+            
+            if val_df.is_empty():
+                print(f"No validation compounds found for {bm_name}")
+                continue
+            
+            smiles_to_score = val_df.get_column("canonical_smiles").to_list()
+            print(f"Found {len(smiles_to_score)} validation compounds to score.")
+            
+            # Score them
+            results = oracle.score(smiles_to_score)
+            
+            # Aggregate results
+            scores = list(results.values())
+            n_scored = len(scores)
+            n_success = sum(1 for s in scores if s > 0)
+            avg_score = sum(scores) / n_scored if n_scored > 0 else 0
+            
+            print(f"\nResults for {bm_name}:")
+            print(f"  Scored: {n_scored}")
+            print(f"  Success (RMSD passed): {n_success}")
+            print(f"  Average Normalized Score: {avg_score:.3f}")
+            
+            summary.append({
+                "benchmark": bm_name,
+                "n_scored": n_scored,
+                "n_success": n_success,
+                "avg_score": avg_score
+            })
+            
+            # Save detailed results
+            out_file = f"validation_results_{bm_name}.csv"
+            oracle.results_df.write_csv(out_file)
+            print(f"Detailed results saved to {out_file}")
+            
+        except Exception as e:
+            print(f"Error running validation for {bm_name}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    print("\n\n" + "="*60)
+    print("FINAL VALIDATION SUMMARY")
+    print("="*60)
+    for res in summary:
+        print(f"{res['benchmark']}: Scored={res['n_scored']}, Passed={res['n_success']}, AvgScore={res['avg_score']:.3f}")
+
+if __name__ == "__main__":
+    run_validation()
