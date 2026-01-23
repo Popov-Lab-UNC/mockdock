@@ -87,6 +87,20 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
             print(f"   Standardization: Removed {n_orig - n_clean} invalid/failed compounds.")
         return temp_df, n_orig, n_clean
 
+    def aggregate_by_smiles(temp_df, value_col):
+        n_before = len(temp_df)
+        agg_exprs = [
+            pl.first("molecule_chembl_id").alias("molecule_chembl_id"),
+            pl.median(value_col).alias(value_col),
+        ]
+        if "standard_units" in temp_df.columns:
+            agg_exprs.append(pl.first("standard_units").alias("standard_units"))
+        temp_df = temp_df.group_by("canonical_smiles").agg(agg_exprs)
+        n_after = len(temp_df)
+        if n_after < n_before:
+            print(f"   Deduplicated by canonical_smiles using median: {n_before} -> {n_after}")
+        return temp_df
+
     if has_pchembl:
         # Use pchembl_value (preferred - unit-agnostic)
         existing_cols = [c for c in preferred_cols if c in df.columns]
@@ -102,6 +116,9 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
         df, n_orig, n_clean = apply_standardization(df)
         stats["n_total"] = n_orig
         stats["n_standardized"] = n_clean
+
+        # Deduplicate by canonical_smiles using median pchembl_value
+        df = aggregate_by_smiles(df, "pchembl_value")
             
         # Also create standard_value column for compatibility (pchembl is already in pActivity units)
         df = df.with_columns(
@@ -130,6 +147,9 @@ def fetch_chembl_data(target_chembl_id: str, document_chembl_id: str, units: str
             print(f"   Using standard_value with units filter: {units}")
         else:
             print(f"   Using standard_value (no units column, assuming {units})")
+
+        # Deduplicate by canonical_smiles using median standard_value
+        df = aggregate_by_smiles(df, "standard_value")
     else:
         print("   WARNING: No activity data (pchembl_value or standard_value) found")
         return (pl.DataFrame(), stats) if return_stats else pl.DataFrame()

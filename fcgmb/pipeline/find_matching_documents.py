@@ -13,6 +13,7 @@ import argparse
 from tqdm import tqdm
 import time
 from collections import defaultdict
+from statistics import median
 import sys
 from pathlib import Path
 
@@ -60,7 +61,12 @@ def fetch_documents_for_target(target_chembl_id: str, include_patents: bool = Tr
         ).only('document_chembl_id', 'canonical_smiles', 'src_id', 'pchembl_value')
         
         # Group by document
-        doc_data = defaultdict(lambda: {'smiles_list': [], 'type': 'unknown', 'pchembl_values': []})
+        doc_data = defaultdict(lambda: {
+            'smiles_list': [],
+            'type': 'unknown',
+            'pchembl_values': [],
+            'pchembl_by_smiles': defaultdict(list)
+        })
         
         for act in activities:
             doc_id = act.get('document_chembl_id')
@@ -78,7 +84,9 @@ def fetch_documents_for_target(target_chembl_id: str, include_patents: bool = Tr
             doc_data[doc_id]['smiles_list'].append(smiles)
             doc_data[doc_id]['type'] = 'patent' if src_id == 1 else 'publication'
             if pchembl:
-                doc_data[doc_id]['pchembl_values'].append(float(pchembl))
+                val = float(pchembl)
+                doc_data[doc_id]['pchembl_values'].append(val)
+                doc_data[doc_id]['pchembl_by_smiles'][smiles].append(val)
         
         # Filter by minimum compounds
         filtered = {
@@ -206,8 +214,9 @@ def main():
             n_compounds = len(doc_smiles)
             
             # Get activity stats
-            pchembl_values = doc_data.get('pchembl_values', [])
-            avg_pchembl = sum(pchembl_values) / len(pchembl_values) if pchembl_values else None
+            pchembl_by_smiles = doc_data.get('pchembl_by_smiles', {})
+            per_smiles_medians = [median(vals) for vals in pchembl_by_smiles.values() if vals]
+            median_pchembl = median(per_smiles_medians) if per_smiles_medians else None
 
             for key, crystal_data in crystal_fps.items():
                 matches = find_matching_compounds(
@@ -238,7 +247,7 @@ def main():
                         'best_match_smiles': best_match_smiles,
                         'best_similarity': best_similarity,
                         'crystal_in_document': crystal_in_doc,
-                        'avg_pchembl': avg_pchembl
+                        'median_pchembl': median_pchembl
                     })
 
         time.sleep(args.delay)

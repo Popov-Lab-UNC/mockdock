@@ -302,15 +302,16 @@ class AutoDockGPUOracle:
 
                     # MEEKO PREPARATION:
                     # prepare() analyzes the molecule.
-                    preparator.prepare(mol_state)
-                    
-                    # Get the PDBQT string directly.
-                    # Meeko v0.5+ handles the "setup" and legacy writing internally here.
-                    pdbqt_string = preparator.write_pdbqt_string()
-                    
-                    if pdbqt_string:
-                        results.append((pdbqt_string, f"s{state_counter}"))
-                        state_counter += 1
+                    mol_setups = preparator.prepare(mol_state)
+
+                    for setup in mol_setups:
+                        pdbqt_string, is_ok, error_message = PDBQTWriterLegacy().write_string(setup)
+                        if is_ok:
+                            results.append((pdbqt_string, f"s{state_counter}"))
+                            state_counter += 1
+                        else:
+                            print(f"Error generating PDBQT: {error_message}")
+                            continue
                     
                     if state_counter >= 32:
                         break

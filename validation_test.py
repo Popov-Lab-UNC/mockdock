@@ -38,22 +38,25 @@ def run_validation():
             # Score them
             results = oracle.score(smiles_to_score)
             
-            # Aggregate results
-            scores = list(results.values())
+            # Aggregate results aligned to input order (keep per-compound)
+            scores = [results.get(smi, float("nan")) for smi in smiles_to_score]
             n_scored = len(scores)
             n_success = sum(1 for s in scores if s > 0)
-            avg_score = sum(scores) / n_scored if n_scored > 0 else 0
+            valid_scores = [s for s in scores if s == s]
+            min_score = min(valid_scores) if valid_scores else 0
+            max_score = max(valid_scores) if valid_scores else 0
             
             print(f"\nResults for {bm_name}:")
             print(f"  Scored: {n_scored}")
             print(f"  Success (RMSD passed): {n_success}")
-            print(f"  Average Normalized Score: {avg_score:.3f}")
+            print(f"  Normalized Score Range: {min_score:.3f} - {max_score:.3f}")
             
             summary.append({
                 "benchmark": bm_name,
                 "n_scored": n_scored,
                 "n_success": n_success,
-                "avg_score": avg_score
+                "min_score": min_score,
+                "max_score": max_score
             })
             
             # Save detailed results
@@ -70,7 +73,7 @@ def run_validation():
     print("FINAL VALIDATION SUMMARY")
     print("="*60)
     for res in summary:
-        print(f"{res['benchmark']}: Scored={res['n_scored']}, Passed={res['n_success']}, AvgScore={res['avg_score']:.3f}")
+        print(f"{res['benchmark']}: Scored={res['n_scored']}, Passed={res['n_success']}, Range={res['min_score']:.3f}-{res['max_score']:.3f}")
 
 if __name__ == "__main__":
     run_validation()

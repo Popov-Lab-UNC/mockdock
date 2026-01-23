@@ -107,6 +107,7 @@ class FCGMBOracle:
         
         self.oracle = None
         self.adgpu_executable = adgpu_executable
+        self.results_df = pl.DataFrame()
 
     @classmethod
     def list_benchmarks(cls) -> List[str]:
@@ -274,6 +275,7 @@ class FCGMBOracle:
         
         # Get detailed results to check for RMSD constraint
         detailed_results = self.oracle.results_df
+        self.results_df = detailed_results
         
         normalized_results = {}
         for row in detailed_results.to_dicts():
