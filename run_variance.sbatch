@@ -7,6 +7,8 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --output=variance_%j.log
 #SBATCH --error=variance_%j.err
+#SBATCH --mail-user=shuhang@unc.edu
+#SBATCH --mail-type=ALL
 
 module load autodock-gpu
 module load autogrid

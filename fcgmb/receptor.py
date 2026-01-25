@@ -302,31 +302,97 @@ class ReceptorPreparer:
             protein_pdb, ligand_pdb = extract_protein_and_ligand(pdb_id, output_dir=grid_dir, ligand_resname=ligand_resname)
         
         # 1.5. Optional: Run PDB2PQR to add hydrogens and optimize H-bond network
+        pqr_path = None
+        if use_pdb2pqr:
+            # PDB2PQR is picky about ProDy remarks. Strip non-standard lines first.
+            clean_protein_pdb = protein_pdb.parent / f"{protein_pdb.stem}_clean.pdb"
+            try:
+                with open(protein_pdb, "r") as f_in, open(clean_protein_pdb, "w") as f_out:
+                    for line in f_in:
+                        if line.startswith(("ATOM", "HETATM", "TER", "END")):
+                            f_out.write(line)
+                orig_protein_pdb = clean_protein_pdb # Keep reference for last ditch fallback
+                protein_pdb = clean_protein_pdb
+            except: 
+                orig_protein_pdb = protein_pdb
+        else:
+            orig_protein_pdb = protein_pdb
+
         if use_pdb2pqr:
             fixed_pdb = protein_pdb.parent / f"{protein_pdb.stem}_fixed.pdb"
+            pqr_path = fixed_pdb.with_suffix(".pqr")
             self._run_pdb2pqr(protein_pdb, fixed_pdb, ph=ph)
             if fixed_pdb.exists():
                 protein_pdb = fixed_pdb
         
         # 2. Run mk_prepare_receptor.py
         base_name = f"rec_{pdb_id.lower()}"
+        
+        # Use PQR as input if available, as it avoids formatting issues in PDB fixed by PDB2PQR
+        input_file = protein_pdb.name
+        read_flag = "--read_pdb"
+        extra_flags = []
+        if pqr_path and pqr_path.exists():
+            input_file = pqr_path.name
+            read_flag = "--read_pqr"
+            extra_flags = ["--charge_model", "read"]
+
         cmd = [
             self.mk_prepare_receptor_executable,
-            "--read_pdb", str(protein_pdb.name),
+            read_flag, input_file,
             "-o", base_name,
             "-p", "-g",
             "--box_enveloping", str(ligand_pdb.name),
             "--padding", "5"
-        ]
+        ] + extra_flags
         
         if allow_bad_res:
             cmd.append("--allow_bad_res")
             
         print(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=str(grid_dir))
+        result = subprocess.run(cmd, cwd=str(grid_dir), capture_output=True, text=True)
         
         if result.returncode != 0:
-            raise GridPrepError(f"Receptor preparation failed (mk_prepare_receptor.py returned {result.returncode}).")
+            print(f"   Warning: mk_prepare_receptor failed with {input_file} (code {result.returncode})")
+            print(f"   Error: {result.stderr.strip().split('\n')[-1]}")
+            
+            # Fallback to PDB if PQR failed
+            if read_flag == "--read_pqr" and protein_pdb.exists():
+                print(f"   Attempting fallback to PDB: {protein_pdb.name}")
+                cmd = [
+                    self.mk_prepare_receptor_executable,
+                    "--read_pdb", protein_pdb.name,
+                    "-o", base_name,
+                    "-p", "-g",
+                    "--box_enveloping", str(ligand_pdb.name),
+                    "--padding", "5"
+                ]
+                if allow_bad_res:
+                    cmd.append("--allow_bad_res")
+                
+                print(f"   Running: {' '.join(cmd)}")
+                result = subprocess.run(cmd, cwd=str(grid_dir), capture_output=True, text=True)
+                
+            # If still failing, try original protein PDB (no PDB2PQR optimization)
+            if result.returncode != 0 and orig_protein_pdb and orig_protein_pdb.exists() and orig_protein_pdb != protein_pdb:
+                print(f"   Attempting fallback to ORIGINAL PDB: {orig_protein_pdb.name}")
+                cmd = [
+                    self.mk_prepare_receptor_executable,
+                    "--read_pdb", orig_protein_pdb.name,
+                    "-o", base_name,
+                    "-p", "-g",
+                    "--box_enveloping", str(ligand_pdb.name),
+                    "--padding", "5"
+                ]
+                if allow_bad_res:
+                    cmd.append("--allow_bad_res")
+                
+                print(f"   Running: {' '.join(cmd)}")
+                result = subprocess.run(cmd, cwd=str(grid_dir), capture_output=True, text=True)
+
+            if result.returncode != 0:
+                print(f"   Final Error: {result.stderr}")
+                raise GridPrepError(f"Receptor preparation failed (mk_prepare_receptor.py returned {result.returncode}).")
         
         gpf_path = grid_dir / f"{base_name}.gpf"
         glg_path = grid_dir / f"{base_name}.glg"
@@ -345,10 +411,12 @@ class ReceptorPreparer:
             pass
 
         ag_cmd = [self.autogrid_executable, "-p", gpf_path.name, "-l", glg_path.name]
-        # Run without capture_output to show progress in real-time
-        ag_result = subprocess.run(ag_cmd, cwd=str(grid_dir))
+        # Capture output to show on failure
+        ag_result = subprocess.run(ag_cmd, cwd=str(grid_dir), capture_output=True, text=True)
         
         if ag_result.returncode != 0:
+            print(f"   AutoGrid4 Output:\n{ag_result.stdout}")
+            print(f"   AutoGrid4 Error:\n{ag_result.stderr}")
             raise GridPrepError(f"AutoGrid4 failed (returned {ag_result.returncode}). Check {glg_path} for details.")
             
         fld_path = grid_dir / f"{base_name}.maps.fld"
@@ -360,16 +428,15 @@ class ReceptorPreparer:
         """
         pqr_path = output_pdb.with_suffix(".pqr")
         
-        # Try direct execution first
+        # Use only filenames in the command because we set cwd to input_pdb.parent
         cmd = [
             self.pdb2pqr_executable,
             "--ff", "AMBER",
             "--titration-state-method", "propka",
             "--with-ph", str(ph),
-            "--whitespace",
-            "--pdb-output", str(output_pdb),
-            str(input_pdb),
-            str(pqr_path)
+            "--pdb-output", output_pdb.name,
+            input_pdb.name,
+            pqr_path.name
         ]
         
         print(f"Running PDB2PQR: {' '.join(cmd)}")
@@ -380,7 +447,7 @@ class ReceptorPreparer:
                 
                 # Check if it's a 'not found' error and try the specific environment suggested by the user
                 if "not found" in result.stderr or result.returncode == 127:
-                    activate_cmd = f"conda activate py312 && source .venv/bin/activate && pdb2pqr --ff AMBER --titration-state-method propka --with-ph {ph} --whitespace --pdb-output {output_pdb.name} {input_pdb.name} {pqr_path.name}"
+                    activate_cmd = f"conda activate py312 && source .venv/bin/activate && pdb2pqr --ff AMBER --titration-state-method propka --with-ph {ph} --pdb-output {output_pdb.name} {input_pdb.name} {pqr_path.name}"
                     print(f"   Attempting with environment activation: {activate_cmd}")
                     # Note: conda activate requires shell=True and sourcing conda.sh which is complex.
                     # As a simpler alternative, try to locate the pdb2pqr in the project's .venv

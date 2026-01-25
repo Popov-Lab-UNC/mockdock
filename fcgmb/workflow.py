@@ -337,7 +337,7 @@ def main():
     args = parser.parse_args()
     config = load_config(args.config)
     
-    run_docking_workflow(
+    result = run_docking_workflow(
         config=config,
         stage=args.stage,
         smarts=args.smarts,
@@ -346,6 +346,13 @@ def main():
         config_file_path=args.config,
         quiet=args.quiet
     )
+    
+    if result.status != WorkflowStatus.SUCCESS.value:
+        if not args.quiet:
+            print(f"\nWorkflow FAILED with status: {result.status}")
+            if result.error_message:
+                print(f"Error: {result.error_message}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

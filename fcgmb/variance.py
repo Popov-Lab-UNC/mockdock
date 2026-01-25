@@ -58,21 +58,25 @@ def run_variance_tests(
         
         # 1. Run initialization (retrieve + grid) ONCE
         init_run_dir = run_base_dir / "init"
-        subprocess.run([
-            "python", workflow_script,
-            "--config", str(config_path),
-            "--stage", "retrieve",
-            "--run-dir", str(init_run_dir),
-            "--quiet"
-        ])
-        
-        subprocess.run([
-            "python", workflow_script,
-            "--config", str(config_path),
-            "--stage", "grid",
-            "--run-dir", str(init_run_dir),
-            "--quiet"
-        ])
+        try:
+            subprocess.run([
+                "python", workflow_script,
+                "--config", str(config_path),
+                "--stage", "retrieve",
+                "--run-dir", str(init_run_dir),
+                "--quiet"
+            ], check=True)
+            
+            subprocess.run([
+                "python", workflow_script,
+                "--config", str(config_path),
+                "--stage", "grid",
+                "--run-dir", str(init_run_dir),
+                "--quiet"
+            ], check=True)
+        except subprocess.CalledProcessError:
+            print(f"[{pdb_id}] Initialization FAILED. Skipping this system.")
+            continue
 
         print(f"[{pdb_id}] Running {n_iterations} docking iterations:")
         # 2. Run docking n_iterations times
@@ -113,14 +117,19 @@ def run_variance_tests(
                     import shutil
                     shutil.copy2(src_work / data_file, dst_work / data_file)
 
-            subprocess.run([
-                "python", workflow_script,
-                "--config", str(config_path),
-                "--stage", "docking",
-                "--run-dir", str(iter_run_dir),
-                "--quiet"
-            ])
-            print("DONE.")
+            try:
+                subprocess.run([
+                    "python", workflow_script,
+                    "--config", str(config_path),
+                    "--stage", "docking",
+                    "--run-dir", str(iter_run_dir),
+                    "--quiet"
+                ], check=True)
+                print("DONE.")
+            except subprocess.CalledProcessError:
+                print("FAILED.")
+            except Exception as e:
+                print(f"ERROR: {e}")
 
 def analyze_variance_results(
     run_base_dir: Path = Path("variance_runs"),
@@ -168,7 +177,7 @@ def analyze_variance_results(
                 merged = merged.join(subset.drop(cols_to_drop), on="canonical_smiles", how="inner")
 
         score_cols = [c for c in merged.columns if c.startswith("score_")]
-        valid_mask = merged.select([(pl.col(c).is_not_null()) & (pl.col(c) < 900) for c in score_cols]).reduce(lambda a, b: a & b)
+        valid_mask = pl.all_horizontal([(pl.col(c).is_not_null()) & (pl.col(c) < 900) for c in score_cols])
         clean_merged = merged.filter(valid_mask)
         
         if clean_merged.is_empty():
