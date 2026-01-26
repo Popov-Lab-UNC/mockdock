@@ -1,11 +1,18 @@
-import requests
-from pathlib import Path
+# Standard library imports
 import os
 import shutil
 import subprocess
 import sys
-from typing import Union, Optional, Tuple
+from pathlib import Path
+from typing import Optional, Tuple, Union
+
+# Third-party imports
 import numpy as np
+import requests
+from prody import confProDy, fetchPDB, parseMMCIF, writePDB
+
+# ProDy configuration
+confProDy(verbosity='error')
 
 class PDBDownloadError(Exception):
     """Raised when a PDB file cannot be downloaded from RCSB."""
@@ -17,12 +24,6 @@ class LigandNotFoundError(Exception):
 
 class GridPrepError(Exception):
     """Raised when mk_prepare_receptor or AutoGrid fails."""
-    pass
-
-try:
-    from prody import fetchPDB, parsePDB, parseMMCIF, writePDB, writePDBStream, confProDy
-    confProDy(verbosity='error')
-except ImportError:
     pass
 
 def _download_mmcif(pdb_id: str, output_dir: Path) -> Path:
@@ -63,8 +64,6 @@ def _parse_mmcif(structure_path: Path):
         # Provide a higher-signal error message for common ProDy failures.
         raise ValueError(
             f"Failed to parse mmCIF with ProDy: {structure_path} ({type(e).__name__}: {e}). "
-            "If this is the ProDy+NumPy issue, prefer using a compatible NumPy/ProDy stack "
-            "or switch to PDB download/parse."
         )
 
 

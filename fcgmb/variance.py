@@ -1,12 +1,15 @@
+# Standard library imports
 import os
 import subprocess
-import polars as pl
-import numpy as np
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+# Third-party imports
 import matplotlib.pyplot as plt
+import numpy as np
+import polars as pl
 import seaborn as sns
 import yaml
-from pathlib import Path
-from typing import List, Dict, Any, Optional
 from scipy.stats import pearsonr, spearmanr
 
 def get_pactivity(df: pl.DataFrame, config_path: Path):

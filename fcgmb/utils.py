@@ -1,14 +1,17 @@
-import matplotlib.pyplot as plt
-import seaborn as sns
-import polars as pl
-import numpy as np
-from scipy.stats import pearsonr, spearmanr
-from typing import Optional
-import aiohttp
+# Standard library imports
 import asyncio
 from pathlib import Path
+from typing import Optional
+
+# Third-party imports
+import aiohttp
+import matplotlib.pyplot as plt
+import numpy as np
+import polars as pl
+import seaborn as sns
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from scipy.stats import pearsonr, spearmanr
 
 def plot_docking_results(
     df: pl.DataFrame,

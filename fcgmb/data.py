@@ -1,7 +1,10 @@
+# Standard library imports
+from typing import Optional, Tuple, Union
+
+# Third-party imports
 import polars as pl
 from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
-from typing import Optional, Union, Tuple
 
 def standardize_smiles(smiles: str) -> Optional[str]:
     """

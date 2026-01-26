@@ -1,18 +1,20 @@
+# Standard library imports
+import gzip
+import math
+import multiprocessing
 import os
 import shutil
 import subprocess
 import tempfile
-import multiprocessing
-from pathlib import Path
-from typing import List, Optional, Union, Tuple
-import gzip
 import time
-import math
-import numpy as np
+from pathlib import Path
+from typing import List, Optional, Tuple, Union
 
+# Third-party imports
+import numpy as np
 import polars as pl
-from molscrub import Scrub
 from meeko import MoleculePreparation, PDBQTMolecule, PDBQTWriterLegacy, RDKitMolCreate
+from molscrub import Scrub
 from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem
 

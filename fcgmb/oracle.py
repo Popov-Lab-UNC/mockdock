@@ -1,12 +1,16 @@
-import os
-import yaml
-import polars as pl
+# Standard library imports
 from pathlib import Path
-from typing import List, Dict, Optional, Union, Tuple
+from typing import Dict, List, Optional, Tuple, Union
+
+# Third-party imports
 import numpy as np
+import polars as pl
+import yaml
 from rdkit import Chem
-from .docking import AutoDockGPUOracle
+
+# Local imports
 from .data import fetch_chembl_data
+from .docking import AutoDockGPUOracle
 from .receptor import ReceptorPreparer
 
 class FCGMBOracle:

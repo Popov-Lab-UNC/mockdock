@@ -18,17 +18,6 @@ This document outlines potential issues, edge cases, and suggestions for the FCG
 *   **Edge Case**: If the user's CSV contains non-canonical SMILES or salts (e.g., `[Na+].[Cl-].CCO`), they might not match the fragment constraints or could be treated as different molecules from their canonical forms.
 *   **Suggestion**: call `standardize_smiles` on the `canonical_smiles` column of the loaded CSV DataFrame.
 
-### 3. Missing Receptor Preparation
-*   **Observation**: The current workflow in `fcgmb/receptor.py` extracts the protein chain from the downloaded structure and immediately passes it to `mk_prepare_receptor.py` (Meeko/AutoDockTools) for PDBQT conversion.
-*   **The Issue**: There is **no explicit receptor preparation** step.
-    *   Common issues in raw PDB/mmCIF files—such as missing atoms, missing loops, incorrect protonation states, or absence of hydrogens—are not addressed.
-    *   `mk_prepare_receptor.py` handles basic PDBQT conversion but is not a substitute for full preparation.
-*   **Suggestion**: Integrate a dedicated receptor preparation library. A robust open-source workflow would be:
-    1.  **Cleaning & Fixing**: Use **PDBFixer** (from OpenMM) to add missing heavy atoms, build missing loops, and remove unwanted heterogens/water.
-    2.  **Protonation**: Use **PDB2PQR** to calculate pKa values, optimize the hydrogen bond network, and add hydrogens at the correct protonation states (e.g., for pH 7.4).
-    3.  **Conversion**: Proceed with `mk_prepare_receptor.py` (Meeko) to generate the final PDBQT for AutoGrid/AutoDock.
-*   **Implementation**: This logic should be encapsulated in `fcgmb/receptor.py`, likely as a new method or class (e.g., `PDBFixerPreparer`) that preprocesses the PDB file before grid generation.
-
 ## Codebase Review
 
 ### Organization

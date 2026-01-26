@@ -1,47 +1,49 @@
-from rdkit import Chem
-from argparse import ArgumentParser
-from pathlib import Path
-import yaml
-import polars as pl
+# Standard library imports
+import asyncio
+import json
 import os
 import sys
 import time
 import traceback
-import json
-from typing import List, Optional, Union, Dict, Any
-import asyncio
-from dataclasses import dataclass, asdict
-from enum import Enum
-from rdkit import RDLogger
 import warnings
+from argparse import ArgumentParser
+from dataclasses import asdict, dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+# Third-party imports
+import polars as pl
+import yaml
+from rdkit import Chem, RDLogger
+
+# Local imports
+try:
+    from .data import fetch_chembl_data
+    from .docking import AutoDockGPUOracle
+    from .receptor import GridPrepError, LigandNotFoundError, PDBDownloadError, ReceptorPreparer
+    from .utils import (
+        assign_bond_orders_from_template,
+        fetch_ligand_expo_sdf,
+        plot_activity_distribution,
+        plot_docking_results,
+    )
+except ImportError:
+    # Handle case where it's run as a script or different context
+    from fcgmb.data import fetch_chembl_data
+    from fcgmb.docking import AutoDockGPUOracle
+    from fcgmb.receptor import GridPrepError, LigandNotFoundError, PDBDownloadError, ReceptorPreparer
+    from fcgmb.utils import (
+        assign_bond_orders_from_template,
+        fetch_ligand_expo_sdf,
+        plot_activity_distribution,
+        plot_docking_results,
+    )
 
 # Silence RDKit noise
 RDLogger.DisableLog('rdApp.*')
 # Silence general warnings (like multiprocessing/fork deprecations)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-# Use relative imports when inside the package
-try:
-    from .data import fetch_chembl_data
-    from .docking import AutoDockGPUOracle
-    from .utils import (
-        plot_docking_results,
-        plot_activity_distribution,
-        fetch_ligand_expo_sdf,
-        assign_bond_orders_from_template
-    )
-    from .receptor import ReceptorPreparer, PDBDownloadError, LigandNotFoundError, GridPrepError
-except ImportError:
-    # Handle case where it's run as a script or different context
-    from fcgmb.data import fetch_chembl_data
-    from fcgmb.docking import AutoDockGPUOracle
-    from fcgmb.utils import (
-        plot_docking_results,
-        plot_activity_distribution,
-        fetch_ligand_expo_sdf,
-        assign_bond_orders_from_template
-    )
-    from fcgmb.receptor import ReceptorPreparer, PDBDownloadError, LigandNotFoundError, GridPrepError
 
 class WorkflowStatus(Enum):
     SUCCESS = "SUCCESS"
