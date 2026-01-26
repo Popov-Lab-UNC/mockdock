@@ -9,7 +9,7 @@
 ##SBATCH --cpus-per-task=32
 
 #SBATCH --mem=32G
-#SBATCH --time=5-00:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --output=benchmark_%j.log
 #SBATCH --error=benchmark_%j.err
 #SBATCH --mail-type=ALL

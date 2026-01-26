@@ -1,8 +1,0 @@
-pdb_id: 5XVA
-target_id: CHEMBL4482
-doc_id: CHEMBL4028914
-ligand_resname: 8FU
-fragment_smiles: NC1=NC=NC2=CC=CC=C21
-low_score: -8.38
-high_score: -12.51
-rmsd_threshold: 2.0

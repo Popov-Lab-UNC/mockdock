@@ -315,7 +315,9 @@ class ReceptorPreparer:
         result = subprocess.run(cmd, cwd=str(output_dir), capture_output=True, text=True)
         
         if result.returncode != 0:
-            print(f"   Error: {result.stderr}")
+            err_lines = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]
+            summary = err_lines[-1] if err_lines else "Unknown error"
+            print(f"   Error: {summary}")
             raise GridPrepError(f"Receptor preparation failed (mk_prepare_receptor.py returned {result.returncode}).")
         
         return output_dir / f"{base_name}.gpf"
