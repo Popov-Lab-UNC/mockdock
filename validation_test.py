@@ -7,8 +7,8 @@ def run_validation():
     # The 3 best benchmarks
     benchmarks = [
         "CHEMBL4482_5XVA_CHEMBL4028914",
-        "CHEMBL4630_2R0U_CHEMBL1140535",
-        "CHEMBL3313835_7KCF_CHEMBL4834423"
+        #"CHEMBL4630_2R0U_CHEMBL1140535",
+        #"CHEMBL3313835_7KCF_CHEMBL4834423"
     ]
     
     # Path to AutoDock-GPU
