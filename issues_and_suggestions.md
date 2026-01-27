@@ -85,7 +85,6 @@ This document outlines potential issues, edge cases, and suggestions for the FCG
     *   `adgpu` (AutoDock-GPU)
     *   `autogrid4` (AutoGrid4)
     *   `mmtbx.reduce2` (Phenix/Reduce)
-    *   `mk_prepare_receptor.py` (Meeko)
 *   **Environment Variables**: Explain how to set PATH or pass executable paths to `FCGMBOracle` if binaries are in non-standard locations.
 
 ### 4. Feature Request: AutoDock Vina Support

@@ -20,6 +20,7 @@ dependencies = [
     "aiohttp>=3.9.0",
     "asttokens>=3.0.1",
     "comm>=0.2.3",
+    "vina>=1.2.7",
 ]
 
 [build-system]

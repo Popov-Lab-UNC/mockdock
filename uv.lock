@@ -736,6 +736,7 @@ dependencies = [
     { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "seaborn" },
     { name = "tqdm" },
+    { name = "vina" },
 ]
 
 [package.metadata]
@@ -755,6 +756,7 @@ requires-dist = [
     { name = "scipy" },
     { name = "seaborn" },
     { name = "tqdm", specifier = ">=4.67.1" },
+    { name = "vina", specifier = ">=1.2.7" },
 ]
 
 [[package]]
@@ -2782,6 +2784,42 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1e/24/a2a2ed9addd907787d7aa0355ba36a6cadf1768b934c652ea78acbd59dcd/urllib3-2.6.2.tar.gz", hash = "sha256:016f9c98bb7e98085cb2b4b17b87d2c702975664e4f060c6532e64d1c1a5e797", size = 432930, upload-time = "2025-12-11T15:56:40.252Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6d/b9/4095b668ea3678bf6a0af005527f39de12fb026516fb3df17495a733b7f8/urllib3-2.6.2-py3-none-any.whl", hash = "sha256:ec21cddfe7724fc7cb4ba4bea7aa8e2ef36f607a4bab81aa6ce42a13dc3f03dd", size = 131182, upload-time = "2025-12-11T15:56:38.584Z" },
+]
+
+[[package]]
+name = "vina"
+version = "1.2.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "1.23.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "packaging" },
+    { name = "setuptools" },
+    { name = "wheel" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d2/2a/6746ef5e57b1c643e9fb24ad9e4fa520add7338736d50954e0fbc12ae52e/vina-1.2.7.tar.gz", hash = "sha256:79e5288d10207b85f20adac3dd6f4708eac761c2d8070fbad76ff997cf48e4f9", size = 89176, upload-time = "2025-02-26T03:23:17.85Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/70/338d79d4713ee642e7fdd3e8499bea675e21d2453e4948f30984736987ce/vina-1.2.7-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cfde01eae3b2163bd8b6e421659f0fabaa47794e868fcd0d29d9ed8292504d85", size = 6818922, upload-time = "2025-02-26T03:22:48.739Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/1c/7fa31f9d1c74979978effde7ba765bd8961cbae202911705cfeb98e4b1ac/vina-1.2.7-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:ec7fb0a7f177166827ee25020ccc19b4702c9a77c54dbe07ff8ff661dc8a8fb1", size = 6985416, upload-time = "2025-02-26T03:22:51.549Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/89/b8cab012500fa7fcb1d868ddf23a42a66953dae8a4cce49105ec64f8d436/vina-1.2.7-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:46edb24ad831f586c68bd582f9c0675fb1abf5e49b7e317336b5c1b26949c7de", size = 6844204, upload-time = "2025-02-26T03:22:54.206Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/4c/a1a2cf6c99d4c8564172191cf662f81fa8460cb8c583d4d3e52e5db907dd/vina-1.2.7-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:43edeaba01f22b96211a71516fbb2ee73815781679eca4805df750770868adef", size = 7009728, upload-time = "2025-02-26T03:22:57.835Z" },
+    { url = "https://files.pythonhosted.org/packages/36/1f/45ee007da0d3dc791c3dc7143f038221360f3305aa9152acb0fbacb26139/vina-1.2.7-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a6e46560e50e693fb29883b82be8d9a4d74207b4464cfedf2bd5235192f4eb3d", size = 6855509, upload-time = "2025-02-26T03:23:03.342Z" },
+    { url = "https://files.pythonhosted.org/packages/af/eb/667b855ff38962edcce7ad32007765e9cebe9e7d5d4ea3e6f901231eb9a6/vina-1.2.7-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:a8e1ab100e6a6537b6f47d103843af41e391b1cd0afbe87c6e4d4f2f78d5a2f0", size = 7023498, upload-time = "2025-02-26T03:23:06.12Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/9f/e6592e08e8e3448461affc6c24dbd6d15997df43c3fdff6892e7aa653fb2/vina-1.2.7-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:38e316cdef322f8aa9b82daa28320a548d0557360dcd55093c7d1b312c24a626", size = 6817813, upload-time = "2025-02-26T03:23:13.766Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/71/9dfe004575eb353f4475ba9d5447d84cfb2cd9fc5b945e93cf40a057cda4/vina-1.2.7-cp39-cp39-musllinux_1_2_x86_64.whl", hash = "sha256:b7b1314633fe3e16b9c919f4f21e742eeefd5c47e0ba1f4f6ab56afc145aa589", size = 6984578, upload-time = "2025-02-26T03:23:16.252Z" },
+]
+
+[[package]]
+name = "wheel"
+version = "0.46.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/24/a2eb353a6edac9a0303977c4cb048134959dd2a51b48a269dfc9dde00c8a/wheel-0.46.3.tar.gz", hash = "sha256:e3e79874b07d776c40bd6033f8ddf76a7dad46a7b8aa1b2787a83083519a1803", size = 60605, upload-time = "2026-01-22T12:39:49.136Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/22/b76d483683216dde3d67cba61fb2444be8d5be289bf628c13fc0fd90e5f9/wheel-0.46.3-py3-none-any.whl", hash = "sha256:4b399d56c9d9338230118d705d9737a2a468ccca63d5e813e2a4fc7815d8bc4d", size = 30557, upload-time = "2026-01-22T12:39:48.099Z" },
 ]
 
 [[package]]
