@@ -178,7 +178,11 @@ class FCGMBOracle:
         fld_files = list(self.grid_dir.glob("*.maps.fld"))
         if not fld_files:
             print(f"[FCGMB] Grid not found. Preparing receptor and protein-ligand grids for {self.pdb_id}...")
-            preparer = ReceptorPreparer(autogrid_executable="autogrid4", mk_prepare_receptor_executable="mk_prepare_receptor.py", pdb2pqr_executable="pdb2pqr")
+            preparer = ReceptorPreparer(
+                autogrid_executable="autogrid4", 
+                mk_prepare_receptor_executable="mk_prepare_receptor.py", 
+                reduce2_executable="mmtbx.reduce2"
+            )
             fld_path = preparer.prepare_receptor_and_grid(
                 self.pdb_id,
                 ligand_resname=self.ligand_resname,

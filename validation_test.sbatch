@@ -14,7 +14,9 @@
 module load autodock-gpu
 module load autogrid
 
-# Activate virtual environment
+# Activate conda env without conda init
+source "$HOME/miniconda3/etc/profile.d/conda.sh"
+conda activate cctbx
 source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
 
 # Set AutoDock-GPU executable if needed (or rely on module)

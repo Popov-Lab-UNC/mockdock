@@ -219,7 +219,12 @@ def extract_protein_and_ligand(
     return protein_pdb, ligand_pdb
 
 class ReceptorPreparer:
-    def __init__(self, autogrid_executable: str = "autogrid4", mk_prepare_receptor_executable: str = "mk_prepare_receptor.py", pdb2pqr_executable: str = "pdb2pqr"):
+    def __init__(
+        self,
+        autogrid_executable: str = "autogrid4",
+        mk_prepare_receptor_executable: str = "mk_prepare_receptor.py",
+        reduce2_executable: str = "mmtbx.reduce2",
+    ):
         self.autogrid_executable = shutil.which(autogrid_executable)
         if self.autogrid_executable is None:
             raise FileNotFoundError(f"Executable '{autogrid_executable}' not found in PATH")
@@ -228,9 +233,10 @@ class ReceptorPreparer:
         if self.mk_prepare_receptor_executable is None:
             raise FileNotFoundError(f"Executable '{mk_prepare_receptor_executable}' not found in PATH")
 
-        self.pdb2pqr_executable = shutil.which(pdb2pqr_executable)
-        if self.pdb2pqr_executable is None:
-            raise FileNotFoundError(f"Executable '{pdb2pqr_executable}' not found in PATH")
+        # Preferred hydrogenation tool.
+        self.reduce2_executable = shutil.which(reduce2_executable)
+        if self.reduce2_executable is None:
+            raise FileNotFoundError(f"Executable '{reduce2_executable}' not found in PATH")
 
     def get_receptor_and_ligand_pdb(
         self,
@@ -259,33 +265,31 @@ class ReceptorPreparer:
         else:
             return extract_protein_and_ligand(pdb_id, ligand_resname, output_dir=output_dir)
 
-    def run_pdb2pqr(self, protein_pdb: Path, ph: float = 7.4) -> Path:
-        """Run PDB2PQR to add hydrogens and optimize the H-bond network."""
-        # PDB2PQR is picky about ProDy remarks. Strip non-standard lines first.
+    def run_reduce2(self, protein_pdb: Path) -> Path:
+        """Run mmtbx.reduce2 to add hydrogens (preferred)."""
+        if self.reduce2_executable is None:
+            raise FileNotFoundError("Executable 'mmtbx.reduce2' not found in PATH")
+
+        # Strip non-standard lines to avoid downstream parsing issues.
         clean_protein_pdb = protein_pdb.parent / f"{protein_pdb.stem}_clean.pdb"
         with open(protein_pdb, "r") as f_in, open(clean_protein_pdb, "w") as f_out:
             for line in f_in:
                 if line.startswith(("ATOM", "HETATM", "TER", "END")):
                     f_out.write(line)
-        
-        pqr_path = protein_pdb.parent / f"{protein_pdb.stem}.pqr"
-        cmd = [
-            self.pdb2pqr_executable,
-            "--ff", "AMBER",
-            "--titration-state-method", "propka",
-            "--with-ph", str(ph),
-            clean_protein_pdb.name,
-            pqr_path.name
-        ]
-        
-        print(f"Running PDB2PQR: {' '.join(cmd)}")
+
+        reduced_pdb = clean_protein_pdb.parent / f"{clean_protein_pdb.stem}H.pdb"
+        cmd = [self.reduce2_executable, clean_protein_pdb.name, "--overwrite", "--quiet"]
+        print(f"Running reduce2: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(protein_pdb.parent))
         if result.returncode != 0:
-            print(f"   Warning: PDB2PQR failed (code {result.returncode}): {result.stderr}")
-            # If PDB2PQR fails, we might still want to proceed with the clean PDB
-            return clean_protein_pdb
-        
-        return pqr_path
+            print(f"   Warning: reduce2 failed (code {result.returncode}): {result.stderr}")
+            raise GridPrepError("reduce2 failed while adding hydrogens.")
+
+        if reduced_pdb.exists():
+            return reduced_pdb
+
+        print("   Warning: reduce2 produced no output; using cleaned PDB without hydrogens.")
+        return clean_protein_pdb
 
     def run_mk_prepare_receptor(
         self,
@@ -296,17 +300,15 @@ class ReceptorPreparer:
         allow_bad_res: bool = False
     ) -> Path:
         """Run mk_prepare_receptor.py to create PDBQT and GPF."""
-        read_flag = "--read_pqr" if receptor_input.suffix == ".pqr" else "--read_pdb"
-        extra_flags = ["--charge_model", "read"] if receptor_input.suffix == ".pqr" else []
 
         cmd = [
             self.mk_prepare_receptor_executable,
-            read_flag, receptor_input.name,
+            "--read_pdb", receptor_input.name,
             "-o", base_name,
             "-p", "-g",
             "--box_enveloping", ligand_pdb.name,
             "--padding", "5"
-        ] + extra_flags
+        ]
         
         if allow_bad_res:
             cmd.append("--allow_bad_res")
@@ -345,8 +347,7 @@ class ReceptorPreparer:
         output_dir: Union[str, Path] = ".", 
         allow_bad_res: bool = False,
         protein_pdb_path: Optional[Union[str, Path]] = None,
-        ligand_pdb_path: Optional[Union[str, Path]] = None,
-        ph: float = 7.4
+        ligand_pdb_path: Optional[Union[str, Path]] = None
     ) -> Path:
         """Convenience method to run the full preparation pipeline."""
         output_dir = Path(output_dir)
@@ -358,8 +359,8 @@ class ReceptorPreparer:
             pdb_id, grid_dir, ligand_resname, protein_pdb_path, ligand_pdb_path
         )
         
-        # 2. Run PDB2PQR
-        receptor_input = self.run_pdb2pqr(protein_pdb, ph=ph)
+        # 2. Add hydrogens
+        receptor_input = self.run_reduce2(protein_pdb)
         
         # 3. Run mk_prepare_receptor
         base_name = f"rec_{pdb_id.lower()}"
@@ -368,13 +369,7 @@ class ReceptorPreparer:
                 receptor_input, ligand_pdb, base_name, grid_dir, allow_bad_res
             )
         except GridPrepError as e:
-            if receptor_input.suffix == ".pqr":
-                print(f"   mk_prepare_receptor failed with PQR. Falling back to original PDB...")
-                gpf_path = self.run_mk_prepare_receptor(
-                    protein_pdb, ligand_pdb, base_name, grid_dir, allow_bad_res
-                )
-            else:
-                raise e
+            raise e
         
         # 4. Run AutoGrid
         return self.run_autogrid(gpf_path, grid_dir)
