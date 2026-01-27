@@ -1,6 +1,9 @@
 # Standard library imports
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
+import multiprocessing
+import tempfile
+import math
 
 # Third-party imports
 import numpy as np
@@ -12,6 +15,8 @@ from rdkit import Chem
 from .data import fetch_chembl_data
 from .docking import AutoDockGPUOracle
 from .receptor import ReceptorPreparer
+from .ligand_prep import LigandPreparer
+from .analysis import DockingAnalyzer
 
 class FCGMBOracle:
     """
@@ -26,7 +31,9 @@ class FCGMBOracle:
         benchmark_name: str, 
         budget: int = 5000, 
         adgpu_executable: str = "adgpu",
-        scratch_dir: Optional[Union[str, Path]] = None
+        scratch_dir: Optional[Union[str, Path]] = None,
+        n_cpus: Optional[int] = None,
+        n_gpus: Optional[int] = 1
     ):
         """
         Initialize the oracle for a specific benchmark.
@@ -36,33 +43,30 @@ class FCGMBOracle:
             budget: Total number of compounds allowed to be scored.
             adgpu_executable: Path to the AutoDock-GPU executable.
             scratch_dir: Directory to store benchmark data (grids, results, etc.). 
-                         Defaults to '.fcgmb' in the current working directory.
+            n_cpus: Number of CPUs for parallel operations.
+            n_gpus: Number of GPUs for docking.
         """
         self.benchmark_name = benchmark_name
         self.max_budget = budget
         self.budget_used = 0
         self.finished = False
+        self.n_cpus = n_cpus or multiprocessing.cpu_count()
+        self.n_gpus = n_gpus or 1
         
         # Load configuration from internal package directory
         internal_config_dir = Path(__file__).parent / "configs"
         config_path = internal_config_dir / f"{benchmark_name}.yaml"
         
         if not config_path.exists():
-            # Try without .yaml extension
             config_path = internal_config_dir / benchmark_name
             if not config_path.exists():
-                # Fallback to current directory for user-provided configs
                 config_path = Path("configs") / f"{benchmark_name}.yaml"
                 if not config_path.exists():
                     config_path = Path("configs") / benchmark_name
                     
                 if not config_path.exists():
                     available = self.list_benchmarks()
-                    raise FileNotFoundError(
-                        f"Benchmark config '{benchmark_name}' not found.\n"
-                        f"Looked in: {internal_config_dir}\n"
-                        f"Available internal benchmarks: {available}"
-                    )
+                    raise FileNotFoundError(f"Benchmark config '{benchmark_name}' not found.")
         
         with open(config_path, "r") as f:
             self.config = yaml.safe_load(f)
@@ -79,43 +83,32 @@ class FCGMBOracle:
         self.low_score = self.config.get("low_score")
         self.high_score = self.config.get("high_score")
         
-        # Prepare fragment molecule for pre-checks
-        self.fragment_mol = None
-        if self.fragment_smiles:
-            self.fragment_mol = Chem.MolFromSmiles(self.fragment_smiles)
-            if self.fragment_mol is None:
-                # Fallback to SMARTS if SMILES fails (e.g. for general patterns)
-                self.fragment_mol = Chem.MolFromSmarts(self.fragment_smiles)
-        
         # Data storage organization
         if scratch_dir:
             self.scratch_dir = Path(scratch_dir).resolve()
         else:
             self.scratch_dir = Path.cwd() / ".fcgmb"
             
-        # Specific subdirectories as requested
         self.grids_base_dir = self.scratch_dir / "grids"
-        # ReceptorPreparer adds "grid" to the output_dir, so we define grid_dir accordingly
         self.grid_dir = self.grids_base_dir / self.pdb_id / "grid"
         self.ligand_data_dir = self.scratch_dir / "ligand_data"
         self.benchmark_run_dir = self.scratch_dir / "benchmarks" / benchmark_name
         self.results_dir = self.benchmark_run_dir / "results"
         
-        # Ensure directories exist
         self.grid_dir.mkdir(parents=True, exist_ok=True)
         self.ligand_data_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir.mkdir(parents=True, exist_ok=True)
         
         print(f"[FCGMB] Initialized benchmark: {benchmark_name}")
-        print(f"[FCGMB] Scratch directory: {self.scratch_dir}")
         
-        self.oracle = None
+        self.docking_oracle = None
+        self.ligand_preparer = None
+        self.docking_analyzer = None
         self.adgpu_executable = adgpu_executable
         self.results_df = pl.DataFrame()
 
     @classmethod
     def list_benchmarks(cls) -> List[str]:
-        """List all available benchmarks in the internal configs directory."""
         config_dir = Path(__file__).parent / "configs"
         if not config_dir.exists():
             return []
@@ -176,151 +169,179 @@ class FCGMBOracle:
         
         return df, threshold, act_col
 
-    def _ensure_oracle(self):
-        """Initialize the AutoDock-GPU Oracle and prepare grid if necessary."""
-        if self.oracle is not None:
+    def _ensure_components(self):
+        """Initialize all components and prepare grid if necessary."""
+        if self.docking_oracle is not None:
             return
 
-        # Check if grid exists
+        # 1. Prepare Receptor/Grid
         fld_files = list(self.grid_dir.glob("*.maps.fld"))
         if not fld_files:
             print(f"[FCGMB] Grid not found. Preparing receptor and protein-ligand grids for {self.pdb_id}...")
-            preparer = ReceptorPreparer()
+            preparer = ReceptorPreparer(
+                autogrid_executable="autogrid4", 
+                mk_prepare_receptor_executable="mk_prepare_receptor.py", 
+                reduce2_executable="mmtbx.reduce2"
+            )
             fld_path = preparer.prepare_receptor_and_grid(
                 self.pdb_id,
+                ligand_resname=self.ligand_resname,
                 output_dir=self.grids_base_dir / self.pdb_id, 
-                allow_bad_res=True,
-                ligand_resname=self.ligand_resname
+                allow_bad_res=True
             )
         else:
             fld_path = fld_files[0]
             print(f"[FCGMB] Using existing grids for {self.pdb_id}")
             
-        # Reference ligand for RMSD
+        # 2. Setup Analyzer
         ref_path = self.grid_dir / f"{self.pdb_id}_ligand_corrected.sdf"
         if not ref_path.exists():
              ref_path = self.grid_dir / f"{self.pdb_id}_ligand.pdb"
-             
-        # Check sub-grid dir just in case (legacy or standard behavior)
-        if not ref_path.exists():
-            ref_path = self.grid_dir / "grid" / f"{self.pdb_id}_ligand_corrected.sdf"
-            if not ref_path.exists():
-                ref_path = self.grid_dir / "grid" / f"{self.pdb_id}_ligand.pdb"
-
-        print(f"[FCGMB] Initializing AutoDock-GPU Oracle...")
-        self.oracle = AutoDockGPUOracle(
-            receptor_file=fld_path,
-            adgpu_executable=self.adgpu_executable,
-            save_dir=self.results_dir,
+        
+        self.docking_analyzer = DockingAnalyzer(
             reference_ligand_path=ref_path if ref_path.exists() else None,
             fragment_smiles=self.fragment_smiles,
             rmsd_threshold=self.rmsd_threshold
         )
 
+        # 3. Setup Preparer
+        self.ligand_preparer = LigandPreparer(n_cpus=self.n_cpus)
+
+        # 4. Setup Docking Oracle
+        print(f"[FCGMB] Initializing AutoDock-GPU Oracle...")
+        self.docking_oracle = AutoDockGPUOracle(
+            receptor_file=fld_path,
+            adgpu_executable=self.adgpu_executable,
+            save_dir=self.results_dir,
+            n_cpus=self.n_cpus,
+            n_gpus=self.n_gpus
+        )
+
     def score(self, smiles_list: List[str]) -> Dict[str, float]:
         """
-        Dock a list of SMILES and return their scores.
-        Only docks if the budget has not been exceeded and the molecule matches the constraint.
+        Dock a list of SMILES and return their normalized scores [0.0 - 1.0].
         """
         if self.finished:
-            print("[FCGMB] Oracle budget exhausted. Returning 0.0 for all scores.")
+            print("[FCGMB] Oracle budget exhausted.")
             return {smi: 0.0 for smi in smiles_list}
 
-        self._ensure_oracle()
+        self._ensure_components()
         
-        # 1. Pre-evaluation: Substructure match and SMILES validity
-        print(f"[FCGMB] Evaluating {len(smiles_list)} compounds for substructure match...")
-        
+        # 1. Pre-filtering (2D match) and initialization
         valid_compounds = []
-        invalid_results = {}
+        final_scores = {smi: 0.0 for smi in smiles_list}
+        skipped_results = []
         
         for smi in smiles_list:
-            mol = Chem.MolFromSmiles(smi)
-            if mol is None:
-                invalid_results[smi] = 0.0
-                continue
-                
-            if self.fragment_mol and not mol.HasSubstructMatch(self.fragment_mol):
-                invalid_results[smi] = 0.0
-                continue
+            if not self.docking_analyzer.check_2d_fragment_match(smi):
+                skipped_results.append({
+                    "smiles": smi,
+                    "docking_score": float('nan'),
+                    "normalized_score": 0.0,
+                    "valid_pose_found": False,
+                    "dlg_path": None,
+                    "best_any_score": float('nan'),
+                    "skip_reason": "2D fragment mismatch",
+                    "n_conformers": 0
+                })
+            else:
+                valid_compounds.append(smi)
             
-            valid_compounds.append(smi)
-            
-        n_invalid = len(smiles_list) - len(valid_compounds)
-        if n_invalid > 0:
-            print(f"[FCGMB] Warning: {n_invalid} compounds are invalid or do not match the fragment constraint. Returning 0.0 for these (not counted against budget).")
-
         if not valid_compounds:
-            return invalid_results
+            self._update_results_df(skipped_results)
+            return final_scores
 
-        # 2. Budget check and docking for valid compounds
+        # 2. Budget check
         remaining = self.max_budget - self.budget_used
         if remaining <= 0:
             self.finished = True
-            print("[FCGMB] Oracle budget exhausted. Returning 0.0 for remaining compounds.")
-            for smi in valid_compounds:
-                invalid_results[smi] = 0.0
-            return invalid_results
+            return final_scores
             
-        # Only process what fits in budget
         process_list = valid_compounds[:remaining]
-        skipped_list = valid_compounds[remaining:]
         
-        if skipped_list:
-            print(f"[FCGMB] Warning: {len(skipped_list)} compounds exceeds budget and will not be docked.")
-
-        print(f"[FCGMB] Scoring {len(process_list)} valid compounds (Budget used: {self.budget_used}/{self.max_budget})...")
-        print(f"[FCGMB] Preparing Ligands for Docking and running AutoDock-GPU...")
-        
-        docking_results = self.oracle.score_batch(process_list)
-        
-        # Update budget with compounds that were actually sent to the docking engine
-        self.budget_used += len(process_list)
-        
-        # Get detailed results to check for RMSD constraint
-        detailed_results = self.oracle.results_df
-        self.results_df = detailed_results
-        
-        normalized_results = {}
-        for row in detailed_results.to_dicts():
-            smi = row["smiles"]
-            raw_score = row["docking_score"]
-            valid_pose = row.get("valid_pose_found", False)
+        # 3. Prepare Ligands
+        with tempfile.TemporaryDirectory(prefix="fcgmb_prep_") as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            smiles_to_pdbqts = self.ligand_preparer.prepare_batch(process_list, tmp_path)
             
-            # Application of FCGMB scoring logic:
-            # 1. 0.0 if RMSD constraint failed
-            # 2. Normalized score if RMSD passed
-            if not valid_pose or np.isnan(raw_score):
-                final_score = 0.0
-            else:
-                # Normalization: (low - raw) / (low - high)
-                # 1.0 = high_score (best), 0.0 = low_score (worst)
-                if self.low_score is not None and self.high_score is not None:
-                    denom = self.low_score - self.high_score
-                    if abs(denom) > 1e-6:
-                        final_score = (self.low_score - raw_score) / denom
+            # 4. Dock
+            docking_raw_results = self.docking_oracle.dock_batch(smiles_to_pdbqts, chunk_idx=self.budget_used)
+            
+            # 5. Analyze and Store Results
+            smi_to_state_results = {}
+            for res in docking_raw_results:
+                smi = res["smiles"]
+                if smi not in smi_to_state_results:
+                    smi_to_state_results[smi] = []
+                smi_to_state_results[smi].append(res)
+            
+            batch_results = []
+            for smi in process_list:
+                states = smi_to_state_results.get(smi, [])
+                
+                best_smi_valid_score = float('nan')
+                best_smi_norm_score = 0.0
+                best_smi_any_score = float('nan')
+                best_smi_dlg = None
+                valid_pose_found = False
+                n_states = len(states)
+                
+                for state in states:
+                    dlg_path = state["dlg_path"]
+                    if not dlg_path: continue
+                    
+                    best_v, passed, best_m, best_a, best_am = self.docking_analyzer.filter_poses_by_rmsd(dlg_path, smi)
+                    
+                    if passed:
+                        valid_pose_found = True
+                        if math.isnan(best_smi_valid_score) or best_v < best_smi_valid_score:
+                            best_smi_valid_score = best_v
+                            best_smi_dlg = str(dlg_path)
+                    
+                    if math.isnan(best_smi_any_score) or best_a < best_smi_any_score:
+                        best_smi_any_score = best_a
+                
+                # Calculate normalization for the best valid score of this SMILES
+                if valid_pose_found:
+                    if self.low_score is not None and self.high_score is not None:
+                        denom = self.low_score - self.high_score
+                        if abs(denom) > 1e-6:
+                            best_smi_norm_score = (self.low_score - best_smi_valid_score) / denom
+                        else:
+                            best_smi_norm_score = 1.0 if best_smi_valid_score <= self.high_score else 0.0
                     else:
-                        final_score = 1.0 if raw_score <= self.high_score else 0.0
-                else:
-                    # Fallback to raw if bounds not defined (though they should be now)
-                    final_score = raw_score
-            
-            normalized_results[smi] = final_score
-        
-        # 3. Assemble final results
-        # Merge invalid_results (already 0.0) with normalized_results
-        final_results = invalid_results
-        final_results.update(normalized_results)
-        
-        # Fill results with 0.0 for those beyond budget
-        for smi in skipped_list:
-            final_results[smi] = 0.0
-            
+                        best_smi_norm_score = 0.0
+                
+                final_scores[smi] = best_smi_norm_score
+                batch_results.append({
+                    "smiles": smi,
+                    "docking_score": best_smi_valid_score,
+                    "normalized_score": best_smi_norm_score,
+                    "valid_pose_found": valid_pose_found,
+                    "dlg_path": best_smi_dlg,
+                    "best_any_score": best_smi_any_score,
+                    "skip_reason": None,
+                    "n_conformers": n_states
+                })
+
+            # Update budget and combine results
+            self.budget_used += len(process_list)
+            all_batch_results = skipped_results + batch_results
+            self._update_results_df(all_batch_results)
+
         if self.budget_used >= self.max_budget:
             self.finished = True
-            print("[FCGMB] Budget limit reached. Oracle status set to finished.")
             
-        return final_results
+        return final_scores
+
+    def _update_results_df(self, new_results: List[Dict]):
+        """Helper to append new results to the main results dataframe."""
+        new_df = pl.DataFrame(new_results)
+        if self.results_df.is_empty():
+            self.results_df = new_df
+        else:
+            # Ensure same columns before concat
+            self.results_df = pl.concat([self.results_df, new_df])
 
     @property
     def status(self) -> str:

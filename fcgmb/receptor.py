@@ -1,17 +1,14 @@
-# Standard library imports
+import requests
+from pathlib import Path
 import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
-from typing import Optional, Tuple, Union
-
-# Third-party imports
+from typing import Union, Optional, Tuple, List
 import numpy as np
-import requests
-from prody import confProDy, fetchPDB, parseMMCIF, writePDB
 
-# ProDy configuration
+# ProDy
+from prody import fetchPDB, parseMMCIF, writePDB, confProDy
 confProDy(verbosity='error')
 
 class PDBDownloadError(Exception):
@@ -103,31 +100,17 @@ def _pick_ligand_instance(structure, ligand_resname: str) -> Tuple[str, str, int
     return ligand_res.getChid(), ligand_res.getResname(), ligand_res.getResnum(), altloc_token
 
 
-def _pick_default_ligand(structure) -> Tuple[str, str, int, Optional[str]]:
+def _select_protein(structure, chain_ids: List[str]):
     """
-    Fallback ligand choice when ligand_resname isn't provided.
-    Picks the first non-protein, non-water residue.
+    Select protein atoms for one or more chains. Prefer blank altloc (to avoid duplicates), 
+    but fall back to any altloc if blank selection is empty.
     """
-    ligands = structure.select("not protein and not water")
-    if ligands is None:
-        raise ValueError("No ligands found (not protein and not water)")
-
-    altloc_token = _choose_altloc_token(ligands)
-    ligands_for_res = ligands.select(f"altloc {altloc_token}") if altloc_token else ligands
-    res = ligands_for_res.getHierView().iterResidues().__next__()
-    return res.getChid(), res.getResname(), res.getResnum(), altloc_token
-
-
-def _select_protein(structure, chain_id: str):
-    """
-    Select protein atoms for a chain. Prefer blank altloc (to avoid duplicates), but fall back
-    to any altloc if blank selection is empty.
-    """
-    sel = structure.select(f"protein and chain {chain_id} and altloc _")
+    chain_str = " ".join(chain_ids)
+    sel = structure.select(f"protein and chain {chain_str} and altloc _")
     if sel is None:
-        sel = structure.select(f"protein and chain {chain_id}")
+        sel = structure.select(f"protein and chain {chain_str}")
     if sel is None:
-        raise ValueError(f"No protein atoms found in chain {chain_id}")
+        raise ValueError(f"No protein atoms found in chains {chain_str}")
     return sel
 
 
@@ -144,12 +127,9 @@ def _select_ligand(structure, chain_id: str, resname: str, resnum: int, altloc_t
         raise ValueError(f"Failed to select ligand {resname} {chain_id} {resnum}")
     return sel
 
-def _pick_receptor_chain_from_ligand(structure, ligand_sel) -> str:
+def _pick_receptor_chains_from_ligand(structure, ligand_sel, distance_threshold: float = 5.0) -> List[str]:
     """
-    Decide which *protein* chain to dock against using geometric proximity.
-
-    mmCIF/PDB chain naming is inconsistent. We identify the protein chain
-    whose atoms are closest (minimum distance) to the ligand atoms.
+    Identify protein chains within a distance threshold of the ligand.
     """
     # Protein atoms (prefer blank altloc to avoid duplicates)
     prot_all = structure.select("protein and altloc _")
@@ -164,14 +144,16 @@ def _pick_receptor_chain_from_ligand(structure, ligand_sel) -> str:
 
     # If there is only one protein chain, use it
     if len(protein_chains) == 1:
-        return protein_chains[0]
+        return [protein_chains[0]]
 
-    # Multiple chains: find the one closest to the ligand
+    # Multiple chains: find all within distance threshold
     lig_coords = ligand_sel.getCoords()
     if lig_coords is None or len(lig_coords) == 0:
-        # Should not happen if ligand_sel is valid, but fallback to first
-        return protein_chains[0]
+        return [protein_chains[0]]
 
+    nearby_chains = []
+    
+    # Also find the single closest chain as a fallback if none are within threshold
     best_chain = protein_chains[0]
     best_min_d2 = float("inf")
 
@@ -188,24 +170,34 @@ def _pick_receptor_chain_from_ligand(structure, ligand_sel) -> str:
         # Minimum squared distance between any protein atom and any ligand atom
         d2 = ((pcoords[:, None, :] - lig_coords[None, :, :]) ** 2).sum(axis=2)
         min_d2 = float(d2.min())
+        
+        if min_d2 < (distance_threshold ** 2):
+            nearby_chains.append(ch)
+            
         if min_d2 < best_min_d2:
             best_min_d2 = min_d2
             best_chain = ch
 
-    return best_chain
+    if not nearby_chains:
+        return [best_chain]
+        
+    return nearby_chains
 
 def extract_protein_and_ligand(
     pdb_id: str, 
-    output_dir: Union[str, Path] = ".",
-    ligand_resname: Optional[str] = None
+    ligand_resname: str,
+    output_dir: Union[str, Path] = "."
 ) -> Tuple[Path, Path]:
     """
     mmCIF-first receptor/ligand extraction:
     - Download mmCIF (ProDy fetchPDB if possible, else direct RCSB)
     - Parse with ProDy
-    - Detect ligand instance + correct chain
-    - Write `*_protein.pdb` and `*_ligand.pdb` via ProDy selections (required for AutoGrid/AutoDock)
+    - Detect ligand instance + correct chains
+    - Write `*_protein.pdb` and `*_ligand.pdb` via ProDy selections
     """
+    if not ligand_resname:
+        raise ValueError("ligand_resname must be specified.")
+
     outdir = Path(output_dir)
     structure_path = _download_mmcif(pdb_id, outdir)
     structure = _parse_mmcif(structure_path)
@@ -213,73 +205,48 @@ def extract_protein_and_ligand(
     protein_pdb = outdir / f"{pdb_id}_protein.pdb"
     ligand_pdb = outdir / f"{pdb_id}_ligand.pdb"
 
-    if ligand_resname:
-        lig_chain, lig_resname, lig_resnum, altloc_token = _pick_ligand_instance(structure, ligand_resname)
-    else:
-        lig_chain, lig_resname, lig_resnum, altloc_token = _pick_default_ligand(structure)
-
+    lig_chain, lig_resname, lig_resnum, altloc_token = _pick_ligand_instance(structure, ligand_resname)
     ligand_sel = _select_ligand(structure, lig_chain, lig_resname, lig_resnum, altloc_token)
 
-    detected_chain = _pick_receptor_chain_from_ligand(structure, ligand_sel)
+    detected_chains = _pick_receptor_chains_from_ligand(structure, ligand_sel)
     
-    if lig_chain != detected_chain:
-        # Common for mmCIF: ligand chain differs from polymer chain
-        print(f"   Note: ligand '{lig_resname}' is in chain '{lig_chain}' (mmCIF asym-id); receptor protein chain is '{detected_chain}'.")
-    else:
-        print(f"   Note: using receptor protein chain '{detected_chain}'.")
+    print(f"   Note: ligand '{lig_resname}' is in chain '{lig_chain}'; receptor protein chains: {', '.join(detected_chains)}.")
 
-    protein_sel = _select_protein(structure, detected_chain)
+    protein_sel = _select_protein(structure, detected_chains)
     writePDB(str(protein_pdb), protein_sel)
     writePDB(str(ligand_pdb), ligand_sel)
 
     return protein_pdb, ligand_pdb
 
 class ReceptorPreparer:
-    def __init__(self, autogrid_executable: str = "autogrid4", mk_prepare_receptor_executable: str = "mk_prepare_receptor.py", pdb2pqr_executable: str = "pdb2pqr"):
+    def __init__(
+        self,
+        autogrid_executable: str = "autogrid4",
+        mk_prepare_receptor_executable: str = "mk_prepare_receptor.py",
+        reduce2_executable: str = "mmtbx.reduce2",
+    ):
         self.autogrid_executable = shutil.which(autogrid_executable)
-
-        # Fallback if shutil.which didn't find it but it's a relative path or in current dir
         if self.autogrid_executable is None:
-            if Path(autogrid_executable).exists():
-                self.autogrid_executable = str(Path(autogrid_executable).resolve())
-            elif Path.cwd().joinpath(autogrid_executable).exists():
-                self.autogrid_executable = str(Path.cwd().joinpath(autogrid_executable).resolve())
-            else:
-                # Last ditch: keep it as is, maybe subprocess finds it?
-                self.autogrid_executable = autogrid_executable
-        else:
-            # Ensure absolute path even if found by which, if it looks relative
-            if not Path(self.autogrid_executable).is_absolute():
-                 self.autogrid_executable = str(Path(self.autogrid_executable).resolve())
+            raise FileNotFoundError(f"Executable '{autogrid_executable}' not found in PATH")
 
-        if shutil.which("autogrid4") is None and self.autogrid_executable == "autogrid4":
-            print("   Warning: autogrid4 not found in PATH. You may need to run 'module load autogrid' or provide the path.")
+        self.mk_prepare_receptor_executable = shutil.which(mk_prepare_receptor_executable)
+        if self.mk_prepare_receptor_executable is None:
+            raise FileNotFoundError(f"Executable '{mk_prepare_receptor_executable}' not found in PATH")
 
-        self.mk_prepare_receptor_executable = shutil.which(mk_prepare_receptor_executable) or mk_prepare_receptor_executable
-        self.pdb2pqr_executable = shutil.which(pdb2pqr_executable) or pdb2pqr_executable
+        # Preferred hydrogenation tool.
+        self.reduce2_executable = shutil.which(reduce2_executable)
+        if self.reduce2_executable is None:
+            raise FileNotFoundError(f"Executable '{reduce2_executable}' not found in PATH")
 
-    def prepare_receptor_and_grid(
-        self, 
-        pdb_id: str, 
-        output_dir: Union[str, Path] = ".", 
-        allow_bad_res: bool = False,
-        ligand_resname: Optional[str] = None,
+    def get_receptor_and_ligand_pdb(
+        self,
+        pdb_id: str,
+        output_dir: Path,
+        ligand_resname: str,
         protein_pdb_path: Optional[Union[str, Path]] = None,
         ligand_pdb_path: Optional[Union[str, Path]] = None,
-        use_pdb2pqr: bool = True,
-        ph: float = 7.4
-    ) -> Path:
-        """
-        Prepare receptor PDBQT and GPF using mk_prepare_receptor.py and run AutoGrid4.
-        Returns the path to the .maps.fld file.
-
-        If protein_pdb_path and ligand_pdb_path are provided, they are used instead of fetching from PDB.
-        """
-        output_dir = Path(output_dir)
-        grid_dir = output_dir / "grid"
-        grid_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 1. Obtain protein and ligand PDBs
+    ) -> Tuple[Path, Path]:
+        """Obtain protein and ligand PDB files."""
         if protein_pdb_path and ligand_pdb_path:
             protein_pdb_path = Path(protein_pdb_path)
             ligand_pdb_path = Path(ligand_pdb_path)
@@ -289,193 +256,120 @@ class ReceptorPreparer:
             if not ligand_pdb_path.exists():
                 raise FileNotFoundError(f"Ligand PDB not found: {ligand_pdb_path}")
 
-            # Copy to grid dir for consistency
-            protein_pdb = grid_dir / protein_pdb_path.name
-            ligand_pdb = grid_dir / ligand_pdb_path.name
+            protein_pdb = output_dir / protein_pdb_path.name
+            ligand_pdb = output_dir / ligand_pdb_path.name
             shutil.copy2(protein_pdb_path, protein_pdb)
             shutil.copy2(ligand_pdb_path, ligand_pdb)
-
             print(f"Using provided protein ({protein_pdb.name}) and ligand ({ligand_pdb.name})")
-
+            return protein_pdb, ligand_pdb
         else:
-            protein_pdb, ligand_pdb = extract_protein_and_ligand(pdb_id, output_dir=grid_dir, ligand_resname=ligand_resname)
-        
-        # 1.5. Optional: Run PDB2PQR to add hydrogens and optimize H-bond network
-        pqr_path = None
-        if use_pdb2pqr:
-            # PDB2PQR is picky about ProDy remarks. Strip non-standard lines first.
-            clean_protein_pdb = protein_pdb.parent / f"{protein_pdb.stem}_clean.pdb"
-            try:
-                with open(protein_pdb, "r") as f_in, open(clean_protein_pdb, "w") as f_out:
-                    for line in f_in:
-                        if line.startswith(("ATOM", "HETATM", "TER", "END")):
-                            f_out.write(line)
-                orig_protein_pdb = clean_protein_pdb # Keep reference for last ditch fallback
-                protein_pdb = clean_protein_pdb
-            except: 
-                orig_protein_pdb = protein_pdb
-        else:
-            orig_protein_pdb = protein_pdb
+            return extract_protein_and_ligand(pdb_id, ligand_resname, output_dir=output_dir)
 
-        if use_pdb2pqr:
-            fixed_pdb = protein_pdb.parent / f"{protein_pdb.stem}_fixed.pdb"
-            pqr_path = fixed_pdb.with_suffix(".pqr")
-            self._run_pdb2pqr(protein_pdb, fixed_pdb, ph=ph)
-            if fixed_pdb.exists():
-                protein_pdb = fixed_pdb
-        
-        # 2. Run mk_prepare_receptor.py
-        base_name = f"rec_{pdb_id.lower()}"
-        
-        # Use PQR as input if available, as it avoids formatting issues in PDB fixed by PDB2PQR
-        input_file = protein_pdb.name
-        read_flag = "--read_pdb"
-        extra_flags = []
-        if pqr_path and pqr_path.exists():
-            input_file = pqr_path.name
-            read_flag = "--read_pqr"
-            extra_flags = ["--charge_model", "read"]
+    def run_reduce2(self, protein_pdb: Path) -> Path:
+        """Run mmtbx.reduce2 to add hydrogens (preferred)."""
+        if self.reduce2_executable is None:
+            raise FileNotFoundError("Executable 'mmtbx.reduce2' not found in PATH")
+
+        # Strip non-standard lines to avoid downstream parsing issues.
+        clean_protein_pdb = protein_pdb.parent / f"{protein_pdb.stem}_clean.pdb"
+        with open(protein_pdb, "r") as f_in, open(clean_protein_pdb, "w") as f_out:
+            for line in f_in:
+                if line.startswith(("ATOM", "HETATM", "TER", "END")):
+                    f_out.write(line)
+
+        reduced_pdb = clean_protein_pdb.parent / f"{clean_protein_pdb.stem}H.pdb"
+        cmd = [self.reduce2_executable, clean_protein_pdb.name, "--overwrite", "--quiet"]
+        print(f"Running reduce2: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(protein_pdb.parent))
+        if result.returncode != 0:
+            print(f"   Warning: reduce2 failed (code {result.returncode}): {result.stderr}")
+            raise GridPrepError("reduce2 failed while adding hydrogens.")
+
+        if reduced_pdb.exists():
+            return reduced_pdb
+
+        print("   Warning: reduce2 produced no output; using cleaned PDB without hydrogens.")
+        return clean_protein_pdb
+
+    def run_mk_prepare_receptor(
+        self,
+        receptor_input: Path,
+        ligand_pdb: Path,
+        base_name: str,
+        output_dir: Path,
+        allow_bad_res: bool = False
+    ) -> Path:
+        """Run mk_prepare_receptor.py to create PDBQT and GPF."""
 
         cmd = [
             self.mk_prepare_receptor_executable,
-            read_flag, input_file,
+            "--read_pdb", receptor_input.name,
             "-o", base_name,
             "-p", "-g",
-            "--box_enveloping", str(ligand_pdb.name),
+            "--box_enveloping", ligand_pdb.name,
             "--padding", "5"
-        ] + extra_flags
+        ]
         
         if allow_bad_res:
             cmd.append("--allow_bad_res")
             
         print(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=str(grid_dir), capture_output=True, text=True)
+        result = subprocess.run(cmd, cwd=str(output_dir), capture_output=True, text=True)
         
         if result.returncode != 0:
-            print(f"   Warning: mk_prepare_receptor failed with {input_file} (code {result.returncode})")
-            print(f"   Error: {result.stderr.strip().split('\n')[-1]}")
-            
-            # Fallback to PDB if PQR failed
-            if read_flag == "--read_pqr" and protein_pdb.exists():
-                print(f"   Attempting fallback to PDB: {protein_pdb.name}")
-                cmd = [
-                    self.mk_prepare_receptor_executable,
-                    "--read_pdb", protein_pdb.name,
-                    "-o", base_name,
-                    "-p", "-g",
-                    "--box_enveloping", str(ligand_pdb.name),
-                    "--padding", "5"
-                ]
-                if allow_bad_res:
-                    cmd.append("--allow_bad_res")
-                
-                print(f"   Running: {' '.join(cmd)}")
-                result = subprocess.run(cmd, cwd=str(grid_dir), capture_output=True, text=True)
-                
-            # If still failing, try original protein PDB (no PDB2PQR optimization)
-            if result.returncode != 0 and orig_protein_pdb and orig_protein_pdb.exists() and orig_protein_pdb != protein_pdb:
-                print(f"   Attempting fallback to ORIGINAL PDB: {orig_protein_pdb.name}")
-                cmd = [
-                    self.mk_prepare_receptor_executable,
-                    "--read_pdb", orig_protein_pdb.name,
-                    "-o", base_name,
-                    "-p", "-g",
-                    "--box_enveloping", str(ligand_pdb.name),
-                    "--padding", "5"
-                ]
-                if allow_bad_res:
-                    cmd.append("--allow_bad_res")
-                
-                print(f"   Running: {' '.join(cmd)}")
-                result = subprocess.run(cmd, cwd=str(grid_dir), capture_output=True, text=True)
+            err_lines = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]
+            summary = err_lines[-1] if err_lines else "Unknown error"
+            print(f"   Error: {summary}")
+            raise GridPrepError(f"Receptor preparation failed (mk_prepare_receptor.py returned {result.returncode}).")
+        
+        return output_dir / f"{base_name}.gpf"
 
-            if result.returncode != 0:
-                print(f"   Final Error: {result.stderr}")
-                raise GridPrepError(f"Receptor preparation failed (mk_prepare_receptor.py returned {result.returncode}).")
+    def run_autogrid(self, gpf_path: Path, output_dir: Path) -> Path:
+        """Run AutoGrid4."""
+        base_name = gpf_path.stem
+        glg_path = output_dir / f"{base_name}.glg"
         
-        gpf_path = grid_dir / f"{base_name}.gpf"
-        glg_path = grid_dir / f"{base_name}.glg"
+        print(f"Running AutoGrid4 for {gpf_path.name}...")
         
-        # 3. Run AutoGrid4
-        print(f"Running AutoGrid4 for {gpf_path.name} using {self.autogrid_executable}...")
-        
-        # Check grid size to warn user
-        try:
-            with open(gpf_path, 'r') as f:
-                for line in f:
-                    if line.startswith('npts'):
-                        print(f"Grid size: {line.strip()}")
-                        break
-        except:
-            pass
-
         ag_cmd = [self.autogrid_executable, "-p", gpf_path.name, "-l", glg_path.name]
-        # Capture output to show on failure
-        ag_result = subprocess.run(ag_cmd, cwd=str(grid_dir), capture_output=True, text=True)
+        ag_result = subprocess.run(ag_cmd, cwd=str(output_dir), capture_output=True, text=True)
         
         if ag_result.returncode != 0:
-            print(f"   AutoGrid4 Output:\n{ag_result.stdout}")
             print(f"   AutoGrid4 Error:\n{ag_result.stderr}")
-            raise GridPrepError(f"AutoGrid4 failed (returned {ag_result.returncode}). Check {glg_path} for details.")
+            raise GridPrepError(f"AutoGrid4 failed (returned {ag_result.returncode}).")
             
-        fld_path = grid_dir / f"{base_name}.maps.fld"
-        return fld_path
+        return output_dir / f"{base_name}.maps.fld"
 
-    def _run_pdb2pqr(self, input_pdb: Path, output_pdb: Path, ph: float = 7.4):
-        """
-        Run PDB2PQR to add hydrogens and optimize the H-bond network (pH 7.4).
-        """
-        pqr_path = output_pdb.with_suffix(".pqr")
+    def prepare_receptor_and_grid(
+        self, 
+        pdb_id: str, 
+        ligand_resname: str,
+        output_dir: Union[str, Path] = ".", 
+        allow_bad_res: bool = False,
+        protein_pdb_path: Optional[Union[str, Path]] = None,
+        ligand_pdb_path: Optional[Union[str, Path]] = None
+    ) -> Path:
+        """Convenience method to run the full preparation pipeline."""
+        output_dir = Path(output_dir)
+        grid_dir = output_dir / "grid"
+        grid_dir.mkdir(parents=True, exist_ok=True)
         
-        # Use only filenames in the command because we set cwd to input_pdb.parent
-        cmd = [
-            self.pdb2pqr_executable,
-            "--ff", "AMBER",
-            "--titration-state-method", "propka",
-            "--with-ph", str(ph),
-            "--pdb-output", output_pdb.name,
-            input_pdb.name,
-            pqr_path.name
-        ]
+        # 1. Obtain PDBs
+        protein_pdb, ligand_pdb = self.get_receptor_and_ligand_pdb(
+            pdb_id, grid_dir, ligand_resname, protein_pdb_path, ligand_pdb_path
+        )
         
-        print(f"Running PDB2PQR: {' '.join(cmd)}")
+        # 2. Add hydrogens
+        receptor_input = self.run_reduce2(protein_pdb)
+        
+        # 3. Run mk_prepare_receptor
+        base_name = f"rec_{pdb_id.lower()}"
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(input_pdb.parent))
-            if result.returncode != 0:
-                print(f"   PDB2PQR primary attempt failed (code {result.returncode}): {result.stderr}")
-                
-                # Check if it's a 'not found' error and try the specific environment suggested by the user
-                if "not found" in result.stderr or result.returncode == 127:
-                    activate_cmd = f"conda activate py312 && source .venv/bin/activate && pdb2pqr --ff AMBER --titration-state-method propka --with-ph {ph} --pdb-output {output_pdb.name} {input_pdb.name} {pqr_path.name}"
-                    print(f"   Attempting with environment activation: {activate_cmd}")
-                    # Note: conda activate requires shell=True and sourcing conda.sh which is complex.
-                    # As a simpler alternative, try to locate the pdb2pqr in the project's .venv
-                    venv_pdb2pqr = Path.cwd() / ".venv" / "bin" / "pdb2pqr"
-                    if venv_pdb2pqr.exists():
-                        cmd[0] = str(venv_pdb2pqr)
-                        print(f"   Found venv pdb2pqr at: {venv_pdb2pqr}")
-                        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(input_pdb.parent))
-                    
-            if result.returncode == 0:
-                print(f"   PDB2PQR successful: {output_pdb.name}")
-            else:
-                print(f"   Warning: PDB2PQR failed. Receptor may lack hydrogens or proper protonation.")
-        except Exception as e:
-            print(f"   Error running PDB2PQR: {e}")
-
-    # Keep compatibility with previous API if needed, but redirects to the new one
-    def prepare_receptor(self, pdb_id: str, output_dir: Union[str, Path] = ".", allow_bad_res: bool = False) -> Path:
-        # For compatibility, returns the pdbqt path
-        grid_dir = Path(output_dir) / "grid"
-        if not (grid_dir / f"{pdb_id}_receptor.pdbqt").exists():
-            self.prepare_receptor_and_grid(pdb_id, output_dir, allow_bad_res)
-        return grid_dir / f"{pdb_id}_receptor.pdbqt"
-
-    def generate_grid(self, receptor_pdbqt: Union[str, Path], *args, **kwargs) -> Path:
-        # For compatibility, returns the fld path
-        # If it was already generated by prepare_receptor_and_grid, just return it
-        fld_path = Path(receptor_pdbqt).with_suffix(".maps.fld")
-        if fld_path.exists():
-            return fld_path
-        # Otherwise this indicates the old API flow was used, which we want to discourage
-        raise NotImplementedError("Old generate_grid API is deprecated. Use prepare_receptor_and_grid.")
+            gpf_path = self.run_mk_prepare_receptor(
+                receptor_input, ligand_pdb, base_name, grid_dir, allow_bad_res
+            )
+        except GridPrepError as e:
+            raise e
+        
+        # 4. Run AutoGrid
+        return self.run_autogrid(gpf_path, grid_dir)

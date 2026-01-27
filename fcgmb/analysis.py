@@ -1,0 +1,231 @@
+import math
+from pathlib import Path
+from typing import List, Tuple, Optional, Union
+
+import numpy as np
+from rdkit import Chem
+from meeko import PDBQTMolecule, RDKitMolCreate
+import polars as pl
+
+class DockingAnalyzer:
+    """Post-docking analysis: RMSD filtering, pose extraction, etc."""
+    
+    def __init__(
+        self, 
+        reference_ligand_path: Optional[Union[str, Path]] = None, 
+        fragment_smiles: Optional[str] = None, 
+        rmsd_threshold: float = 2.0
+    ):
+        self.reference_ligand_path = Path(reference_ligand_path) if reference_ligand_path else None
+        self.fragment_smiles = fragment_smiles
+        self.rmsd_threshold = rmsd_threshold
+        
+        self.ref_mol = None
+        self.fragment_mol = None
+        self.ref_match = None
+        self.ref_coords = None
+
+        if self.reference_ligand_path and self.fragment_smiles:
+            self._initialize_reference()
+
+    def _initialize_reference(self):
+        """Load reference ligand and prepare fragment matching."""
+        if self.reference_ligand_path.suffix.lower() == ".sdf":
+            suppl = Chem.SDMolSupplier(str(self.reference_ligand_path), removeHs=False)
+            self.ref_mol = next(iter(suppl), None)
+        else:
+            self.ref_mol = Chem.MolFromPDBFile(str(self.reference_ligand_path), removeHs=False)
+
+        if self.ref_mol is None:
+            raise ValueError(f"Could not load reference ligand from {self.reference_ligand_path}")
+
+        self.fragment_mol = Chem.MolFromSmiles(self.fragment_smiles)
+        if self.fragment_mol is None:
+            self.fragment_mol = Chem.MolFromSmarts(self.fragment_smiles)
+            if self.fragment_mol is None:
+                raise ValueError(f"Invalid fragment SMILES/SMARTS string: {self.fragment_smiles}")
+
+        self.ref_match = self._get_robust_match(self.ref_mol, self.fragment_mol)
+        if not self.ref_match:
+            print(f"WARNING: Reference ligand ({self.reference_ligand_path.name}) does not match fragment SMILES!")
+        else:
+            ref_conf = self.ref_mol.GetConformer()
+            self.ref_coords = []
+            for idx in self.ref_match:
+                pos = ref_conf.GetAtomPosition(idx)
+                self.ref_coords.append((pos.x, pos.y, pos.z))
+
+    def _get_robust_match(self, target_mol: Chem.Mol, query_mol: Chem.Mol) -> Tuple[int, ...]:
+        """Attempt to find substructure match robust to tautomers/bond orders."""
+        match = target_mol.GetSubstructMatch(query_mol)
+        if match:
+            return match
+
+        try:
+            params = Chem.AdjustQueryParameters()
+            params.adjustDegree = False
+            params.adjustHeavyDegree = False
+            params.makeBondsGeneric = True
+            params.aromatizeIfPossible = True
+            loose_query = Chem.AdjustQueryProperties(query_mol, params)
+            match = target_mol.GetSubstructMatch(loose_query)
+            if match:
+                return match
+        except Exception:
+            pass
+        return ()
+
+    def calculate_rmsd(self, probe_mol: Chem.Mol) -> float:
+        """Calculate RMSD of the fragment between probe_mol and self.ref_mol."""
+        if self.ref_mol is None or self.fragment_mol is None or not self.ref_match:
+            return 0.0
+
+        probe_match = self._get_robust_match(probe_mol, self.fragment_mol)
+        if not probe_match:
+            return 999.9
+
+        probe_conf = probe_mol.GetConformer()
+        probe_coords = []
+        for idx in probe_match:
+            pos = probe_conf.GetAtomPosition(idx)
+            probe_coords.append((pos.x, pos.y, pos.z))
+
+        sq_diff = 0
+        for (rx, ry, rz), (px, py, pz) in zip(self.ref_coords, probe_coords):
+            sq_diff += (rx - px)**2 + (ry - py)**2 + (rz - pz)**2
+
+        return math.sqrt(sq_diff / len(self.ref_coords))
+
+    def filter_poses_by_rmsd(self, dlg_path: Path, smiles: str) -> Tuple[float, bool, Optional[Chem.Mol], float, Optional[Chem.Mol]]:
+        """
+        Parse DLG, filter poses by RMSD if applicable.
+        Returns (best_valid_score, passed_constraint, best_mol, best_any_score, best_any_mol).
+        """
+        try:
+            pdbqt_mol = PDBQTMolecule.from_file(str(dlg_path), is_dlg=True, skip_typing=True)
+            rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
+
+            if not rdkit_mols:
+                return float('nan'), False, None, float('nan'), None
+
+            best_valid_score = float('nan')
+            best_mol = None
+            best_any_score = float('nan')
+            best_any_mol = None
+
+            energies = getattr(pdbqt_mol, "_pose_data", {}).get("free_energies", [])
+            energies_len = len(energies)
+
+            for idx, mol in enumerate(rdkit_mols):
+                score = energies[idx] if idx < energies_len else 999.9
+
+                if math.isnan(best_any_score) or score < best_any_score:
+                    best_any_score = score
+                    best_any_mol = mol
+
+                rmsd = self.calculate_rmsd(mol)
+                if rmsd < self.rmsd_threshold:
+                    if math.isnan(best_valid_score) or score < best_valid_score:
+                        best_valid_score = score
+                        best_mol = mol
+
+            passed = not math.isnan(best_valid_score)
+            return best_valid_score if passed else float('nan'), passed, best_mol, best_any_score, best_any_mol
+
+        except Exception as e:
+            print(f"Error in RMSD filtering for {dlg_path}: {e}")
+            return float('nan'), False, None, float('nan'), None
+
+    def check_2d_fragment_match(self, smiles: str) -> bool:
+        """Check if SMILES matches the 2D fragment constraint."""
+        if not self.fragment_mol:
+            return True
+        mol = Chem.MolFromSmiles(smiles)
+        return mol is not None and mol.HasSubstructMatch(self.fragment_mol)
+
+    def save_best_poses_sdf(
+        self, 
+        output_path: Union[str, Path], 
+        results_df: pl.DataFrame,
+        df_metadata: Optional[pl.DataFrame] = None, 
+        id_col: str = "id", 
+        score_col: str = "docking_score", 
+        dlg_col: str = "dlg_path"
+    ):
+        """
+        Extract the best pose from each successful docking run and save to an SDF.
+        Adds metadata from df_metadata if provided.
+        """
+        print(f"Generating best poses SDF at {output_path} (using {score_col})...")
+        writer = Chem.SDWriter(str(output_path))
+        count = 0
+        
+        meta_map = {}
+        if df_metadata is not None:
+            if id_col not in df_metadata.columns:
+                 for potential in ["molecule_chembl_id", "Name", "NAME", "compound_id"]:
+                     if potential in df_metadata.columns:
+                         id_col = potential
+                         break
+            
+            key_col = "canonical_smiles" if "canonical_smiles" in df_metadata.columns else "smiles"
+            for row in df_metadata.to_dicts():
+                 if row.get(key_col):
+                     meta_map[row[key_col]] = row
+
+        sorted_results = results_df.sort(score_col, descending=False)
+
+        for row in sorted_results.to_dicts():
+            if row[score_col] is None or math.isnan(row[score_col]) or row[score_col] >= 999.0 or row[dlg_col] is None:
+                continue
+            
+            try:
+                pdbqt_mol = PDBQTMolecule.from_file(row[dlg_col], is_dlg=True, skip_typing=True)
+                rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
+                energies = []
+                if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
+                    energies = pdbqt_mol._pose_data["free_energies"]
+
+                best_mol = None
+                target_score = row[score_col]
+
+                for idx, mol in enumerate(rdkit_mols):
+                    score = energies[idx] if idx < len(energies) else 999.9
+                    if abs(score - target_score) < 0.001:
+                        is_valid_col = (score_col == "score_valid" or (score_col == "docking_score" and row.get("valid_pose_found", False)))
+                        if is_valid_col and self.ref_mol and self.fragment_mol:
+                            rmsd = self.calculate_rmsd(mol)
+                            if rmsd < self.rmsd_threshold:
+                                best_mol = mol
+                                best_mol.SetProp("RMSD_fragment", f"{rmsd:.3f}")
+                                break
+                        else:
+                            best_mol = mol
+                            if self.ref_mol and self.fragment_mol:
+                                 rmsd = self.calculate_rmsd(mol)
+                                 best_mol.SetProp("RMSD_fragment", f"{rmsd:.3f}")
+                            break
+                
+                if best_mol:
+                    best_mol.SetProp("docking_score", str(row[score_col]))
+                    best_mol.SetProp("dlg_path", str(row[dlg_col]))
+                    best_mol.SetProp("n_conformers", str(row.get('n_conformers', 0)))
+                    best_mol.SetProp("score_type", score_col)
+                    
+                    smi = row['smiles']
+                    if smi in meta_map:
+                        meta = meta_map[smi]
+                        best_mol.SetProp("_Name", str(meta.get(id_col, smi)))
+                        for k, v in meta.items():
+                            if v is not None:
+                                best_mol.SetProp(str(k), str(v))
+                    else:
+                        best_mol.SetProp("_Name", str(smi))
+
+                    writer.write(best_mol)
+                    count += 1
+            except Exception as e:
+                print(f"Failed to extract pose for {row['smiles']}: {e}")
+
+        writer.close()
+        print(f"Successfully saved {count} best poses to {output_path}")
