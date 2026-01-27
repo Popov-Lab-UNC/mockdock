@@ -7,7 +7,7 @@ def run_validation():
     # The 3 best benchmarks
     benchmarks = [
         #"CHEMBL4482_5XVA_CHEMBL4028914",
-        #"CHEMBL4630_2R0U_CHEMBL1140535",
+        "CHEMBL4630_2R0U_CHEMBL1140535",
         "CHEMBL3313835_7KCF_CHEMBL4834423"
     ]
     
@@ -41,7 +41,7 @@ def run_validation():
             # Aggregate results aligned to input order (keep per-compound)
             scores = [results.get(smi, float("nan")) for smi in smiles_to_score]
             n_scored = len(scores)
-            n_success = sum(1 for s in scores if s > 0)
+            n_success = int(oracle.results_df.get_column("valid_pose_found").sum())
             valid_scores = [s for s in scores if s == s]
             min_score = min(valid_scores) if valid_scores else 0
             max_score = max(valid_scores) if valid_scores else 0
