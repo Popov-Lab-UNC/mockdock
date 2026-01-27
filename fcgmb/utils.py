@@ -34,9 +34,49 @@ def plot_docking_results(
                        Only required if data is not pchembl_value. If None and
                        pchembl_value column exists, uses pchembl directly.
     """
-    
+    def _select_id_column() -> str:
+        if "molecule_chembl_id" in df.columns:
+            return "molecule_chembl_id"
+        if "canonical_smiles" in df.columns:
+            return "canonical_smiles"
+        if "smiles" in df.columns:
+            return "smiles"
+        return "canonical_smiles"
+
+    def _aggregate_best_per_id(input_df: pl.DataFrame) -> pl.DataFrame:
+        id_col = _select_id_column()
+        has_best_any = "score_best_any" in input_df.columns
+        best_any_expr = pl.col("score_best_any") if has_best_any else pl.col(score_col)
+        base_df = input_df.with_columns(
+            pl.col(valid_col).fill_null(False).alias(valid_col)
+        )
+
+        grouped = base_df.group_by(id_col).agg(
+            pl.col(activity_col).drop_nulls().first().alias(activity_col),
+            pl.any(pl.col(valid_col) == True).alias("passed_rmsd"),
+            pl.min(
+                pl.when(pl.col(valid_col) == True).then(pl.col(score_col))
+            ).alias("best_valid_score"),
+            pl.min(best_any_expr).alias("best_any_score"),
+        )
+
+        aggregated = grouped.with_columns(
+            pl.when(pl.col("passed_rmsd") == True)
+            .then(pl.col("best_valid_score"))
+            .otherwise(pl.col("best_any_score"))
+            .alias(score_col),
+            pl.col("passed_rmsd").alias(valid_col),
+        ).select([id_col, activity_col, score_col, valid_col])
+
+        return aggregated
+
+    # Aggregate to one row per compound: enforce RMSD first, then best score
+    analysis_df = _aggregate_best_per_id(df)
+    print("Analysis dataframe (one row per compound):")
+    print(analysis_df)
+
     # Filter out failed scores (999.9), nulls, and NaNs for both columns
-    clean_df = df.filter(
+    clean_df = analysis_df.filter(
         (pl.col(score_col).is_not_null()) &
         (pl.col(score_col).is_not_nan()) &
         (pl.col(activity_col).is_not_null()) &
@@ -100,23 +140,46 @@ def plot_docking_results(
     if np.any(invalid_mask):
         sns.scatterplot(x=scores[invalid_mask], y=p_activities[invalid_mask], color='red', alpha=0.6, label='RMSD > Threshold')
 
-    # Calculate correlations
-    pearson_corr = 0.0
-    spearman_corr = 0.0
-    r_squared = 0.0
+    def _compute_stats(x_vals: np.ndarray, y_vals: np.ndarray) -> dict:
+        stats = {"n": int(len(x_vals)), "pearson": 0.0, "spearman": 0.0, "r2": 0.0}
+        if len(x_vals) < 2:
+            return stats
+        if np.var(x_vals) > 0 and np.var(y_vals) > 0:
+            pearson_corr, _ = pearsonr(x_vals, y_vals)
+            spearman_corr, _ = spearmanr(x_vals, y_vals)
+            stats["pearson"] = float(pearson_corr)
+            stats["spearman"] = float(spearman_corr)
+            stats["r2"] = float(pearson_corr ** 2)
+        else:
+            print("Warning: Constant input detected, correlation set to 0.0")
+        return stats
 
-    if np.var(scores) > 0 and np.var(p_activities) > 0:
-        pearson_corr, _ = pearsonr(scores, p_activities)
-        spearman_corr, _ = spearmanr(scores, p_activities)
-        r_squared = pearson_corr ** 2
-    else:
-        print("Warning: Constant input detected, correlation set to 0.0")
-    
-    plt.title(f"pActivity vs Docking Score\nR²: {r_squared:.3f}, Pearson: {pearson_corr:.3f}, Spearman: {spearman_corr:.3f}")
+    valid_stats = _compute_stats(scores[valid_mask], p_activities[valid_mask])
+    all_stats = _compute_stats(scores, p_activities)
+    pass_pct = 100.0 * float(valid_stats["n"]) / float(len(scores))
+
+    stats_text = (
+        f"Pass RMSD: {pass_pct:.1f}%\n"
+        f"Blue (n={valid_stats['n']}): R² {valid_stats['r2']:.3f}, "
+        f"Pearson {valid_stats['pearson']:.3f}, Spearman {valid_stats['spearman']:.3f}\n"
+        f"All (n={all_stats['n']}): R² {all_stats['r2']:.3f}, "
+        f"Pearson {all_stats['pearson']:.3f}, Spearman {all_stats['spearman']:.3f}"
+    )
+
+    plt.title("pActivity vs RMSD-Constrained Docking Score")
     plt.xlabel("Docking Score (Predicted)")
     plt.ylabel(activity_label)
     plt.legend()
     plt.grid(True, alpha=0.3)
+    plt.text(
+        0.02,
+        0.98,
+        stats_text,
+        transform=plt.gca().transAxes,
+        verticalalignment="top",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
+        fontsize=9,
+    )
     
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
@@ -131,9 +194,9 @@ def plot_docking_results(
         "activity_col": activity_col,
         "activity_units": activity_units,
         "n_points": int(len(clean_df)),
-        "pearson": float(pearson_corr),
-        "spearman": float(spearman_corr),
-        "r2": float(r_squared),
+        "pass_pct": float(pass_pct),
+        "stats_valid": valid_stats,
+        "stats_all": all_stats,
     }
 
 def plot_activity_distribution(

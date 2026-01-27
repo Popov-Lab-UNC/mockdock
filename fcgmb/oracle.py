@@ -90,9 +90,9 @@ class FCGMBOracle:
             self.scratch_dir = Path.cwd() / ".fcgmb"
             
         self.grids_base_dir = self.scratch_dir / "grids"
-        self.grid_dir = self.grids_base_dir / self.pdb_id / "grid"
-        self.ligand_data_dir = self.scratch_dir / "ligand_data"
-        self.benchmark_run_dir = self.scratch_dir / "benchmarks" / benchmark_name
+        self.grid_dir = self.grids_base_dir / self.pdb_id
+        self.ligand_data_dir = self.scratch_dir / "data"
+        self.benchmark_run_dir = self.scratch_dir / "runs" / benchmark_name
         self.results_dir = self.benchmark_run_dir / "results"
         
         self.grid_dir.mkdir(parents=True, exist_ok=True)

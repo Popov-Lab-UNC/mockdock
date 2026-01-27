@@ -67,7 +67,7 @@ def test_preparation_pipeline():
 
         # 4. Test Docking Analysis Initialization
         print(f"\n[4] Testing DockingAnalyzer")
-        grid_dir = tmp_path / "grids" / oracle.pdb_id / "grid"
+        grid_dir = tmp_path / "grids" / oracle.pdb_id
         ref_path = grid_dir / f"{oracle.pdb_id}_ligand.pdb"
         
         analyzer = DockingAnalyzer(

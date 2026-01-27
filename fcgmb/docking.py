@@ -33,7 +33,6 @@ class DockingOracle(ABC):
         
         if self.save_dir:
             self.save_dir.mkdir(parents=True, exist_ok=True)
-            (self.save_dir / "results").mkdir(exist_ok=True)
 
         if not self.receptor_file.exists():
             raise FileNotFoundError(f"Receptor file not found: {self.receptor_file}")
@@ -142,7 +141,7 @@ class AutoDockGPUOracle(DockingOracle):
                 if dlg_path.exists():
                     persistent_dlg = None
                     if self.save_dir:
-                        persistent_dlg = self.save_dir / "results" / f"chunk_{chunk_idx}_{info['stem']}.dlg"
+                        persistent_dlg = self.save_dir / f"chunk_{chunk_idx}_{info['stem']}.dlg"
                         shutil.copy2(dlg_path, persistent_dlg)
                     
                     final_results.append({

@@ -67,7 +67,6 @@ class WorkflowResult:
     doc_id: str
     fragment_smiles: str
     status: str
-    error_message: str = ""
     n_compounds_total: int = 0
     n_compounds_standardized: int = 0
     n_compounds_matched_2d: int = 0
@@ -170,7 +169,7 @@ def run_docking_workflow(
             df.write_csv(work_dir / f"{data_prefix}_cleaned_data.csv")
         except Exception as e:
             result.status = WorkflowStatus.FAILED_RETRIEVAL.value
-            result.error_message = str(e)
+            print(f"FAILED_RETRIEVAL: {e}", file=sys.stderr)
             append_to_summary()
             return result
 
@@ -186,7 +185,7 @@ def run_docking_workflow(
             )
         except Exception as e:
             result.status = WorkflowStatus.FAILED_GRID_PREP.value
-            result.error_message = str(e)
+            print(f"FAILED_GRID_PREP: {e}", file=sys.stderr)
             append_to_summary()
             return result
 
@@ -194,15 +193,15 @@ def run_docking_workflow(
     if stage in ["all", "docking"]:
         df = pl.read_csv(work_dir / f"{data_prefix}_cleaned_data.csv")
         if not fld_path:
-            fld_path = next(iter((grid_base_dir / "grid").glob("*.maps.fld")), None)
+            fld_path = next(iter(grid_base_dir.glob("*.maps.fld")), None)
         
-        ref_corr = grid_base_dir / "grid" / f"{pdb_id}_ligand_corrected.sdf"
-        reference_ligand_path = ref_corr if ref_corr.exists() else grid_base_dir / "grid" / f"{pdb_id}_ligand.pdb"
+        ref_corr = grid_base_dir / f"{pdb_id}_ligand_corrected.sdf"
+        reference_ligand_path = ref_corr if ref_corr.exists() else grid_base_dir / f"{pdb_id}_ligand.pdb"
 
         try:
             # New modular setup
             preparer = LigandPreparer(n_cpus=n_cpus, generate_isomers=not no_isomers)
-            oracle = AutoDockGPUOracle(receptor_file=fld_path, save_dir=work_dir / "docking_output", n_cpus=n_cpus, n_gpus=n_gpus)
+            oracle = AutoDockGPUOracle(receptor_file=fld_path, save_dir=work_dir / "results", n_cpus=n_cpus, n_gpus=n_gpus)
             analyzer = DockingAnalyzer(reference_ligand_path=reference_ligand_path, fragment_smiles=fragment_smiles, rmsd_threshold=rmsd_threshold)
 
             all_smiles = df.get_column("canonical_smiles").unique().to_list()
@@ -242,7 +241,7 @@ def run_docking_workflow(
 
         except Exception as e:
             result.status = WorkflowStatus.FAILED_DOCKING.value
-            result.error_message = str(e)
+            print(f"FAILED_DOCKING: {e}", file=sys.stderr)
             append_to_summary()
             return result
 
@@ -250,8 +249,7 @@ def run_docking_workflow(
     if stage in ["all", "analysis", "docking"]:
         df = pl.read_csv(work_dir / f"{data_prefix}_results_full.csv")
         plot_units = None if "pchembl_value" in df.columns else activity_units
-        plot_docking_results(df, score_col="score_best_any", activity_col=activity_col, output_path=str(work_dir / f"{data_prefix}_analysis_best_any.png"), activity_units=plot_units)
-        plot_docking_results(df, score_col="docking_score", activity_col=activity_col, output_path=str(work_dir / f"{data_prefix}_analysis_rmsd_constrained.png"), activity_units=plot_units)
+        plot_docking_results(df, score_col="docking_score", activity_col=activity_col, output_path=str(work_dir / f"{data_prefix}_results.png"), activity_units=plot_units)
 
     append_to_summary()
     return result

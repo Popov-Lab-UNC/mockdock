@@ -93,17 +93,22 @@ def run_variance_tests(
             target_pdb_name = f"{target_id}_{pdb_id}"
             
             # Re-use grid and data from init
-            src_grid = init_run_dir / target_pdb_name / "grid"
+            src_grid_dir = init_run_dir / target_pdb_name
             dst_target_dir = iter_run_dir / target_pdb_name
             dst_target_dir.mkdir(parents=True, exist_ok=True)
-            dst_grid = dst_target_dir / "grid"
             
-            if src_grid.exists() and not dst_grid.exists():
-                try:
-                    os.symlink(src_grid.resolve(), dst_grid)
-                except OSError:
-                    import shutil
-                    shutil.copytree(src_grid, dst_grid)
+            if src_grid_dir.exists():
+                for grid_file in src_grid_dir.iterdir():
+                    if not grid_file.is_file():
+                        continue
+                    dst_file = dst_target_dir / grid_file.name
+                    if dst_file.exists():
+                        continue
+                    try:
+                        os.symlink(grid_file.resolve(), dst_file)
+                    except OSError:
+                        import shutil
+                        shutil.copy2(grid_file, dst_file)
             
             doc_id = config.get("doc_id")
             src_work = init_run_dir / target_pdb_name / str(doc_id)

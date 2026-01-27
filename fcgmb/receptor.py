@@ -351,12 +351,11 @@ class ReceptorPreparer:
     ) -> Path:
         """Convenience method to run the full preparation pipeline."""
         output_dir = Path(output_dir)
-        grid_dir = output_dir / "grid"
-        grid_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         # 1. Obtain PDBs
         protein_pdb, ligand_pdb = self.get_receptor_and_ligand_pdb(
-            pdb_id, grid_dir, ligand_resname, protein_pdb_path, ligand_pdb_path
+            pdb_id, output_dir, ligand_resname, protein_pdb_path, ligand_pdb_path
         )
         
         # 2. Add hydrogens
@@ -366,10 +365,10 @@ class ReceptorPreparer:
         base_name = f"rec_{pdb_id.lower()}"
         try:
             gpf_path = self.run_mk_prepare_receptor(
-                receptor_input, ligand_pdb, base_name, grid_dir, allow_bad_res
+                receptor_input, ligand_pdb, base_name, output_dir, allow_bad_res
             )
         except GridPrepError as e:
             raise e
         
         # 4. Run AutoGrid
-        return self.run_autogrid(gpf_path, grid_dir)
+        return self.run_autogrid(gpf_path, output_dir)

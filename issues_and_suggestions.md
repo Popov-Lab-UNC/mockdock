@@ -50,32 +50,7 @@ This document outlines potential issues, edge cases, and suggestions for the FCG
 
 ## Recent Updates & Proposals
 
-### 1. Simplified Scratch Directory Structure
-*   **Issue**: The current scratch directory (`.fcgmb` or user-defined) creates an excessively deep and redundant hierarchy, e.g., `grids/<pdb_id>/grid/` and `benchmarks/<name>/results/results/`.
-*   **Proposed Structure**: Flatten the directory layout to improve navigation and reduce path length issues.
-    ```text
-    .fcgmb/
-    ├── grids/
-    │   └── <pdb_id>/              # Store map files directly here (remove 'grid' subfolder)
-    │       ├── <pdb_id>.maps.fld
-    │       └── ...
-    ├── data/                      # Renamed from 'ligand_data' for brevity
-    │   └── <cached_chembl.csv>
-    └── runs/                      # Renamed from 'benchmarks'
-        └── <benchmark_name>/
-            └── results/           # Store DLGs/results directly here (remove second 'results' folder)
-                └── <dlgs>
-    ```
-*   **Implementation Notes**:
-    *   Update `FCGMBOracle.__init__` paths.
-    *   Update `AutoDockGPUOracle` to accept a direct output path rather than appending `/results` automatically, or ensure `FCGMBOracle` passes the parent.
-    *   Update `ReceptorPreparer` to output grid files directly to the PDB folder.
-
-### 2. Receptor Preparation Update
-*   **Status**: The `ReceptorPreparer` class now successfully integrates **Reduce2** (`mmtbx.reduce2`) for adding hydrogens, replacing previous methods.
-*   **Next Steps**: Continue to monitor the robustness of Reduce2 on diverse PDBs. The suggestion to add PDBFixer remains relevant for fixing missing atoms/residues prior to hydrogenation if Reduce2 encounters issues with poor quality structures.
-
-### 3. README & Installation Improvements
+### 1. README & Installation Improvements
 *   **Package Management**: Explicitly document installation using `uv` for fast, reliable dependency management.
     ```bash
     # Example
