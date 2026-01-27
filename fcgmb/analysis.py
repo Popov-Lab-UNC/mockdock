@@ -7,6 +7,91 @@ from rdkit import Chem
 from meeko import PDBQTMolecule, RDKitMolCreate
 import polars as pl
 
+def aggregate_results_per_id(
+    df: pl.DataFrame,
+    score_col: str = "docking_score",
+    valid_col: str = "valid_pose_found",
+    activity_col: str = "standard_value",
+) -> pl.DataFrame:
+    """
+    Aggregate results to one row per compound ID.
+    Enforces RMSD first, then takes best score (fallback to best_any).
+    """
+    def _select_id_column() -> str:
+        if "molecule_chembl_id" in df.columns:
+            return "molecule_chembl_id"
+        if "canonical_smiles" in df.columns:
+            return "canonical_smiles"
+        if "smiles" in df.columns:
+            return "smiles"
+        return "canonical_smiles"
+
+    id_col = _select_id_column()
+    has_best_any = "score_best_any" in df.columns
+    best_any_expr = pl.col("score_best_any") if has_best_any else pl.col(score_col)
+    base_df = df.with_columns(pl.col(valid_col).fill_null(False).alias(valid_col))
+
+    agg_exprs = [
+        pl.col(activity_col).drop_nulls().first().alias(activity_col),
+        pl.any(pl.col(valid_col) == True).alias("passed_rmsd"),
+        pl.min(
+            pl.when(pl.col(valid_col) == True).then(pl.col(score_col))
+        ).alias("best_valid_score"),
+        pl.min(best_any_expr).alias("best_any_score"),
+    ]
+    if "dlg_path" in base_df.columns:
+        agg_exprs.extend([
+            pl.col("dlg_path")
+            .filter(pl.col(valid_col) == True)
+            .sort_by(pl.col(score_col))
+            .first()
+            .alias("best_valid_dlg"),
+            pl.col("dlg_path")
+            .sort_by(best_any_expr)
+            .first()
+            .alias("best_any_dlg"),
+        ])
+
+    grouped = base_df.group_by(id_col).agg(agg_exprs)
+
+    derived_cols = [
+        pl.when(pl.col("passed_rmsd") == True)
+        .then(pl.col("best_valid_score"))
+        .otherwise(pl.col("best_any_score"))
+        .alias(score_col),
+        pl.col("passed_rmsd").alias(valid_col),
+        pl.col("best_valid_score").alias("score_valid"),
+        pl.col("best_any_score").alias("score_best_any"),
+    ]
+    if "best_valid_dlg" in grouped.columns and "best_any_dlg" in grouped.columns:
+        derived_cols.append(
+            pl.when(pl.col("passed_rmsd") == True)
+            .then(pl.col("best_valid_dlg"))
+            .otherwise(pl.col("best_any_dlg"))
+            .alias("dlg_path")
+        )
+
+    aggregated = grouped.with_columns(*derived_cols)
+
+    keep_cols = []
+    for col in [
+        id_col,
+        "canonical_smiles",
+        "molecule_chembl_id",
+        "pchembl_value",
+        "standard_value",
+        activity_col,
+        score_col,
+        "score_valid",
+        "score_best_any",
+        valid_col,
+        "dlg_path",
+    ]:
+        if col in aggregated.columns and col not in keep_cols:
+            keep_cols.append(col)
+
+    return aggregated.select(keep_cols)
+
 class DockingAnalyzer:
     """Post-docking analysis: RMSD filtering, pose extraction, etc."""
     

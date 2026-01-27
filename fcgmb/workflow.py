@@ -24,7 +24,7 @@ try:
     from .docking import AutoDockGPUOracle
     from .receptor import GridPrepError, LigandNotFoundError, PDBDownloadError, ReceptorPreparer
     from .ligand_prep import LigandPreparer
-    from .analysis import DockingAnalyzer
+    from .analysis import DockingAnalyzer, aggregate_results_per_id
     from .utils import (
         assign_bond_orders_from_template,
         fetch_ligand_expo_sdf,
@@ -36,7 +36,7 @@ except ImportError:
     from fcgmb.docking import AutoDockGPUOracle
     from fcgmb.receptor import GridPrepError, LigandNotFoundError, PDBDownloadError, ReceptorPreparer
     from fcgmb.ligand_prep import LigandPreparer
-    from fcgmb.analysis import DockingAnalyzer
+    from fcgmb.analysis import DockingAnalyzer, aggregate_results_per_id
     from fcgmb.utils import (
         assign_bond_orders_from_template,
         fetch_ligand_expo_sdf,
@@ -234,7 +234,13 @@ def run_docking_workflow(
                 res_df = pl.DataFrame(final_rows)
                 df = df.join(res_df, on="canonical_smiles", how="left")
                 df = df.with_columns(pl.col("valid_pose_found").fill_null(False))
-                df.write_csv(work_dir / f"{data_prefix}_results_full.csv")
+                df = aggregate_results_per_id(
+                    df,
+                    score_col="docking_score",
+                    valid_col="valid_pose_found",
+                    activity_col=activity_col,
+                )
+                df.write_csv(work_dir / f"{data_prefix}_results.csv")
 
                 result.n_compounds_docked = len(res_df)
                 result.n_valid_poses = len(res_df.filter(pl.col("valid_pose_found") == True))
@@ -247,7 +253,7 @@ def run_docking_workflow(
 
     # STAGE 4: Analysis
     if stage in ["all", "analysis", "docking"]:
-        df = pl.read_csv(work_dir / f"{data_prefix}_results_full.csv")
+        df = pl.read_csv(work_dir / f"{data_prefix}_results.csv")
         plot_units = None if "pchembl_value" in df.columns else activity_units
         plot_docking_results(df, score_col="docking_score", activity_col=activity_col, output_path=str(work_dir / f"{data_prefix}_results.png"), activity_units=plot_units)
 

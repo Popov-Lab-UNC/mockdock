@@ -34,49 +34,8 @@ def plot_docking_results(
                        Only required if data is not pchembl_value. If None and
                        pchembl_value column exists, uses pchembl directly.
     """
-    def _select_id_column() -> str:
-        if "molecule_chembl_id" in df.columns:
-            return "molecule_chembl_id"
-        if "canonical_smiles" in df.columns:
-            return "canonical_smiles"
-        if "smiles" in df.columns:
-            return "smiles"
-        return "canonical_smiles"
-
-    def _aggregate_best_per_id(input_df: pl.DataFrame) -> pl.DataFrame:
-        id_col = _select_id_column()
-        has_best_any = "score_best_any" in input_df.columns
-        best_any_expr = pl.col("score_best_any") if has_best_any else pl.col(score_col)
-        base_df = input_df.with_columns(
-            pl.col(valid_col).fill_null(False).alias(valid_col)
-        )
-
-        grouped = base_df.group_by(id_col).agg(
-            pl.col(activity_col).drop_nulls().first().alias(activity_col),
-            pl.any(pl.col(valid_col) == True).alias("passed_rmsd"),
-            pl.min(
-                pl.when(pl.col(valid_col) == True).then(pl.col(score_col))
-            ).alias("best_valid_score"),
-            pl.min(best_any_expr).alias("best_any_score"),
-        )
-
-        aggregated = grouped.with_columns(
-            pl.when(pl.col("passed_rmsd") == True)
-            .then(pl.col("best_valid_score"))
-            .otherwise(pl.col("best_any_score"))
-            .alias(score_col),
-            pl.col("passed_rmsd").alias(valid_col),
-        ).select([id_col, activity_col, score_col, valid_col])
-
-        return aggregated
-
-    # Aggregate to one row per compound: enforce RMSD first, then best score
-    analysis_df = _aggregate_best_per_id(df)
-    print("Analysis dataframe (one row per compound):")
-    print(analysis_df)
-
     # Filter out failed scores (999.9), nulls, and NaNs for both columns
-    clean_df = analysis_df.filter(
+    clean_df = df.filter(
         (pl.col(score_col).is_not_null()) &
         (pl.col(score_col).is_not_nan()) &
         (pl.col(activity_col).is_not_null()) &
