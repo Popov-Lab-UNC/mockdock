@@ -47,3 +47,61 @@ This document outlines potential issues, edge cases, and suggestions for the FCG
 3.  **Refactor Docking**: Break down `AutoDockGPUOracle` if it grows further.
 4.  **Document Pipeline**: Explain how to use `fcgmb/pipeline` to generate new benchmarks.
 5.  **Enhance Oracle**: Allow `FCGMBOracle` to load custom configs easily.
+
+## Recent Updates & Proposals
+
+### 1. Simplified Scratch Directory Structure
+*   **Issue**: The current scratch directory (`.fcgmb` or user-defined) creates an excessively deep and redundant hierarchy, e.g., `grids/<pdb_id>/grid/` and `benchmarks/<name>/results/results/`.
+*   **Proposed Structure**: Flatten the directory layout to improve navigation and reduce path length issues.
+    ```text
+    .fcgmb/
+    ├── grids/
+    │   └── <pdb_id>/              # Store map files directly here (remove 'grid' subfolder)
+    │       ├── <pdb_id>.maps.fld
+    │       └── ...
+    ├── data/                      # Renamed from 'ligand_data' for brevity
+    │   └── <cached_chembl.csv>
+    └── runs/                      # Renamed from 'benchmarks'
+        └── <benchmark_name>/
+            └── results/           # Store DLGs/results directly here (remove second 'results' folder)
+                └── <dlgs>
+    ```
+*   **Implementation Notes**:
+    *   Update `FCGMBOracle.__init__` paths.
+    *   Update `AutoDockGPUOracle` to accept a direct output path rather than appending `/results` automatically, or ensure `FCGMBOracle` passes the parent.
+    *   Update `ReceptorPreparer` to output grid files directly to the PDB folder.
+
+### 2. Receptor Preparation Update
+*   **Status**: The `ReceptorPreparer` class now successfully integrates **Reduce2** (`mmtbx.reduce2`) for adding hydrogens, replacing previous methods.
+*   **Next Steps**: Continue to monitor the robustness of Reduce2 on diverse PDBs. The suggestion to add PDBFixer remains relevant for fixing missing atoms/residues prior to hydrogenation if Reduce2 encounters issues with poor quality structures.
+
+### 3. README & Installation Improvements
+*   **Package Management**: Explicitly document installation using `uv` for fast, reliable dependency management.
+    ```bash
+    # Example
+    uv pip install -e .
+    ```
+*   **Binary Dependencies**: The README must clearly list external binaries required for the workflow, as they are not installed via Python:
+    *   `adgpu` (AutoDock-GPU)
+    *   `autogrid4` (AutoGrid4)
+    *   `mmtbx.reduce2` (Phenix/Reduce)
+    *   `mk_prepare_receptor.py` (Meeko)
+*   **Environment Variables**: Explain how to set PATH or pass executable paths to `FCGMBOracle` if binaries are in non-standard locations.
+
+### 4. Feature Request: AutoDock Vina Support
+*   **Goal**: Allow users to switch between AutoDock-GPU and AutoDock Vina.
+*   **Implementation Plan**:
+    1.  **Create `VinaOracle`**: Subclass `DockingOracle` in `fcgmb/docking.py`.
+        *   Accept `vina_executable` path.
+        *   In `dock_batch`, use `subprocess` to call Vina:
+            ```bash
+            vina --receptor <rec_pdbqt> --ligand <lig_pdbqt> --center_x <x> ... --size_x <x> ... --cpu <n>
+            ```
+        *   **Note**: Vina does not use `.maps.fld` (AutoGrid maps) by default but needs the center/size configuration. This metadata is currently generated during the grid prep. `FCGMBOracle` or `ReceptorPreparer` should expose the grid box center/dimensions (parsed from `.gpf` or `.maps.fld`) to the `VinaOracle`.
+    2.  **Update `FCGMBOracle`**:
+        *   Add `docking_backend` argument (default: "adgpu").
+        *   If `docking_backend="vina"`, instantiate `VinaOracle` instead of `AutoDockGPUOracle`.
+        *   Ensure `_ensure_components` passes the necessary grid parameters (box center/size) to the Vina oracle, as Vina computes grids internally.
+    3.  **User Experience**:
+        *   Config YAML update: Add `docking_backend: vina`.
+        *   Execution: `fcgmb-run ... --backend vina` (if CLI exposed) or just via config.
