@@ -6,6 +6,10 @@ import polars as pl
 from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 
+# Instantiate standardizer objects once at module level
+_FRAGMENT_CHOOSER = rdMolStandardize.LargestFragmentChooser()
+_UNCHARGER = rdMolStandardize.Uncharger()
+
 def standardize_smiles(smiles: str) -> Optional[str]:
     """
     Strip salts, neutralize, and canonicalize a SMILES string.
@@ -20,11 +24,10 @@ def standardize_smiles(smiles: str) -> Optional[str]:
             return None
         
         # 1. Keep largest fragment (removes [Na+], [Cl-], etc.)
-        mol = rdMolStandardize.LargestFragmentChooser().choose(mol)
+        mol = _FRAGMENT_CHOOSER.choose(mol)
         
         # 2. Uncharge (neutralize where chemically sensible)
-        uncharger = rdMolStandardize.Uncharger()
-        mol = uncharger.uncharge(mol)
+        mol = _UNCHARGER.uncharge(mol)
         
         # 3. Return canonical SMILES
         return Chem.MolToSmiles(mol, canonical=True)
