@@ -26,12 +26,12 @@ class LigandPreparer:
         self.ph_high = ph_high
         self.generate_isomers = generate_isomers
 
-    def _prepare_single_ligand(self, args: Tuple[str, int, Path]) -> List[Tuple[str, str]]:
+    def _prepare_single_ligand(self, args: Tuple[str, int, Path, str]) -> List[Path]:
         """
         Prepare multiple ligand PDBQTs (states/conformers) for a single SMILES using Scrub and Meeko.
-        Returns a list of (pdbqt_string, suffix).
+        Returns a list of written file paths.
         """
-        smiles, idx, pdbqt_dir = args
+        smiles, idx, pdbqt_dir, batch_prefix = args
         results = []
         
         try:
@@ -91,7 +91,10 @@ class LigandPreparer:
                     for setup in mol_setups:
                         pdbqt_string, is_ok, error_message = PDBQTWriterLegacy().write_string(setup)
                         if is_ok:
-                            results.append((pdbqt_string, f"s{state_counter}"))
+                            fname = f"{batch_prefix}lig_{idx}_s{state_counter}.pdbqt"
+                            fpath = pdbqt_dir / fname
+                            fpath.write_text(pdbqt_string)
+                            results.append(fpath)
                             state_counter += 1
                     
                     if state_counter >= 32:
@@ -109,7 +112,7 @@ class LigandPreparer:
         Returns {smiles: [pdbqt_paths]}
         """
         output_dir.mkdir(parents=True, exist_ok=True)
-        prep_args = [(smi, idx, output_dir) for idx, smi in enumerate(smiles_list)]
+        prep_args = [(smi, idx, output_dir, batch_prefix) for idx, smi in enumerate(smiles_list)]
         
         # Use spawn to avoid issues with multi-threading and fork
         ctx = multiprocessing.get_context("spawn")
@@ -117,19 +120,8 @@ class LigandPreparer:
             pdbqt_data = pool.map(self._prepare_single_ligand, prep_args)
         
         smiles_to_paths = {}
-        for i, states in enumerate(pdbqt_data):
+        for i, written_files in enumerate(pdbqt_data):
             smi = smiles_list[i]
-            if not states:
-                smiles_to_paths[smi] = []
-                continue
-            
-            written_files = []
-            for pdbqt_string, suffix in states:
-                fname = f"{batch_prefix}lig_{i}_{suffix}.pdbqt"
-                fpath = output_dir / fname
-                fpath.write_text(pdbqt_string)
-                written_files.append(fpath)
-            
             smiles_to_paths[smi] = written_files
             
         return smiles_to_paths
