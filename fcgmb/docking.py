@@ -91,11 +91,14 @@ class AutoDockGPUOracle(DockingOracle):
             # Write filelist and track info
             with open(filelist_path, "w") as f:
                 f.write(f"{self.receptor_file.name}\n")
+
+                # Create ligands directory once
+                lig_dir = tmp_path / "ligands"
+                lig_dir.mkdir(exist_ok=True)
+
                 for smi, paths in smiles_to_pdbqts.items():
                     for p in paths:
                         # Copy PDBQT to tmp_path/ligands
-                        lig_dir = tmp_path / "ligands"
-                        lig_dir.mkdir(exist_ok=True)
                         target_p = lig_dir / p.name
                         shutil.copy2(p, target_p)
                         
