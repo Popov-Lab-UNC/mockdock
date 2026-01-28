@@ -106,6 +106,7 @@ class FCGMBOracle:
         self.docking_analyzer = None
         self.adgpu_executable = adgpu_executable
         self.results_df = pl.DataFrame()
+        self.chembl_data = None
 
     @classmethod
     def list_benchmarks(cls) -> List[str]:
@@ -143,17 +144,23 @@ class FCGMBOracle:
 
     def _get_full_data_and_threshold(self) -> Tuple[pl.DataFrame, float, str]:
         """Internal helper to load data and compute the 25% threshold."""
-        cache_file = self.ligand_data_dir / f"{self.benchmark_name}_chembl.csv"
-        
-        if cache_file.exists():
-            print(f"[FCGMB] Loading cached ChEMBL data from {cache_file.name}")
-            df = pl.read_csv(cache_file)
+        if self.chembl_data is not None:
+            df = self.chembl_data
         else:
-            print(f"[FCGMB] Downloading bioactivity data from ChEMBL for target {self.target_id}...")
-            df = fetch_chembl_data(self.target_id, self.doc_id, units=self.activity_units)
+            cache_file = self.ligand_data_dir / f"{self.benchmark_name}_chembl.csv"
+
+            if cache_file.exists():
+                print(f"[FCGMB] Loading cached ChEMBL data from {cache_file.name}")
+                df = pl.read_csv(cache_file)
+            else:
+                print(f"[FCGMB] Downloading bioactivity data from ChEMBL for target {self.target_id}...")
+                df = fetch_chembl_data(self.target_id, self.doc_id, units=self.activity_units)
+                if not df.is_empty():
+                    df.write_csv(cache_file)
+                    print(f"[FCGMB] Saved ChEMBL data to {cache_file}")
+
             if not df.is_empty():
-                df.write_csv(cache_file)
-                print(f"[FCGMB] Saved ChEMBL data to {cache_file}")
+                self.chembl_data = df
         
         if df.is_empty():
             print("[FCGMB] Warning: No compounds found for this benchmark.")
