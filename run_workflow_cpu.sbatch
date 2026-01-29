@@ -2,8 +2,8 @@
 #SBATCH --job-name=benchmark
 #SBATCH --partition=general
 #SBATCH -n 1
-#SBATCH --cpus-per-task=64
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=32G
 #SBATCH --time=7-00:00:00
 #SBATCH --output=benchmark_%j.log
 #SBATCH --error=benchmark_%j.err
