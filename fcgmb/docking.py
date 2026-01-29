@@ -21,14 +21,14 @@ class DockingOracle(ABC):
         receptor_file: Union[str, Path], 
         n_poses: int = 10, 
         n_cpus: Optional[int] = None, 
-        n_gpus: Optional[int] = 1, 
+        n_gpus: Optional[int] = None, 
         save_dir: Optional[Union[str, Path]] = None,
         **kwargs
     ):
         self.receptor_file = Path(receptor_file).resolve()
         self.n_poses = n_poses
         self.n_cpus = n_cpus or multiprocessing.cpu_count()
-        self.n_gpus = n_gpus or 1
+        self.n_gpus = n_gpus if n_gpus is not None else 1
         self.save_dir = Path(save_dir) if save_dir else None
         
         if self.save_dir:
@@ -128,10 +128,6 @@ class AutoDockGPUOracle(DockingOracle):
                 "--dlgoutput", "1"
             ]
             
-            # If n_gpus > 1, we could add --devlist, but adgpu typically handles one GPU per process
-            # or the user might be using a wrapper that handles multiple GPUs.
-            # For now, we'll keep the standard command.
-            
             try:
                 subprocess.run(cmd, cwd=str(tmp_path), capture_output=True, env=env, text=True)
             except Exception as e:
@@ -160,3 +156,58 @@ class AutoDockGPUOracle(DockingOracle):
                     })
             
             return final_results
+
+class AutoDockVinaOracle(DockingOracle):
+    def __init__(
+        self,
+        receptor_file: Union[str, Path],
+        n_poses: int = 10,
+        n_cpus: Optional[int] = None,
+        exhaustiveness: int = 32,
+        save_dir: Optional[Union[str, Path]] = None,
+        **kwargs
+    ):
+        super().__init__(receptor_file, n_poses, n_cpus, n_gpus=0, save_dir=save_dir)
+        self.exhaustiveness = exhaustiveness
+        
+        from vina import Vina
+        # Use AD4 scoring function since we are using AutoGrid maps
+        self.v = Vina(sf_name='ad4', cpu=self.n_cpus, verbosity=0)
+        
+        # Load maps
+        map_prefix = str(self.receptor_file).replace('.maps.fld', '')
+        self.v.load_maps(map_prefix)
+
+    def dock_batch(self, smiles_to_pdbqts: Dict[str, List[Path]], chunk_idx: int) -> List[Dict]:
+        """Implementation of Vina docking for a batch of PDBQT files."""
+        final_results = []
+        
+        for smiles, paths in smiles_to_pdbqts.items():
+            for p in paths:
+                try:
+                    self.v.set_ligand_from_file(str(p))
+                    self.v.dock(exhaustiveness=self.exhaustiveness, n_poses=self.n_poses)
+                    
+                    stem = p.stem
+                    output_pdbqt = p.parent / f"{stem}_docked.pdbqt"
+                    self.v.write_poses(str(output_pdbqt), n_poses=self.n_poses, overwrite=True)
+                    
+                    persistent_pdbqt = None
+                    if self.save_dir:
+                        persistent_pdbqt = self.save_dir / f"chunk_{chunk_idx}_{stem}_docked.pdbqt"
+                        shutil.copy2(output_pdbqt, persistent_pdbqt)
+                    
+                    final_results.append({
+                        "smiles": smiles,
+                        "dlg_path": persistent_pdbqt or output_pdbqt, # Reusing dlg_path key for convenience in pipeline
+                        "pdbqt_path": p
+                    })
+                except Exception as e:
+                    print(f"Exception running Vina for {smiles}: {e}")
+                    final_results.append({
+                        "smiles": smiles,
+                        "dlg_path": None,
+                        "pdbqt_path": p
+                    })
+                    
+        return final_results

@@ -1,5 +1,5 @@
 from .data import fetch_chembl_data
-from .docking import AutoDockGPUOracle, DockingOracle
+from .docking import AutoDockGPUOracle, AutoDockVinaOracle, DockingOracle
 from .receptor import ReceptorPreparer, extract_protein_and_ligand
 from .ligand_prep import LigandPreparer
 from .analysis import DockingAnalyzer
@@ -14,6 +14,7 @@ from .oracle import FCGMBOracle
 __all__ = [
     "fetch_chembl_data",
     "AutoDockGPUOracle",
+    "AutoDockVinaOracle",
     "DockingOracle",
     "ReceptorPreparer",
     "extract_protein_and_ligand",

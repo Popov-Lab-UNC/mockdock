@@ -1,9 +1,11 @@
 # Standard library imports
+import math
+import multiprocessing
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
-import multiprocessing
-import tempfile
-import math
 
 # Third-party imports
 import numpy as np
@@ -12,11 +14,23 @@ import yaml
 from rdkit import Chem
 
 # Local imports
-from .data import fetch_chembl_data
-from .docking import AutoDockGPUOracle
-from .receptor import ReceptorPreparer
-from .ligand_prep import LigandPreparer
 from .analysis import DockingAnalyzer
+from .data import fetch_chembl_data
+from .docking import AutoDockGPUOracle, AutoDockVinaOracle
+from .ligand_prep import LigandPreparer
+from .receptor import ReceptorPreparer
+
+
+def _detect_gpus() -> int:
+    """Detect available NVIDIA GPUs via nvidia-smi."""
+    try:
+        # Check if nvidia-smi exists and run it
+        result = subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return len([line for line in result.stdout.splitlines() if line.strip().startswith('GPU')])
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return 0
 
 class FCGMBOracle:
     """
@@ -26,14 +40,15 @@ class FCGMBOracle:
     against specific protein-ligand systems using fragment-constrained docking.
     """
     
+    
     def __init__(
         self, 
         benchmark_name: str, 
         budget: int = 5000, 
-        adgpu_executable: str = "adgpu",
+        docking_backend: str = "auto",
         scratch_dir: Optional[Union[str, Path]] = None,
         n_cpus: Optional[int] = None,
-        n_gpus: Optional[int] = 1
+        n_gpus: Optional[int] = None
     ):
         """
         Initialize the oracle for a specific benchmark.
@@ -41,17 +56,33 @@ class FCGMBOracle:
         Args:
             benchmark_name: Name of the benchmark (e.g., 'CHEMBL205_1YDA_CHEMBL2331308')
             budget: Total number of compounds allowed to be scored.
-            adgpu_executable: Path to the AutoDock-GPU executable.
+            docking_backend: Backend to use ('autodock_gpu', 'vina', or 'auto').
             scratch_dir: Directory to store benchmark data (grids, results, etc.). 
-            n_cpus: Number of CPUs for parallel operations.
-            n_gpus: Number of GPUs for docking.
+            n_cpus: Number of CPUs for parallel operations. Autodetected if None.
+            n_gpus: Number of GPUs for docking. Autodetected if None.
         """
         self.benchmark_name = benchmark_name
         self.max_budget = budget
         self.budget_used = 0
         self.finished = False
-        self.n_cpus = n_cpus or multiprocessing.cpu_count()
-        self.n_gpus = n_gpus or 1
+        
+        # Hardware detection
+        self.detected_cpus = multiprocessing.cpu_count()
+        self.detected_gpus = _detect_gpus()
+        
+        self.n_cpus = n_cpus or self.detected_cpus
+        self.n_gpus = n_gpus if n_gpus is not None else self.detected_gpus
+        
+        # Backend resolution
+        self.docking_backend = docking_backend
+        self.resolved_backend = None
+        
+        # Backend-specific configurations (can be overridden via set_backend_config)
+        self.backend_config = {
+            "adgpu_executable": "adgpu",
+            "vina_exhaustiveness": 32,
+            "n_poses": 10
+        }
         
         # Load configuration from internal package directory
         internal_config_dir = Path(__file__).parent / "configs"
@@ -66,7 +97,7 @@ class FCGMBOracle:
                     
                 if not config_path.exists():
                     available = self.list_benchmarks()
-                    raise FileNotFoundError(f"Benchmark config '{benchmark_name}' not found.")
+                    raise FileNotFoundError(f"Benchmark config '{benchmark_name}' not found. Available: {available}")
         
         with open(config_path, "r") as f:
             self.config = yaml.safe_load(f)
@@ -99,14 +130,25 @@ class FCGMBOracle:
         self.ligand_data_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"[FCGMB] Initialized benchmark: {benchmark_name}")
-        
         self.docking_oracle = None
         self.ligand_preparer = None
         self.docking_analyzer = None
-        self.adgpu_executable = adgpu_executable
         self.results_df = pl.DataFrame()
         self.chembl_data = None
+
+    def _print_verbose_init(self):
+        """Prints details about the chosen software and hardware."""
+        print(f"[FCGMB] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550")
+        print(f"[FCGMB] Benchmark: {self.benchmark_name}")
+        print(f"[FCGMB] Backend:   {self.resolved_backend.upper()}")
+        print(f"[FCGMB] Hardware:  {self.n_cpus} CPUs, {self.n_gpus} GPUs (detected {self.detected_cpus}C/{self.detected_gpus}G)")
+        if self.resolved_backend == "vina":
+            print(f"[FCGMB] Vina Exhaustiveness: {self.backend_config['vina_exhaustiveness']}")
+        print(f"[FCGMB] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550")
+
+    def set_backend_config(self, **kwargs):
+        """Override default backend settings."""
+        self.backend_config.update(kwargs)
 
     @classmethod
     def list_benchmarks(cls) -> List[str]:
@@ -176,12 +218,42 @@ class FCGMBOracle:
         
         return df, threshold, act_col
 
+    def _resolve_backend(self) -> str:
+        """Determines which backend to use based on requested type and availability."""
+        import shutil
+        
+        adgpu_exe = self.backend_config.get("adgpu_executable", "adgpu")
+        adgpu_available = shutil.which(adgpu_exe) is not None or (Path(adgpu_exe).exists() and os.access(adgpu_exe, os.X_OK))
+        
+        # Vina is assumed available via pyproject.toml
+        vina_available = True 
+        
+        requested = self.docking_backend.lower()
+        
+        if requested == "autodock_gpu":
+            if adgpu_available:
+                return "autodock_gpu"
+            else:
+                print(f"[FCGMB] Warning: AutoDock-GPU requested but '{adgpu_exe}' not found. Falling back to VINA.")
+                return "vina"
+        elif requested == "vina":
+            return "vina"
+        else: # "auto"
+            if adgpu_available and self.n_gpus > 0:
+                return "autodock_gpu"
+            else:
+                return "vina"
+
     def _ensure_components(self):
         """Initialize all components and prepare grid if necessary."""
         if self.docking_oracle is not None:
             return
 
-        # 1. Prepare Receptor/Grid
+        # 1. Resolve Backend
+        self.resolved_backend = self._resolve_backend()
+        self._print_verbose_init()
+
+        # 2. Prepare Receptor/Grid
         fld_files = list(self.grid_dir.glob("*.maps.fld"))
         if not fld_files:
             print(f"[FCGMB] Grid not found. Preparing receptor and protein-ligand grids for {self.pdb_id}...")
@@ -200,7 +272,7 @@ class FCGMBOracle:
             fld_path = fld_files[0]
             print(f"[FCGMB] Using existing grids for {self.pdb_id}")
             
-        # 2. Setup Analyzer
+        # 3. Setup Analyzer
         ref_path = self.grid_dir / f"{self.pdb_id}_ligand_corrected.sdf"
         if not ref_path.exists():
              ref_path = self.grid_dir / f"{self.pdb_id}_ligand.pdb"
@@ -211,18 +283,27 @@ class FCGMBOracle:
             rmsd_threshold=self.rmsd_threshold
         )
 
-        # 3. Setup Preparer
+        # 4. Setup Preparer
         self.ligand_preparer = LigandPreparer(n_cpus=self.n_cpus)
 
-        # 4. Setup Docking Oracle
-        print(f"[FCGMB] Initializing AutoDock-GPU Oracle...")
-        self.docking_oracle = AutoDockGPUOracle(
-            receptor_file=fld_path,
-            adgpu_executable=self.adgpu_executable,
-            save_dir=self.results_dir,
-            n_cpus=self.n_cpus,
-            n_gpus=self.n_gpus
-        )
+        # 5. Setup Docking Oracle
+        if self.resolved_backend == "autodock_gpu":
+            self.docking_oracle = AutoDockGPUOracle(
+                receptor_file=fld_path,
+                adgpu_executable=self.backend_config["adgpu_executable"],
+                save_dir=self.results_dir,
+                n_poses=self.backend_config["n_poses"],
+                n_cpus=self.n_cpus,
+                n_gpus=self.n_gpus
+            )
+        else:
+            self.docking_oracle = AutoDockVinaOracle(
+                receptor_file=fld_path,
+                exhaustiveness=self.backend_config["vina_exhaustiveness"],
+                save_dir=self.results_dir,
+                n_poses=self.backend_config["n_poses"],
+                n_cpus=self.n_cpus
+            )
 
     def score(self, smiles_list: List[str]) -> Dict[str, float]:
         """

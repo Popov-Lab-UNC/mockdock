@@ -174,7 +174,7 @@ class DockingAnalyzer:
             pass
         return ()
 
-    def calculate_rmsd(self, probe_mol: Chem.Mol) -> float:
+    def calculate_rmsd(self, probe_mol: Chem.Mol, conf_id: int = -1) -> float:
         """Calculate RMSD of the fragment between probe_mol and self.ref_mol."""
         if self.ref_mol is None or self.fragment_mol is None or not self.ref_match:
             return 0.0
@@ -183,7 +183,11 @@ class DockingAnalyzer:
         if not probe_match:
             return 999.9
 
-        probe_conf = probe_mol.GetConformer()
+        try:
+            probe_conf = probe_mol.GetConformer(conf_id)
+        except ValueError:
+            return 999.9
+            
         probe_coords = []
         for idx in probe_match:
             pos = probe_conf.GetAtomPosition(idx)
@@ -195,17 +199,30 @@ class DockingAnalyzer:
 
         return math.sqrt(sq_diff / len(self.ref_coords))
 
-    def filter_poses_by_rmsd(self, dlg_path: Path, smiles: str) -> Tuple[float, bool, Optional[Chem.Mol], float, Optional[Chem.Mol]]:
+    def filter_poses_by_rmsd(self, pose_file: Path, smiles: str) -> Tuple[float, bool, Optional[Chem.Mol], float, Optional[Chem.Mol]]:
         """
-        Parse DLG, filter poses by RMSD if applicable.
+        Parse DLG or PDBQT, filter poses by RMSD if applicable.
         Returns (best_valid_score, passed_constraint, best_mol, best_any_score, best_any_mol).
         """
         try:
-            pdbqt_mol = PDBQTMolecule.from_file(str(dlg_path), is_dlg=True, skip_typing=True)
+            pose_file = Path(pose_file)
+            is_dlg = pose_file.suffix.lower() == ".dlg"
+            pdbqt_mol = PDBQTMolecule.from_file(str(pose_file), is_dlg=is_dlg, skip_typing=True)
             rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
 
             if not rdkit_mols:
                 return float('nan'), False, None, float('nan'), None
+
+            # Unroll multi-conformer mols (typical for Vina PDBQT output)
+            if len(rdkit_mols) == 1 and rdkit_mols[0].GetNumConformers() > 1:
+                base_mol = rdkit_mols[0]
+                unrolled = []
+                for conf in base_mol.GetConformers():
+                    new_mol = Chem.Mol(base_mol)
+                    new_mol.RemoveAllConformers()
+                    new_mol.AddConformer(conf, assignId=True)
+                    unrolled.append(new_mol)
+                rdkit_mols = unrolled
 
             best_valid_score = float('nan')
             best_mol = None
@@ -232,7 +249,7 @@ class DockingAnalyzer:
             return best_valid_score if passed else float('nan'), passed, best_mol, best_any_score, best_any_mol
 
         except Exception as e:
-            print(f"Error in RMSD filtering for {dlg_path}: {e}")
+            print(f"Error in RMSD filtering for {pose_file}: {e}")
             return float('nan'), False, None, float('nan'), None
 
     def check_2d_fragment_match(self, smiles: str) -> bool:
@@ -279,7 +296,9 @@ class DockingAnalyzer:
                 continue
             
             try:
-                pdbqt_mol = PDBQTMolecule.from_file(row[dlg_col], is_dlg=True, skip_typing=True)
+                pose_file = Path(row[dlg_col])
+                is_dlg = pose_file.suffix.lower() == ".dlg"
+                pdbqt_mol = PDBQTMolecule.from_file(str(pose_file), is_dlg=is_dlg, skip_typing=True)
                 rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
                 energies = []
                 if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
