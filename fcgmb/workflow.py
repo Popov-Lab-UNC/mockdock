@@ -101,8 +101,7 @@ def run_docking_workflow(
     doc_id = config.get("doc_id")
     pdb_id = config.get("pdb_id")
     ligand_resname = config.get("ligand_resname")
-    activity_units = config.get("activity_units", "nM")
-    activity_col = config.get("activity_column", "standard_value")
+    activity_col = "pchembl_value"
 
     if run_dir:
         run_base = Path(run_dir)
@@ -158,7 +157,7 @@ def run_docking_workflow(
                             df = df.rename({col: "canonical_smiles"})
                             break
             else:
-                df, stats = fetch_chembl_data(target_id, doc_id, units=activity_units, return_stats=True)
+                df, stats = fetch_chembl_data(target_id, doc_id, return_stats=True)
                 result.n_compounds_total = stats.get("n_total", 0)
                 result.n_compounds_standardized = stats.get("n_standardized", 0)
 
@@ -200,6 +199,8 @@ def run_docking_workflow(
             return result
             
         df = pl.read_csv(df_path)
+        if "pchembl_value" not in df.columns:
+            raise RuntimeError("Missing pchembl_value in cleaned data; cannot proceed.")
         if df.is_empty():
             print("   Warning: No compounds to dock. Skipping.")
             result.status = WorkflowStatus.SUCCESS.value
@@ -341,8 +342,9 @@ def run_docking_workflow(
         results_file = work_dir / f"{data_prefix}_results.csv"
         if results_file.exists():
             df = pl.read_csv(results_file)
-            plot_units = None if "pchembl_value" in df.columns else activity_units
-            plot_docking_results(df, score_col="docking_score", activity_col=activity_col, output_path=str(work_dir / f"{data_prefix}_results.png"), activity_units=plot_units)
+            if "pchembl_value" not in df.columns:
+                raise RuntimeError("Missing pchembl_value in results; cannot plot.")
+            plot_docking_results(df, score_col="docking_score", activity_col=activity_col, output_path=str(work_dir / f"{data_prefix}_results.png"))
 
     append_to_summary()
     return result

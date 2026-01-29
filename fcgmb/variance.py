@@ -14,24 +14,11 @@ from scipy.stats import pearsonr, spearmanr
 
 def get_pactivity(df: pl.DataFrame, config_path: Path):
     """
-    Robustly convert activity to pActivity using ChEMBL pValue or YAML units.
+    Use ChEMBL pValue only; error if missing.
     """
-    if "pchembl_value" in df.columns:
-        return df.get_column("pchembl_value").to_numpy(), "pActivity (ChEMBL pValue)"
-    
-    # Fallback to standard_value + units from YAML
-    try:
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
-        units = config.get("activity_units", "nM")
-    except:
-        units = "nM"
-        
-    activities = df.get_column("standard_value").to_numpy()
-    unit_offsets = {"nM": 9, "uM": 6, "mM": 3, "M": 0}
-    offset = unit_offsets.get(units, 9)
-    p_activities = offset - np.log10(activities + 1e-12)
-    return p_activities, f"pActivity (-log10 {units})"
+    if "pchembl_value" not in df.columns:
+        raise RuntimeError("Missing pchembl_value; cannot compute pActivity.")
+    return df.get_column("pchembl_value").to_numpy(), "pActivity (ChEMBL pValue)"
 
 def run_variance_tests(
     config_dir: Path = Path("configs"),
@@ -175,13 +162,14 @@ def analyze_variance_results(
         # Merge docking scores
         merged = None
         for i, df in enumerate(df_list):
-            subset = df.select(["canonical_smiles", "docking_score", "standard_value", 
-                                "pchembl_value" if "pchembl_value" in df.columns else "standard_value"])
+            if "pchembl_value" not in df.columns:
+                raise RuntimeError("Missing pchembl_value in results; cannot analyze variance.")
+            subset = df.select(["canonical_smiles", "docking_score", "pchembl_value"])
             subset = subset.rename({"docking_score": f"score_{i}"})
             if merged is None:
                 merged = subset
             else:
-                cols_to_drop = [c for c in ["standard_value", "pchembl_value"] if c in merged.columns]
+                cols_to_drop = [c for c in ["pchembl_value"] if c in merged.columns]
                 merged = merged.join(subset.drop(cols_to_drop), on="canonical_smiles", how="inner")
 
         score_cols = [c for c in merged.columns if c.startswith("score_")]

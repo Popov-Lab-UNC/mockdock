@@ -6,8 +6,7 @@ output_dir: "CDK6_workflow"
 target_id: "CHEMBL2508"
 doc_id: "CHEMBL5728430"
 ligand_csv_path: null
-activity_units: "nM"
-activity_column: "standard_value"
+activity_column: pchembl_value
 id_column: "molecule_chembl_id"
 
 # STAGE 2: Grid Preparation

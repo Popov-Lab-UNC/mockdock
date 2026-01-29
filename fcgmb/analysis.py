@@ -11,7 +11,7 @@ def aggregate_results_per_id(
     df: pl.DataFrame,
     score_col: str = "docking_score",
     valid_col: str = "valid_pose_found",
-    activity_col: str = "standard_value",
+    activity_col: str = "pchembl_value",
 ) -> pl.DataFrame:
     """
     Aggregate results to one row per compound ID.
@@ -90,7 +90,6 @@ def aggregate_results_per_id(
         "canonical_smiles",
         "molecule_chembl_id",
         "pchembl_value",
-        "standard_value",
         activity_col,
         score_col,
         "score_valid",

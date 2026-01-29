@@ -6,8 +6,7 @@ output_dir: "PptT_workflow"
 target_id: null
 doc_id: null
 ligand_csv_path: "custom_data/pptt_ralt.csv"
-activity_units: "uM"
-activity_column: "ic50"
+activity_column: pchembl_value
 id_column: "id"
 
 # STAGE 2: Grid Preparation

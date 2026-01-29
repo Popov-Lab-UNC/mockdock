@@ -1,15 +1,19 @@
 #!/bin/bash
 #SBATCH --job-name=benchmark
-#SBATCH --partition=general
+
+#SBATCH --partition=h100_sn
 #SBATCH -n 1
-#SBATCH --cpus-per-task=64
-#SBATCH --mem=64G
-#SBATCH --time=7-00:00:00
+#SBATCH --gpus=1
+
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=32G
+#SBATCH --time=4-00:00:00
 #SBATCH --output=benchmark_%j.log
 #SBATCH --error=benchmark_%j.err
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=shuhang@unc.edu
 
+module load autodock-gpu
 module load autogrid
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate cctbx
@@ -24,7 +28,7 @@ cd /work/users/s/h/shuhang/benchmark
 # or to customize:
 #   export SKIP_STATUSES="SUCCESS,FAILED_REF_MATCH,FAILED_PDB_404,FAILED_LIGAND_MISSING"
 #SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS,FAILED_REF_MATCH,FAILED_LIGAND_MISSING}"
-SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS}"
+SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS,FAILED_REF_MATCH,FAILED_GRID_PREP}"
 # Make sure the Python skip-scanner can see it.
 export SKIP_STATUSES
 
@@ -98,12 +102,7 @@ for config_file in generated_configs/*.yaml; do
         echo "===================="
         echo "Running: $config_file"
         echo "===================="
-        CPUS_ARG=()
-        CPUS_ARG=()
-        if [ -n "${SLURM_CPUS_PER_TASK:-}" ]; then
-            CPUS_ARG=(--cpus "$SLURM_CPUS_PER_TASK")
-        fi
-        python -u run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" "${CPUS_ARG[@]}"
+        python -u run_workflow.py --config "$config_file" --run-dir "$RUN_DIR"
         echo ""
     fi
 done

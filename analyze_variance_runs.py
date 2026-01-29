@@ -18,7 +18,7 @@ def _iter_run_dirs(runs_dir: Path) -> List[Path]:
 
 def _iter_results(run_dir: Path) -> List[Tuple[str, Path]]:
     results = []
-    for csv_path in run_dir.glob("**/*_results_full.csv"):
+    for csv_path in run_dir.glob("**/*_results.csv"):
         # Layout: run_dir/<target_id>_<pdb_id>/<doc_id>/*_results_full.csv
         try:
             target_pdb = csv_path.parent.parent.name
@@ -136,17 +136,17 @@ def plot_system_variance(
 
         merged = None
         for i, df in enumerate(df_list):
-            columns = ["canonical_smiles", "docking_score"]
-            if "standard_value" in df.columns:
-                columns.append("standard_value")
-            if "pchembl_value" in df.columns:
-                columns.append("pchembl_value")
+            id_col = "molecule_chembl_id" if "molecule_chembl_id" in df.columns else "canonical_smiles"
+            if "pchembl_value" not in df.columns:
+                raise RuntimeError("Missing pchembl_value in results; cannot analyze variance.")
+            columns = [id_col, "docking_score", "pchembl_value"]
             subset = df.select(columns).rename({"docking_score": f"score_{i}"})
             if merged is None:
                 merged = subset
+                current_id_col = id_col
             else:
-                drop_cols = [c for c in ["standard_value", "pchembl_value"] if c in merged.columns]
-                merged = merged.join(subset.drop(drop_cols), on="canonical_smiles", how="inner")
+                drop_cols = [c for c in ["pchembl_value"] if c in merged.columns]
+                merged = merged.join(subset.drop(drop_cols), on=current_id_col, how="inner")
 
         if merged is None or merged.is_empty():
             continue

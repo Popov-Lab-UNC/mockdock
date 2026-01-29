@@ -3,10 +3,6 @@
 #SBATCH --partition=volta-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
-
-##SBATCH --partition=general
-##SBATCH -n 1
-
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=32G
 #SBATCH --time=7-00:00:00
@@ -30,7 +26,7 @@ cd /work/users/s/h/shuhang/benchmark
 # or to customize:
 #   export SKIP_STATUSES="SUCCESS,FAILED_REF_MATCH,FAILED_PDB_404,FAILED_LIGAND_MISSING"
 #SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS,FAILED_REF_MATCH,FAILED_LIGAND_MISSING}"
-SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS}"
+SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS,FAILED_REF_MATCH,FAILED_GRID_PREP}"
 # Make sure the Python skip-scanner can see it.
 export SKIP_STATUSES
 

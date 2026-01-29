@@ -16,25 +16,15 @@ from scipy.stats import pearsonr, spearmanr
 def plot_docking_results(
     df: pl.DataFrame,
     score_col: str = "docking_score",
-    activity_col: str = "standard_value", 
+    activity_col: str = "pchembl_value", 
     valid_col: str = "valid_pose_found",
-    output_path: Optional[str] = None,
-    activity_units: Optional[str] = None
+    output_path: Optional[str] = None
 ):
     """
-    Plot docking scores vs activity values.
-    
-    Args:
-        df: Polars DataFrame containing the results.
-        score_col: Column name for docking scores.
-        activity_col: Column name for activity values.
-        valid_col: Column name for boolean validity (used for coloring).
-        output_path: If provided, save the plot to this path.
-        activity_units: Units of the activity values ('nM', 'uM', 'mM', 'M').
-                       Only required if data is not pchembl_value. If None and
-                       pchembl_value column exists, uses pchembl directly.
+    Plot docking scores vs pChEMBL values.
+    Assumes activity_col is already log-scaled (e.g., pchembl_value).
     """
-    # Filter out failed scores (999.9), nulls, and NaNs for both columns
+    # 1. Filter out failed scores (999.9), nulls, and NaNs
     clean_df = df.filter(
         (pl.col(score_col).is_not_null()) &
         (pl.col(score_col).is_not_nan()) &
@@ -44,77 +34,61 @@ def plot_docking_results(
     )
     
     if len(clean_df) < 2:
-        print("Not enough data points to plot after filtering failed scores/NaNs.")
+        print("Not enough data points to plot.")
         return None
 
-    # Extract columns
+    # 2. Extract columns (No math, just extraction)
     scores = clean_df.get_column(score_col).to_numpy()
     activities = clean_df.get_column(activity_col).to_numpy()
     
+    # 3. Handle validity column safely (Fill nulls with False)
     if valid_col in clean_df.columns:
-        is_valid = clean_df.get_column(valid_col).to_numpy()
+        is_valid = clean_df.get_column(valid_col).fill_null(False).to_numpy()
     else:
+        # If column missing, assume everything is valid (or invalid, depending on preference)
         is_valid = np.ones(len(scores), dtype=bool)
-
-    # Check if we have pchembl_value (unit-agnostic) or need to convert
-    # pchembl_value is already -log10(M), so we can use it directly
-    # Note: data.py creates both pchembl_value and standard_value when pchembl is available
-    # We check the original column name to determine if conversion is needed
-    has_pchembl = 'pchembl_value' in df.columns
-    
-    if has_pchembl and activity_col == 'pchembl_value':
-        # Use pchembl_value directly (already in pActivity units)
-        p_activities = activities
-        activity_label = "pActivity (from pchembl_value)"
-    elif has_pchembl and activity_col == 'standard_value':
-        # standard_value was created from pchembl_value, so it's already in pActivity units
-        p_activities = activities
-        activity_label = "pActivity (from pchembl_value)"
-    else:
-        # Convert from standard_value using units
-        if activity_units is None:
-            activity_units = "nM"  # Default fallback
-            print(f"WARNING: No units specified, assuming {activity_units}")
-        
-        unit_offsets = {
-            "nM": 9,
-            "uM": 6,
-            "mM": 3,
-            "M": 0
-        }
-        offset = unit_offsets.get(activity_units, 9) 
-        p_activities = offset - np.log10(activities + 1e-12)
-        activity_label = f"pActivity (-log10 {activity_units} -> M)"
 
     plt.figure(figsize=(10, 6))
     
-    # x=Docking Score, y=pActivity
-    # Plot valid points (Blue)
     valid_mask = (is_valid == True)
-    if np.any(valid_mask):
-        sns.scatterplot(x=scores[valid_mask], y=p_activities[valid_mask], color='blue', alpha=0.6, label='RMSD < Threshold')
-
-    # Plot invalid points (Red)
     invalid_mask = (is_valid == False)
-    if np.any(invalid_mask):
-        sns.scatterplot(x=scores[invalid_mask], y=p_activities[invalid_mask], color='red', alpha=0.6, label='RMSD > Threshold')
 
-    def _compute_stats(x_vals: np.ndarray, y_vals: np.ndarray) -> dict:
+    # 4. Fix Plotting Order: Plot Noise (Red) FIRST, Signal (Blue) SECOND
+    if np.any(invalid_mask):
+        sns.scatterplot(
+            x=scores[invalid_mask], 
+            y=activities[invalid_mask], 
+            color='red', 
+            alpha=0.5, 
+            label='RMSD > Threshold'
+        )
+
+    if np.any(valid_mask):
+        sns.scatterplot(
+            x=scores[valid_mask], 
+            y=activities[valid_mask], 
+            color='blue', 
+            alpha=0.7, 
+            label='RMSD < Threshold'
+        )
+
+    # 5. Compute Stats
+    def _compute_stats(x_vals, y_vals):
         stats = {"n": int(len(x_vals)), "pearson": 0.0, "spearman": 0.0, "r2": 0.0}
         if len(x_vals) < 2:
             return stats
         if np.var(x_vals) > 0 and np.var(y_vals) > 0:
-            pearson_corr, _ = pearsonr(x_vals, y_vals)
-            spearman_corr, _ = spearmanr(x_vals, y_vals)
-            stats["pearson"] = float(pearson_corr)
-            stats["spearman"] = float(spearman_corr)
-            stats["r2"] = float(pearson_corr ** 2)
-        else:
-            print("Warning: Constant input detected, correlation set to 0.0")
+            p_corr, _ = pearsonr(x_vals, y_vals)
+            s_corr, _ = spearmanr(x_vals, y_vals)
+            stats["pearson"] = float(p_corr)
+            stats["spearman"] = float(s_corr)
+            stats["r2"] = float(p_corr ** 2)
         return stats
 
-    valid_stats = _compute_stats(scores[valid_mask], p_activities[valid_mask])
-    all_stats = _compute_stats(scores, p_activities)
+    valid_stats = _compute_stats(scores[valid_mask], activities[valid_mask])
+    all_stats = _compute_stats(scores, activities)
+    
+    # Calculate pass percentage
     pass_pct = 100.0 * float(valid_stats["n"]) / float(len(scores))
 
     stats_text = (
@@ -125,15 +99,13 @@ def plot_docking_results(
         f"Pearson {all_stats['pearson']:.3f}, Spearman {all_stats['spearman']:.3f}"
     )
 
-    plt.title("pActivity vs RMSD-Constrained Docking Score")
+    plt.title(f"{activity_col} vs Docking Score")
     plt.xlabel("Docking Score (Predicted)")
-    plt.ylabel(activity_label)
+    plt.ylabel(f"{activity_col} (Experimental)")
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.text(
-        0.02,
-        0.98,
-        stats_text,
+        0.02, 0.98, stats_text,
         transform=plt.gca().transAxes,
         verticalalignment="top",
         bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
@@ -151,18 +123,16 @@ def plot_docking_results(
     return {
         "score_col": score_col,
         "activity_col": activity_col,
-        "activity_units": activity_units,
         "n_points": int(len(clean_df)),
-        "pass_pct": float(pass_pct),
+        "pass_pct": pass_pct,
         "stats_valid": valid_stats,
         "stats_all": all_stats,
     }
 
 def plot_activity_distribution(
     df: pl.DataFrame,
-    activity_col: str = "standard_value",
-    output_path: Optional[str] = None,
-    activity_units: Optional[str] = None
+    activity_col: str = "pchembl_value",
+    output_path: Optional[str] = None
 ):
     """
     Plot the distribution of bioactivity values.
@@ -171,9 +141,6 @@ def plot_activity_distribution(
         df: Polars DataFrame containing activity data.
         activity_col: Column name for activity values.
         output_path: If provided, save the plot to this path.
-        activity_units: Units of the activity values ('nM', 'uM', 'mM', 'M').
-                       Only required if data is not pchembl_value. If None and
-                       pchembl_value column exists, uses pchembl directly.
     """
     # Filter nulls
     clean_df = df.filter(pl.col(activity_col).is_not_null())
@@ -184,30 +151,12 @@ def plot_activity_distribution(
 
     activities = clean_df.get_column(activity_col).to_numpy()
     
-    # Check if we have pchembl_value (unit-agnostic) or need to convert
-    has_pchembl = 'pchembl_value' in df.columns
-    
-    if has_pchembl and activity_col == 'pchembl_value':
-        # Use pchembl_value directly (already in pActivity units)
-        p_activities = activities
-        activity_label = "pActivity (from pchembl_value)"
-        title_suffix = "pchembl_value"
-    elif has_pchembl and activity_col == 'standard_value':
-        # standard_value was created from pchembl_value, so it's already in pActivity units
-        p_activities = activities
-        activity_label = "pActivity (from pchembl_value)"
-        title_suffix = "pchembl_value"
-    else:
-        # Convert from standard_value using units
-        if activity_units is None:
-            activity_units = "nM"  # Default fallback
-            print(f"WARNING: No units specified, assuming {activity_units}")
-        
-        unit_offsets = {"nM": 9, "uM": 6, "mM": 3, "M": 0}
-        offset = unit_offsets.get(activity_units, 9)
-        p_activities = offset - np.log10(activities + 1e-12)
-        activity_label = f"pActivity (offset={offset})"
-        title_suffix = f"Units: {activity_units}"
+    if activity_col != "pchembl_value":
+        raise ValueError("pchembl_value is required for activity plots.")
+
+    p_activities = activities
+    activity_label = "pActivity (from pchembl_value)"
+    title_suffix = "pchembl_value"
 
     plt.figure(figsize=(10, 6))
     sns.histplot(p_activities, kde=True, bins=30, color='skyblue')

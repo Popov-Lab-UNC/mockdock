@@ -11,8 +11,7 @@ output_dir: 2R0U_workflow
 target_id: CHEMBL4630
 doc_id: CHEMBL1140535
 ligand_csv_path: null
-activity_units: nM
-activity_column: standard_value
+activity_column: pchembl_value
 id_column: molecule_chembl_id
 ligand_resname: M54
 protein_pdb_path: null

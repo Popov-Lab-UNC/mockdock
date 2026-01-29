@@ -11,8 +11,7 @@ output_dir: 7KCC_workflow
 target_id: CHEMBL3313835
 doc_id: CHEMBL4834423
 ligand_csv_path: null
-activity_units: nM
-activity_column: standard_value
+activity_column: pchembl_value
 id_column: molecule_chembl_id
 ligand_resname: WBG
 protein_pdb_path: null

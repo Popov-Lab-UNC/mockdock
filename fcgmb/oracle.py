@@ -108,7 +108,6 @@ class FCGMBOracle:
         self.fragment_smiles = self.config.get("fragment_smiles")
         self.rmsd_threshold = self.config.get("rmsd_threshold", 2.0)
         self.ligand_resname = self.config.get("ligand_resname")
-        self.activity_units = self.config.get("activity_units", "nM")
         
         # Normalization bounds
         self.low_score = self.config.get("low_score")
@@ -196,7 +195,7 @@ class FCGMBOracle:
                 df = pl.read_csv(cache_file)
             else:
                 print(f"[FCGMB] Downloading bioactivity data from ChEMBL for target {self.target_id}...")
-                df = fetch_chembl_data(self.target_id, self.doc_id, units=self.activity_units)
+                df = fetch_chembl_data(self.target_id, self.doc_id)
                 if not df.is_empty():
                     df.write_csv(cache_file)
                     print(f"[FCGMB] Saved ChEMBL data to {cache_file}")
@@ -208,8 +207,10 @@ class FCGMBOracle:
             print("[FCGMB] Warning: No compounds found for this benchmark.")
             return df, 0.0, ""
             
-        # Preferred activity column
-        act_col = "pchembl_value" if "pchembl_value" in df.columns else "standard_value"
+        # Required activity column
+        if "pchembl_value" not in df.columns:
+            raise RuntimeError("Missing pchembl_value in ChEMBL data; cannot proceed.")
+        act_col = "pchembl_value"
         
         # Filter: pchembl value below 25% threshold (based on range)
         pvals = df.get_column(act_col).to_numpy()

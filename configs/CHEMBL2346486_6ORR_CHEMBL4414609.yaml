@@ -11,8 +11,7 @@ output_dir: 6ORR_workflow
 target_id: CHEMBL2346486
 doc_id: CHEMBL4414609
 ligand_csv_path: null
-activity_units: nM
-activity_column: standard_value
+activity_column: pchembl_value
 id_column: molecule_chembl_id
 ligand_resname: N37
 protein_pdb_path: null

@@ -119,19 +119,13 @@ def main():
         # Use MCS from document compounds as fragment constraint
         mcs_smiles = row['mcs_smiles']
         
-        # Get activity units from CSV, default to nM if not present
-        activity_units = row.get('activity_units', 'nM')
-        if pd.isna(activity_units) or activity_units == '':
-            activity_units = 'nM'
-
         config = {
             'pdb_id': pdb_id,
             'output_dir': f"{pdb_id}_workflow",
             'target_id': target_id,
             'doc_id': doc_id,
             'ligand_csv_path': None,
-            'activity_units': activity_units,
-            'activity_column': 'standard_value',
+            'activity_column': 'pchembl_value',
             'id_column': 'molecule_chembl_id',
             'ligand_resname': row['ligand_resname'],
             'protein_pdb_path': None,
@@ -163,8 +157,6 @@ def main():
                     'best_similarity', 'crystal_in_document']
     if 'mcs_smiles' in df.columns:
         summary_cols.append('mcs_smiles')
-    if 'activity_units' in df.columns:
-        summary_cols.append('activity_units')
     df[summary_cols].to_csv(summary_path, index=False)
     print(f"Config index saved to {summary_path}")
 
