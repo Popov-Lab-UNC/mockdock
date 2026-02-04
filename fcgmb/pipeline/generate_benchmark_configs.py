@@ -111,13 +111,13 @@ def main():
 
     # Generate configs
     generated = 0
-    for _, row in df.iterrows():
-        target_id = row['chembl_target_id']
-        doc_id = row['document_chembl_id']
-        pdb_id = row['pdb_id']
+    for row in df.itertuples():
+        target_id = row.chembl_target_id
+        doc_id = row.document_chembl_id
+        pdb_id = row.pdb_id
         
         # Use MCS from document compounds as fragment constraint
-        mcs_smiles = row['mcs_smiles']
+        mcs_smiles = row.mcs_smiles
         
         config = {
             'pdb_id': pdb_id,
@@ -127,7 +127,7 @@ def main():
             'ligand_csv_path': None,
             'activity_column': 'pchembl_value',
             'id_column': 'molecule_chembl_id',
-            'ligand_resname': row['ligand_resname'],
+            'ligand_resname': row.ligand_resname,
             'protein_pdb_path': None,
             'ligand_pdb_path': None,
             'fragment_smiles': mcs_smiles,
@@ -137,12 +137,12 @@ def main():
         # Write YAML
         yaml_path = output_dir / f"{target_id}_{pdb_id}_{doc_id}.yaml"
         with open(yaml_path, 'w') as f:
-            f.write(f"# ChEMBL Target: {row['target_name']}\n")
-            f.write(f"# UniProt: {row['uniprot_id']}\n")
-            f.write(f"# PDB: {pdb_id} (Resolution: {row['resolution']:.2f} Å)\n")
-            f.write(f"# Document: {doc_id} ({row['document_type']}, {row['n_compounds_in_doc']} compounds)\n")
-            f.write(f"# Crystal Ligand: {row['ligand_resname']} ({row['crystal_smiles'][:60]}...)\n")
-            f.write(f"# Best Match Similarity: {row['best_similarity']:.3f}\n")
+            f.write(f"# ChEMBL Target: {row.target_name}\n")
+            f.write(f"# UniProt: {row.uniprot_id}\n")
+            f.write(f"# PDB: {pdb_id} (Resolution: {row.resolution:.2f} Å)\n")
+            f.write(f"# Document: {doc_id} ({row.document_type}, {row.n_compounds_in_doc} compounds)\n")
+            f.write(f"# Crystal Ligand: {row.ligand_resname} ({row.crystal_smiles[:60]}...)\n")
+            f.write(f"# Best Match Similarity: {row.best_similarity:.3f}\n")
             f.write(f"# MCS Fragment: {mcs_smiles}\n\n")
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
