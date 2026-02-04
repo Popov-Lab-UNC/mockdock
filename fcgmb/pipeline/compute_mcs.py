@@ -268,6 +268,63 @@ def merge_mcs_results(mcs_results_csv: str, mapping_pattern: str, output_csv: st
         print("\nNo results to save")
 
 
+def prefetch_compounds(docs_to_fetch, batch_size=20, max_workers=5):
+    """
+    Prefetch compounds for a list of documents in parallel batches.
+
+    Args:
+        docs_to_fetch: List of document IDs
+        batch_size: Number of documents per batch
+        max_workers: Number of parallel workers
+
+    Returns:
+        Dictionary mapping document ID to list of SMILES
+    """
+    import concurrent.futures
+
+    doc_compounds_cache = {}
+
+    if not docs_to_fetch:
+        return doc_compounds_cache
+
+    print("Pre-fetching compounds in batches...")
+    batches = []
+    for i in range(0, len(docs_to_fetch), batch_size):
+        batches.append(docs_to_fetch[i:i + batch_size])
+
+    print(f"  Fetching {len(batches)} batches in parallel...")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_batch = {
+            executor.submit(fetch_batch_with_timeout, batch, timeout=120): batch
+            for batch in batches
+        }
+
+        completed_count = 0
+        for future in concurrent.futures.as_completed(future_to_batch):
+            batch = future_to_batch[future]
+            completed_count += 1
+            try:
+                batch_results = future.result()
+
+                # Update cache
+                if batch_results is not None:
+                    doc_compounds_cache.update(batch_results)
+
+                    # Explicitly mark docs that returned no results as having empty list
+                    # only if the batch fetch itself was successful (not None)
+                    for doc_id in batch:
+                        if doc_id not in doc_compounds_cache:
+                            doc_compounds_cache[doc_id] = []
+
+                print(f"  Fetched batch {completed_count}/{len(batches)} ({len(batch)} docs)")
+
+            except Exception as exc:
+                print(f"  [!] Batch fetch generated an exception: {exc}")
+
+    return doc_compounds_cache
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compute MCS for benchmark documents")
     parser.add_argument("--input", default="data/chembl_docking_benchmark.csv", help="Input CSV")
@@ -368,27 +425,7 @@ def main():
     print(f"Documents to fetch: {len(docs_to_fetch)}")
 
     # Batch fetch compounds
-    batch_size = 20
-    if docs_to_fetch:
-        print("Pre-fetching compounds in batches...")
-        for i in range(0, len(docs_to_fetch), batch_size):
-            batch = docs_to_fetch[i:i+batch_size]
-            print(f"  Fetching batch {i//batch_size + 1}/{(len(docs_to_fetch)-1)//batch_size + 1} ({len(batch)} docs)...")
-            batch_results = fetch_batch_with_timeout(batch, timeout=120)
-
-            # Update cache
-            if batch_results is not None:
-                doc_compounds_cache.update(batch_results)
-
-                # Explicitly mark docs that returned no results as having empty list
-                # only if the batch fetch itself was successful (not None)
-                for doc_id in batch:
-                    if doc_id not in doc_compounds_cache:
-                        doc_compounds_cache[doc_id] = []
-
-            # If batch_results is None, we don't update cache, effectively marking them for retry/fallback
-
-            time.sleep(args.delay)
+    doc_compounds_cache.update(prefetch_compounds(docs_to_fetch, batch_size=20))
 
     # Track results for new document
     mcs_results = []
