@@ -288,12 +288,16 @@ class DockingAnalyzer:
                  if row.get(key_col):
                      meta_map[row[key_col]] = row
 
-        sorted_results = results_df.sort(score_col, descending=False)
+        # Filter invalid scores/poses first using Polars expressions for performance
+        # This avoids materializing the entire DataFrame to dicts and Python-loop filtering
+        filtered_results = results_df.filter(
+            pl.col(score_col).is_not_null() &
+            pl.col(score_col).is_not_nan() &
+            (pl.col(score_col) < 999.0) &
+            pl.col(dlg_col).is_not_null()
+        ).sort(score_col, descending=False)
 
-        for row in sorted_results.to_dicts():
-            if row[score_col] is None or math.isnan(row[score_col]) or row[score_col] >= 999.0 or row[dlg_col] is None:
-                continue
-            
+        for row in filtered_results.iter_rows(named=True):
             try:
                 pose_file = Path(row[dlg_col])
                 is_dlg = pose_file.suffix.lower() == ".dlg"
