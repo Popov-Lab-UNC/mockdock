@@ -268,6 +268,22 @@ def merge_mcs_results(mcs_results_csv: str, mapping_pattern: str, output_csv: st
         print("\nNo results to save")
 
 
+def mcs_worker(args):
+    """
+    Worker function for parallel MCS computation.
+
+    Args:
+        args: Tuple containing (doc_id, compounds, crystal_smiles, max_compounds, timeout)
+
+    Returns:
+        tuple: (doc_id, mcs_smiles, n_compounds)
+    """
+    doc_id, compounds, crystal_smiles, max_compounds, timeout = args
+    mcs_smiles = compute_mcs(compounds, reference_smiles=crystal_smiles,
+                            max_compounds=max_compounds, timeout=timeout)
+    return doc_id, mcs_smiles, len(compounds)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compute MCS for benchmark documents")
     parser.add_argument("--input", default="data/chembl_docking_benchmark.csv", help="Input CSV")
@@ -285,6 +301,7 @@ def main():
         "--mapping-pattern",
         default="data/intermediate/mcs_results/chunk_*.csv",
                         help="Glob pattern for mapping files (used with --merge)")
+    parser.add_argument("--n-cpus", type=int, default=None, help="Number of CPUs to use")
     args = parser.parse_args()
     
     # Handle merge mode
@@ -393,19 +410,22 @@ def main():
     # Track results for new document
     mcs_results = []
     
-    # Process each document
-    processed = 0
+    # Task preparation
+    tasks = []
     skipped = 0
-    for doc_id in tqdm(unique_docs, desc="Processing documents"):
-        # Get crystal ligand SMILES for this document (used as template)
-        # Note: multiple PDBs might match one doc, we just pick the first one
-        doc_rows = df[df['document_chembl_id'] == doc_id]
-        crystal_smiles = doc_rows['crystal_smiles'].iloc[0] if 'crystal_smiles' in doc_rows.columns else None
 
+    print("Preparing MCS tasks...")
+    # Iterate through unique_docs to prepare tasks or process trivial cases
+    for doc_id in unique_docs:
         # Check if already computed in existing results
         if doc_id in existing_mcs and pd.notna(existing_mcs[doc_id]):
             skipped += 1
             continue
+
+        # Get crystal ligand SMILES for this document (used as template)
+        # Note: multiple PDBs might match one doc, we just pick the first one
+        doc_rows = df[df['document_chembl_id'] == doc_id]
+        crystal_smiles = doc_rows['crystal_smiles'].iloc[0] if 'crystal_smiles' in doc_rows.columns else None
         
         # Compounds should be in cache now
         compounds = doc_compounds_cache.get(doc_id, [])
@@ -429,29 +449,47 @@ def main():
                 'timestamp': datetime.now().isoformat()
             })
             continue
-        
-        # Compute MCS
-        mcs_smiles = compute_mcs(compounds, reference_smiles=crystal_smiles, 
-                                max_compounds=args.max_compounds, timeout=args.timeout)
-        
-        if mcs_smiles:
-            mcs_results.append({
-                'document_chembl_id': doc_id,
-                'mcs_smiles': mcs_smiles,
-                'n_compounds': len(compounds),
-                'status': 'success',
-                'timestamp': datetime.now().isoformat()
-            })
-            processed += 1
+
+        # Add to tasks
+        tasks.append((doc_id, compounds, crystal_smiles, args.max_compounds, args.timeout))
+
+    processed = 0
+    if tasks:
+        # Determine number of CPUs
+        if args.n_cpus:
+            n_cpus = args.n_cpus
         else:
-            print(f"  [!] Could not compute MCS for document {doc_id}")
-            mcs_results.append({
-                'document_chembl_id': doc_id,
-                'mcs_smiles': None,
-                'n_compounds': len(compounds),
-                'status': 'failed',
-                'timestamp': datetime.now().isoformat()
-            })
+            try:
+                import os
+                n_cpus = len(os.sched_getaffinity(0))
+            except (AttributeError, ImportError, NotImplementedError):
+                n_cpus = multiprocessing.cpu_count()
+
+        print(f"Running MCS computation for {len(tasks)} documents on {n_cpus} cores...")
+
+        with multiprocessing.Pool(processes=n_cpus) as pool:
+            # Use imap_unordered for better responsiveness with tqdm
+            results_iter = pool.imap_unordered(mcs_worker, tasks)
+
+            for doc_id, mcs_smiles, n_compounds in tqdm(results_iter, total=len(tasks), desc="Computing MCS"):
+                if mcs_smiles:
+                    mcs_results.append({
+                        'document_chembl_id': doc_id,
+                        'mcs_smiles': mcs_smiles,
+                        'n_compounds': n_compounds,
+                        'status': 'success',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    processed += 1
+                else:
+                    print(f"  [!] Could not compute MCS for document {doc_id}")
+                    mcs_results.append({
+                        'document_chembl_id': doc_id,
+                        'mcs_smiles': None,
+                        'n_compounds': n_compounds,
+                        'status': 'failed',
+                        'timestamp': datetime.now().isoformat()
+                    })
 
     print(f"\nComputed MCS for {processed} new documents")
     if skipped > 0:
