@@ -11,6 +11,8 @@ Output: data/chembl_pdb_map.csv
 import pandas as pd
 import requests
 import time
+import asyncio
+import aiohttp
 from tqdm import tqdm
 import argparse
 from pathlib import Path
@@ -60,9 +62,8 @@ def get_pdbs_for_uniprot(uniprot_id: str) -> list:
     return []
 
 
-def get_ligand_info_for_pdb(pdb_id: str) -> list:
-    """Get ligand residue names and SMILES for a PDB using GraphQL."""
-    query = f'''
+def _get_graphql_query(pdb_id: str) -> str:
+    return f'''
     query {{
         entry(entry_id: "{pdb_id}") {{
             rcsb_entry_info {{
@@ -83,6 +84,44 @@ def get_ligand_info_for_pdb(pdb_id: str) -> list:
         }}
     }}
     '''
+
+
+def _parse_entry_data(entry_data: dict) -> tuple:
+    if not entry_data:
+        return [], None
+
+    # Get resolution
+    resolution = None
+    res_info = entry_data.get('rcsb_entry_info', {})
+    if res_info and res_info.get('resolution_combined'):
+        resolution = res_info['resolution_combined'][0]
+
+    ligands = []
+    if entry_data.get('nonpolymer_entities'):
+        for entity in entry_data['nonpolymer_entities']:
+            try:
+                comp = entity.get('nonpolymer_comp', {})
+                chem = comp.get('chem_comp', {})
+                desc = comp.get('rcsb_chem_comp_descriptor', {})
+
+                resname = chem.get('id', '')
+                smiles = desc.get('SMILES_stereo') or desc.get('SMILES') or ''
+
+                if resname and resname not in SKIP_LIGANDS and smiles and len(smiles) > 5:
+                    ligands.append({
+                        'resname': resname,
+                        'smiles': smiles,
+                        'name': chem.get('name', '')
+                    })
+            except Exception:
+                continue
+
+    return ligands, resolution
+
+
+def get_ligand_info_for_pdb(pdb_id: str) -> list:
+    """Get ligand residue names and SMILES for a PDB using GraphQL."""
+    query = _get_graphql_query(pdb_id)
     try:
         r = requests.post(
             "https://data.rcsb.org/graphql",
@@ -93,38 +132,37 @@ def get_ligand_info_for_pdb(pdb_id: str) -> list:
             return [], None
 
         entry_data = r.json().get('data', {}).get('entry', {})
-        if not entry_data:
-            return [], None
-
-        # Get resolution
-        resolution = None
-        res_info = entry_data.get('rcsb_entry_info', {})
-        if res_info and res_info.get('resolution_combined'):
-            resolution = res_info['resolution_combined'][0]
-
-        ligands = []
-        if entry_data.get('nonpolymer_entities'):
-            for entity in entry_data['nonpolymer_entities']:
-                try:
-                    comp = entity.get('nonpolymer_comp', {})
-                    chem = comp.get('chem_comp', {})
-                    desc = comp.get('rcsb_chem_comp_descriptor', {})
-
-                    resname = chem.get('id', '')
-                    smiles = desc.get('SMILES_stereo') or desc.get('SMILES') or ''
-
-                    if resname and resname not in SKIP_LIGANDS and smiles and len(smiles) > 5:
-                        ligands.append({
-                            'resname': resname,
-                            'smiles': smiles,
-                            'name': chem.get('name', '')
-                        })
-                except:
-                    continue
-
-        return ligands, resolution
+        return _parse_entry_data(entry_data)
     except Exception as e:
         return [], None
+
+
+async def fetch_ligand_info_async(session, pdb_id: str):
+    """Async version of get_ligand_info_for_pdb."""
+    query = _get_graphql_query(pdb_id)
+    try:
+        async with session.post("https://data.rcsb.org/graphql", json={'query': query}) as response:
+            if response.status != 200:
+                return [], None
+
+            data = await response.json()
+            entry_data = data.get('data', {}).get('entry', {})
+            return _parse_entry_data(entry_data)
+    except Exception as e:
+        return [], None
+
+async def _get_ligand_info_batch(pdb_ids: list):
+    async with aiohttp.ClientSession() as session:
+        tasks = [fetch_ligand_info_async(session, pdb_id) for pdb_id in pdb_ids]
+        results = await asyncio.gather(*tasks)
+        return dict(zip(pdb_ids, results))
+
+
+def get_ligand_info_for_pdbs(pdb_ids: list) -> dict:
+    """Batch fetch ligand info for multiple PDBs."""
+    if not pdb_ids:
+        return {}
+    return asyncio.run(_get_ligand_info_batch(pdb_ids))
 
 
 def main():
@@ -158,8 +196,10 @@ def main():
             continue
 
         # Get ligand info for each PDB
+        batch_results = get_ligand_info_for_pdbs(pdb_ids)
+
         for pdb_id in pdb_ids:
-            ligands, resolution = get_ligand_info_for_pdb(pdb_id)
+            ligands, resolution = batch_results.get(pdb_id, ([], None))
 
             if ligands:
                 for lig in ligands:
