@@ -184,10 +184,10 @@ def main():
         print(f"Processing subset: indices {args.start} to {args.end}")
 
     results = []
-    for _, row in tqdm(df_targets.iterrows(), total=len(df_targets), desc="Mapping"):
-        chembl_id = row['chembl_target_id']
-        uniprot = row['uniprot_id']
-        target_name = row['target_name']
+    for row in tqdm(df_targets.itertuples(index=False), total=len(df_targets), desc="Mapping"):
+        chembl_id = row.chembl_target_id
+        uniprot = row.uniprot_id
+        target_name = row.target_name
 
         # Get PDBs for this UniProt
         pdb_ids = get_pdbs_for_uniprot(uniprot)
