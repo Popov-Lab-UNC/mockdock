@@ -142,7 +142,7 @@ def main():
             'ligand_csv_path': None,
             'activity_column': 'pchembl_value',
             'id_column': 'molecule_chembl_id',
-            'ligand_resname': row['ligand_resname'],
+            'ligand_resname': row.ligand_resname,
             'protein_pdb_path': None,
             'ligand_pdb_path': None,
             'fragment_smiles': mcs_smiles,
