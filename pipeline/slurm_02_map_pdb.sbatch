@@ -26,7 +26,7 @@ END=$((START + CHUNK_SIZE))
 
 echo "Processing targets $START to $END (of $TOTAL_TARGETS)"
 
-python fcgmb/pipeline/map_pdb_ligands.py \
+python pipeline/map_pdb_ligands.py \
     --input data/chembl_targets.csv \
     --output data/chembl_pdb_map.csv \
     --start $START \

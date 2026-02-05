@@ -147,7 +147,7 @@ def main():
 
     results = []
     for _, row in tqdm(df_targets.iterrows(), total=len(df_targets), desc="Mapping"):
-        chembl_id = row['chembl_target_id']
+        chembl_id = row['target_chembl_id']
         uniprot = row['uniprot_id']
         target_name = row['target_name']
 
@@ -164,7 +164,7 @@ def main():
             if ligands:
                 for lig in ligands:
                     results.append({
-                        'chembl_target_id': chembl_id,
+                        'target_chembl_id': chembl_id,
                         'target_name': target_name,
                         'uniprot_id': uniprot,
                         'pdb_id': pdb_id,
@@ -177,7 +177,7 @@ def main():
             else:
                 # Record apo structure
                 results.append({
-                    'chembl_target_id': chembl_id,
+                    'target_chembl_id': chembl_id,
                     'target_name': target_name,
                     'uniprot_id': uniprot,
                     'pdb_id': pdb_id,
@@ -201,7 +201,7 @@ def main():
     
     df_out.to_csv(output_path, index=False)
     print(f"\nSaved {len(df_out)} rows to {output_path}")
-    print(f"Unique targets with structures: {df_out['chembl_target_id'].nunique()}")
+    print(f"Unique targets with structures: {df_out['target_chembl_id'].nunique()}")
     print(f"Unique PDBs: {df_out['pdb_id'].nunique()}")
     print(f"Holo structures: {df_out['is_holo'].sum()}")
 

@@ -16,14 +16,14 @@ mkdir -p data logs
 
 # First merge all chunks
 echo "Merging PDB map chunks..."
-python fcgmb/pipeline/merge_results.py \
+python pipeline/merge_results.py \
     --pattern "data/intermediate/chembl_pdb_map/chunk_*.csv" \
     --output data/chembl_pdb_map.csv \
     --dedup-cols pdb_id ligand_resname
 
 # Then filter to drug-like
 echo "Filtering to drug-like molecules..."
-python fcgmb/pipeline/filter_druglike.py \
+python pipeline/filter_druglike.py \
     --input data/chembl_pdb_map.csv \
     --output data/chembl_pdb_druglike.csv
 

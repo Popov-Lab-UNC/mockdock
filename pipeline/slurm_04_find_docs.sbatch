@@ -3,7 +3,7 @@
 #SBATCH --output=logs/04_find_docs_%A_%a.log
 #SBATCH --error=logs/04_find_docs_%A_%a.err
 #SBATCH --time=12:00:00
-#SBATCH --mem=8G
+#SBATCH --mem=16G
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=general
 #SBATCH --array=0-9  # 10 parallel jobs
@@ -17,7 +17,7 @@ source .venv/bin/activate
 mkdir -p data logs
 
 # Calculate chunk boundaries based on unique targets
-TOTAL_TARGETS=$(python -c "import pandas as pd; print(pd.read_csv('data/chembl_pdb_druglike.csv')['chembl_target_id'].nunique())")
+TOTAL_TARGETS=$(python -c "import pandas as pd; print(pd.read_csv('data/chembl_pdb_druglike.csv')['target_chembl_id'].nunique())")
 CHUNK_SIZE=$(( (TOTAL_TARGETS + 10 - 1) / 10 ))  # Ceiling division
 
 START=$((SLURM_ARRAY_TASK_ID * CHUNK_SIZE))
@@ -27,15 +27,13 @@ echo "Processing targets $START to $END (of $TOTAL_TARGETS unique)"
 
 # Configure: Include both patents and publications by default
 # Add --no-patents or --no-publications to exclude
-python fcgmb/pipeline/find_matching_documents.py \
+python pipeline/find_matching_documents.py \
     --input data/chembl_pdb_druglike.csv \
     --output data/chembl_docking_benchmark.csv \
-    --include-patents \
-    --include-publications \
-    --similarity-threshold 0.7 \
     --min-compounds 20 \
     --start $START \
     --end $END \
-    --delay 0.5
+    --delay 0.5 \
+    --chembl-sqlite /work/users/s/h/shuhang/chembl_36/chembl_36_sqlite/chembl_36.db
 
 echo "Chunk $SLURM_ARRAY_TASK_ID done!"

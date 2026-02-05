@@ -14,6 +14,8 @@ source .venv/bin/activate
 
 mkdir -p data logs
 
-python fcgmb/pipeline/fetch_chembl_targets.py --output data/chembl_targets.csv
+python pipeline/fetch_chembl_targets.py \
+    --output data/chembl_targets.csv \
+    --chembl-sqlite /work/users/s/h/shuhang/chembl_36/chembl_36_sqlite/chembl_36.db
 
 echo "Done! Check data/chembl_targets.csv"

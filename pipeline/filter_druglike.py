@@ -110,12 +110,12 @@ def main():
     df_druglike = df_holo[df_holo['is_druglike']].drop(columns=['is_druglike'])
 
     # Deduplicate
-    df_druglike = df_druglike.drop_duplicates(subset=['chembl_target_id', 'pdb_id', 'ligand_resname'])
+    df_druglike = df_druglike.drop_duplicates(subset=['target_chembl_id', 'pdb_id', 'ligand_resname'])
 
     # Save
     df_druglike.to_csv(args.output, index=False)
     print(f"\nSaved {len(df_druglike)} drug-like ligand entries to {args.output}")
-    print(f"Unique targets: {df_druglike['chembl_target_id'].nunique()}")
+    print(f"Unique targets: {df_druglike['target_chembl_id'].nunique()}")
     print(f"Unique PDBs: {df_druglike['pdb_id'].nunique()}")
 
 

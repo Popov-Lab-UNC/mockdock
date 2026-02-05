@@ -100,7 +100,7 @@ for config_file in generated_configs/*.yaml; do
         echo "===================="
         echo "Running: $config_file"
         echo "===================="
-        python -u run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" --cpus "$SLURM_CPUS_PER_TASK"
+        python -u run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" --cpus "$SLURM_CPUS_PER_TASK" --cache-dir "data/chembl_cache"
         echo ""
     fi
 done

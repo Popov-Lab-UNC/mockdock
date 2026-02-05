@@ -65,6 +65,7 @@ class WorkflowResult:
     target_id: str
     pdb_id: str
     doc_id: str
+    assay_id: str
     fragment_smiles: str
     status: str
     n_compounds_total: int = 0
@@ -99,6 +100,7 @@ def run_docking_workflow(
     # 1. Configuration extraction
     target_id = config.get("target_id")
     doc_id = config.get("doc_id")
+    assay_id = config.get("assay_id")
     pdb_id = config.get("pdb_id")
     ligand_resname = config.get("ligand_resname")
     activity_col = "pchembl_value"
@@ -128,6 +130,7 @@ def run_docking_workflow(
         target_id=target_id,
         pdb_id=pdb_id,
         doc_id=doc_id,
+        assay_id=assay_id or "",
         fragment_smiles=fragment_smiles or "",
         status=WorkflowStatus.SUCCESS.value
     )
@@ -141,7 +144,9 @@ def run_docking_workflow(
         with open(summary_path, "a") as f:
             df_row.write_csv(f, include_header=header)
 
-    data_prefix = f"{target_id}_{pdb_id}_{doc_id}" if target_id and pdb_id and doc_id else "workflow_data"
+    data_prefix = f"{target_id}_{pdb_id}_{doc_id}"
+    if assay_id:
+        data_prefix += f"_{assay_id}"
 
     if not quiet:
         print(f"\n--- Starting Docking Workflow: {pdb_id} ---")
@@ -157,7 +162,18 @@ def run_docking_workflow(
                             df = df.rename({col: "canonical_smiles"})
                             break
             else:
-                df, stats = fetch_chembl_data(target_id, doc_id, return_stats=True)
+                # Check for cache directory (config or env) and cache-only mode in config
+                cache_dir = config.get("chembl_cache_dir") or os.environ.get("CHEMBL_CACHE_DIR")
+                cache_only = config.get("chembl_cache_only", False)
+                df, stats = fetch_chembl_data(
+                    target_id,
+                    doc_id,
+                    assay_chembl_id=assay_id,
+                    return_stats=True,
+                    cache_dir=cache_dir,
+                    use_cache=True,
+                    cache_only=cache_only
+                )
                 result.n_compounds_total = stats.get("n_total", 0)
                 result.n_compounds_standardized = stats.get("n_standardized", 0)
 
@@ -360,10 +376,13 @@ def main():
     parser.add_argument("--cpus", type=int, help="Number of CPUs to use.")
     parser.add_argument("--gpus", type=int, help="Number of GPUs to use.")
     parser.add_argument("--backend", type=str, default="auto", choices=["auto", "autodock_gpu", "vina"], help="Docking software backend.")
+    parser.add_argument("--cache-dir", type=str, default="data/chembl_cache", help="ChEMBL data cache directory (used if data not in cache; downloads cached here)")
 
     args = parser.parse_args()
     config = load_config(args.config)
-    
+    if args.cache_dir:
+        config["chembl_cache_dir"] = args.cache_dir
+
     result = run_docking_workflow(
         config=config, stage=args.stage, smarts=args.smarts, no_isomers=args.no_isomers,
         run_dir=args.run_dir, config_file_path=args.config, quiet=args.quiet,

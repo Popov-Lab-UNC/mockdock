@@ -50,12 +50,12 @@ def main():
         default=100,
         help="Generate configs for top N entries (set to 0 for no limit / all)",
     )
-    parser.add_argument("--require-crystal-in-doc", action="store_true", default=True,
-                        help="Only include entries where crystal ligand is in the document (default: True)")
-    parser.add_argument("--no-require-crystal-in-doc", dest="require-crystal-in-doc", action="store_false",
-                        help="Don't require crystal ligand in doc")
+    parser.add_argument("--require-crystal-in-assay", action="store_true", default=True,
+                        help="Only include entries where crystal ligand is in the assay (default: True)")
+    parser.add_argument("--no-require-crystal-in-assay", dest="require_crystal_in_assay", action="store_false",
+                        help="Don't require crystal ligand in assay")
     parser.add_argument("--max-resolution", type=float, default=3.0, help="Maximum resolution (Å)")
-    parser.add_argument("--min-compounds", type=int, default=30, help="Minimum compounds in document")
+    parser.add_argument("--min-compounds", type=int, default=20, help="Minimum compounds in assay")
     args = parser.parse_args()
 
     # Load benchmark data
@@ -63,28 +63,41 @@ def main():
     print(f"Loaded {len(df)} benchmark entries from {args.input}")
 
     # Apply filters
-    if args.require_crystal_in_doc:
-        df = df[df['crystal_in_document'] == True]
-        print(f"After crystal-in-doc filter: {len(df)}")
+    if args.require_crystal_in_assay:
+        if 'crystal_in_assay' in df.columns:
+            df = df[df['crystal_in_assay'] == True]
+            print(f"After crystal-in-assay filter: {len(df)}")
+        else:
+            # Fallback for old CSVs
+            df = df[df['crystal_in_document'] == True]
+            print(f"After crystal-in-doc fallback filter: {len(df)}")
 
     if args.max_resolution:
         df = df[df['resolution'] <= args.max_resolution]
         print(f"After resolution filter (<= {args.max_resolution}Å): {len(df)}")
 
     if args.min_compounds:
-        df = df[df['n_compounds_in_doc'] >= args.min_compounds]
-        print(f"After min compounds filter (>= {args.min_compounds}): {len(df)}")
+        col = 'n_compounds_in_assay' if 'n_compounds_in_assay' in df.columns else 'n_compounds_in_doc'
+        df = df[df[col] >= args.min_compounds]
+        print(f"After min compounds filter (>= {args.min_compounds} on {col}): {len(df)}")
 
     # Load MCS results from separate file
     mcs_results_path = Path(args.input).parent / "mcs_results.csv"
     if mcs_results_path.exists():
         mcs_df = pd.read_csv(mcs_results_path)
         # Join MCS results with benchmark data
-        df = df.merge(
-            mcs_df[['document_chembl_id', 'mcs_smiles']],
-            on='document_chembl_id',
-            how='left'
-        )
+        if 'assay_chembl_id' in mcs_df.columns and 'assay_chembl_id' in df.columns:
+            df = df.merge(
+                mcs_df[['document_chembl_id', 'assay_chembl_id', 'mcs_smiles']],
+                on=['document_chembl_id', 'assay_chembl_id'],
+                how='left'
+            )
+        else:
+            df = df.merge(
+                mcs_df[['document_chembl_id', 'mcs_smiles']],
+                on='document_chembl_id',
+                how='left'
+            )
         # Filter to entries with MCS computed
         df = df[df['mcs_smiles'].notna()]
         print(f"After MCS filter (must have mcs_smiles): {len(df)}")
@@ -112,11 +125,12 @@ def main():
     # Generate configs
     generated = 0
     for _, row in df.iterrows():
-        target_id = row['chembl_target_id']
+        target_id = row['target_chembl_id']
         doc_id = row['document_chembl_id']
+        assay_id = row.get('assay_chembl_id')
         pdb_id = row['pdb_id']
         
-        # Use MCS from document compounds as fragment constraint
+        # Use MCS from document/assay compounds as fragment constraint
         mcs_smiles = row['mcs_smiles']
         
         config = {
@@ -124,6 +138,7 @@ def main():
             'output_dir': f"{pdb_id}_workflow",
             'target_id': target_id,
             'doc_id': doc_id,
+            'assay_id': assay_id,
             'ligand_csv_path': None,
             'activity_column': 'pchembl_value',
             'id_column': 'molecule_chembl_id',
@@ -135,12 +150,21 @@ def main():
         }
 
         # Write YAML
-        yaml_path = output_dir / f"{target_id}_{pdb_id}_{doc_id}.yaml"
+        filename = f"{target_id}_{pdb_id}_{doc_id}"
+        if assay_id:
+            filename += f"_{assay_id}"
+        yaml_path = output_dir / f"{filename}.yaml"
+        
+        n_compounds = row.get('n_compounds_in_assay', row.get('n_compounds_in_doc', 0))
+        
         with open(yaml_path, 'w') as f:
             f.write(f"# ChEMBL Target: {row['target_name']}\n")
             f.write(f"# UniProt: {row['uniprot_id']}\n")
             f.write(f"# PDB: {pdb_id} (Resolution: {row['resolution']:.2f} Å)\n")
-            f.write(f"# Document: {doc_id} ({row['document_type']}, {row['n_compounds_in_doc']} compounds)\n")
+            if assay_id:
+                f.write(f"# Document/Assay: {doc_id} / {assay_id} ({row['document_type']}, {n_compounds} compounds)\n")
+            else:
+                f.write(f"# Document: {doc_id} ({row['document_type']}, {n_compounds} compounds)\n")
             f.write(f"# Crystal Ligand: {row['ligand_resname']} ({row['crystal_smiles'][:60]}...)\n")
             f.write(f"# Best Match Similarity: {row['best_similarity']:.3f}\n")
             f.write(f"# MCS Fragment: {mcs_smiles}\n\n")
@@ -152,11 +176,27 @@ def main():
 
     # Also save a config index table (this is NOT a benchmark run summary)
     summary_path = output_dir / "config_index.csv"
-    summary_cols = ['chembl_target_id', 'target_name', 'pdb_id', 'resolution', 'ligand_resname',
-                    'document_chembl_id', 'document_type', 'n_compounds_in_doc', 
-                    'best_similarity', 'crystal_in_document']
+    summary_cols = ['target_chembl_id', 'target_name', 'pdb_id', 'resolution', 'ligand_resname',
+                    'document_chembl_id', 'document_type', 'best_similarity']
+    
+    if 'assay_chembl_id' in df.columns:
+        summary_cols.append('assay_chembl_id')
+    
+    if 'n_compounds_in_assay' in df.columns:
+        summary_cols.append('n_compounds_in_assay')
+    elif 'n_compounds_in_doc' in df.columns:
+        summary_cols.append('n_compounds_in_doc')
+        
+    if 'crystal_in_assay' in df.columns:
+        summary_cols.append('crystal_in_assay')
+    elif 'crystal_in_document' in df.columns:
+        summary_cols.append('crystal_in_document')
+
     if 'mcs_smiles' in df.columns:
         summary_cols.append('mcs_smiles')
+    
+    # Ensure all columns exist
+    summary_cols = [c for c in summary_cols if c in df.columns]
     df[summary_cols].to_csv(summary_path, index=False)
     print(f"Config index saved to {summary_path}")
 

@@ -91,8 +91,16 @@ def summarize_run(run_dir: Path) -> bool:
     df["success_rate_rmsd"] = np.where(dr > 0, df["n_valid_poses"] / dr * 100, 0).round(2)
 
     # Compute correlation metrics from *_results.csv (or metrics.json if present)
-    # Layout: run_dir/<target_id>_<pdb_id>/<doc_id>/{prefix}_results.csv
-    df["workflow_key"] = df["target_id"].astype(str) + "_" + df["pdb_id"].astype(str) + "_" + df["doc_id"].astype(str)
+    # Layout: run_dir/<target_id>_<pdb_id>/<doc_id>/<{prefix}_results.csv
+    # Or: run_dir/<target_id>_<pdb_id>/<doc_id>_<assay_id>/{prefix}_results.csv (if we ever change that)
+    
+    def get_key(row):
+        k = f"{row['target_id']}_{row['pdb_id']}_{row['doc_id']}"
+        if 'assay_id' in df.columns and pd.notna(row['assay_id']) and row['assay_id'] != "":
+            k += f"_{row['assay_id']}"
+        return k
+
+    df["workflow_key"] = df.apply(get_key, axis=1)
     metrics_by_key = {}
 
     for mj in list(run_dir.glob("*/metrics.json")) + list(run_dir.glob("*/*/metrics.json")):
@@ -101,8 +109,12 @@ def summarize_run(run_dir: Path) -> bool:
         try:
             payload = json.loads(mj.read_text())
             tid, pid, did = payload.get("target_id"), payload.get("pdb_id"), payload.get("doc_id")
+            aid = payload.get("assay_id")
             if tid and pid and did:
-                metrics_by_key[f"{tid}_{pid}_{did}"] = payload.get("metrics") or {}
+                key = f"{tid}_{pid}_{did}"
+                if aid:
+                    key += f"_{aid}"
+                metrics_by_key[key] = payload.get("metrics") or {}
         except Exception:
             continue
 
@@ -112,14 +124,13 @@ def summarize_run(run_dir: Path) -> bool:
         for doc_dir in target_pdb.iterdir():
             if not doc_dir.is_dir():
                 continue
-            tid_pid = target_pdb.name
-            did = doc_dir.name
-            key = f"{tid_pid}_{did}"
-            if key in metrics_by_key:
-                continue  # Already loaded from metrics.json
-            prefix = f"{tid_pid}_{did}"
-            results_csv = doc_dir / f"{prefix}_results.csv"
-            if results_csv.exists():
+            
+            # Find any _results.csv in this doc_dir
+            for results_csv in doc_dir.glob("*_results.csv"):
+                # Prefix is filename without _results.csv
+                key = results_csv.stem.replace("_results", "")
+                if key in metrics_by_key:
+                    continue
                 metrics_by_key[key] = _metrics_from_results_csv(results_csv)
 
     def _get_metric(workflow_key: str, metric_type: str, key: str):

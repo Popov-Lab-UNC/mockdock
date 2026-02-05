@@ -16,26 +16,26 @@ mkdir -p data logs generated_configs
 
 # Merge benchmark chunks (from step 4)
 echo "Merging benchmark chunks..."
-python fcgmb/pipeline/merge_results.py \
+python pipeline/merge_results.py \
     --pattern "data/intermediate/chembl_docking_benchmark/chunk_*.csv" \
     --output data/chembl_docking_benchmark.csv \
-    --dedup-cols chembl_target_id pdb_id document_chembl_id
+    --dedup-cols target_chembl_id pdb_id document_chembl_id
 
 # Merge MCS results (from step 4b)
 echo "Merging MCS results..."
-python fcgmb/pipeline/compute_mcs.py \
+python pipeline/compute_mcs.py \
     --merge \
     --input data/mcs_results.csv \
     --output data/mcs_results.csv
 
 # Generate configs (uses MCS from mcs_results.csv)
 echo "Generating YAML configs..."
-python fcgmb/pipeline/generate_benchmark_configs.py \
+python pipeline/generate_benchmark_configs.py \
     --input data/chembl_docking_benchmark.csv \
     --output-dir generated_configs \
     --top-n 0 \
-    --require-crystal-in-doc \
+    --require-crystal-in-assay \
     --max-resolution 3.0 \
-    --min-compounds 30
+    --min-compounds 20
 
 echo "Done! Check generated_configs/"
