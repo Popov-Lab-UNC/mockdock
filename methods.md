@@ -1,43 +1,63 @@
 # Methods
 
-## 1. Data Selection and Dataset Construction
+## Target and Structure Identification
 
-### 1.1 Target and Structure Identification
-The initial dataset was constructed by retrieving all human single-protein targets from the **ChEMBL36** database. For each identified target, associated crystal structures were retrieved from the **RCSB Protein Data Bank (PDB)** using UniProt accession IDs. Ligand information associated with these structures was simultaneously collected. To ensure the relevance of the benchmarking set, ligands were filtered to include only "drug-like" molecules, optimizing the selection for pharmaceutical relevance and structural quality.
+Benchmark construction began with a systematic retrieval of all human single-protein targets from the ChEMBL36 database. For each identified target, we queried the Protein Data Bank (PDB) using UniProt accession identifiers to obtain associated three-dimensional structures and their bound ligands. Structures determined by X-ray crystallography, cryo-electron microscopy (cryo-EM), and nuclear magnetic resonance (NMR) spectroscopy were all included without discrimination by experimental method. This cross-referencing between ChEMBL and PDB ensured that each benchmark entry possessed both experimental bioactivity data and structural information suitable for structure-based evaluation.
 
-### 1.2 Document Association and Compound Filtering
-For each crystal ligand, we queried the ChEMBL database to identify associated documents, including patents and peer-reviewed publications. To ensure statistical robustness for each benchmark entry, we selected only those documents containing at least **20** measured compounds. Documents were matched to crystal structures based on the presence of the crystal ligand or close analogs, using **Morgan fingerprints** (radius 2, 2048 bits) and a **Tanimoto similarity threshold** of **0.7**. A similarity of **≥ 0.99** was used to definitively identify the crystal ligand within a document.
+## Ligand Drug-Likeness Filtering
 
-### 1.3 Benchmark Configuration Generation
-For the selected compounds within each document, the **Maximum Common Substructure (MCS)** was calculated relative to the crystal ligand using the **FMCS (Find Maximum Common Substructure)** module in **RDKit**. To ensure representativeness, the MCS was computed across up to **100** compounds per document, requiring a **100% threshold** (the substructure must be present in all selected molecules). The computation enforced strict atom and bond comparison (matching elements and bond orders), with **complete rings** and **ring-to-ring matches** only. Benchmark configurations were then generated, each defined by a ChEMBL document ID, an RCSB PDB ID, and the MCS represented as a SMILES string.
+Bound ligands from holo structures were subjected to stringent drug-likeness filtering to ensure benchmark compounds exhibited properties representative of drug-like chemical space. Ligands were retained only if they satisfied the following criteria: molecular weight between 200 and 800 Da, at least one ring system, presence of nitrogen or oxygen heteroatoms, calculated LogP (cLogP) between −2 and 7, and no more than 15 rotatable bonds. Only holo structures (containing bound ligands) were retained for downstream analysis. This filtering step employed RDKit molecular descriptors to eliminate non-drug-like fragments and experimental artifacts.
 
-## 2. Computational Workflow
+## Document Association and Compound Filtering
 
-### 2.1 Receptor Preparation
-Crystal structures were downloaded in CIF format from the RCSB PDB. **ProDy** was employed to parse the CIF files and locate the primary instance of the crystal ligand. The ligand's 3D coordinates were used to identify and isolate protein chains within a **5.0 Å** distance of any ligand atom. The resulting receptor complex was exported as a PDB file.
+For each reference ligand passing drug-likeness criteria, we queried the ChEMBL database to identify associated assay documents containing binding activity measurements (assay_type = 'B') with valid pChEMBL values. To ensure statistical robustness in benchmarking tasks, we retained only assays containing at least 20 compounds with quantified bioactivity. Documents were matched to PDB structures through molecular similarity analysis using Morgan circular fingerprints (radius 2, 2048 bits) with a Tanimoto similarity threshold of 0.99, thereby identifying exact matches of the reference ligand within a document's compound series. Assay data were organized at the individual assay level (assay_chembl_id) to guarantee bioactivity measurements originated from consistent experimental conditions. Document source types (literature vs. other) were annotated based on ChEMBL source identifiers.
 
-The receptor was further refined using **Reduce2** to add hydrogens and optimize the hydrogen-bond network. Grid maps for docking were generated using **Meeko's** `mk_prepare_receptor` utility and **AutoGrid4**, applying a **5.0 Å** padding around the reference ligand to define the docking volume.
+## Benchmark Configuration Generation
 
-### 2.2 Ligand Preparation
-Ligand data retrieved from ChEMBL included ChEMBL IDs, canonical SMILES, and bioactivity data (pChEMBL values). The ligands underwent a multi-step preparation pipeline:
-1.  **Standardization:** **RDKit** was used to strip salts, normalize charges, and standardize the SMILES.
-2.  **Tautomer and State Generation:** **MolScrub** was utilized to prepare appropriate tautomeric and ionization states within a pH range of **6.4 to 8.4**. A maximum of **16** distinct states were retained per ligand.
-3.  **Conformer Generation:** 3D conformers were generated using the **ETKDGv3** algorithm in RDKit with small ring torsions enabled.
-4.  **Docking Input Generation:** Final PDBQT files were prepared using **Meeko's** `mk_prepare_ligand`, with a total limit of **32** prepared states/conformers per unique compound.
+To ensure reliable pose validation, only structures with a reported resolution of 3.0 Å or better were retained for benchmark configuration generation. For selected compounds within each assay, we computed the Maximum Common Substructure (MCS) relative to the reference ligand using RDKit's FMCS (Find Maximum Common Substructure) module. To ensure that the identified MCS represented a true common scaffold across the chemical series, we computed the MCS across up to 100 compounds per assay with a 100% presence threshold—requiring the substructure to be present in all selected molecules. The FMCS algorithm enforced strict matching criteria: atom types and bond orders were required to match exactly (AtomCompare.CompareElements, BondCompare.CompareOrder), valences were enforced (matchValences=True), and ring systems were preserved as complete rings with ring-to-ring matches only (ringMatchesRingOnly=True, completeRingsOnly=True). A 10-second timeout was applied per assay to prevent computational bottlenecks on particularly complex series. Clean SMILES representations of the MCS were extracted by matching the SMARTS pattern against the crystal ligand template and applying Kekulization to generate chemically valid fragment SMILES without aromatic markers. Each benchmark configuration was then defined by a unique combination of a ChEMBL document identifier, a ChEMBL assay identifier, an RCSB PDB identifier, and the MCS represented as a SMILES string, forming the structural constraint for molecule generation.
 
-### 2.3 Docking Campaign
-A mass docking campaign was executed using **AutoDock-GPU** for high-throughput performance. For benchmarks utilizing **AutoDock Vina**, an exhaustiveness of **32** and a limit of **10** poses per run were specified. Docking was performed across all prepared benchmarks, targeting the binding site defined by the crystal ligand.
+## Receptor Preparation
 
-## 3. Analysis and Evaluation Metrics
+Structures were downloaded in mmCIF format from the RCSB PDB. ProDy was employed to parse mmCIF files and locate the primary instance of the bound ligand, handling alternate conformations by preferring blank altloc designations or selecting the most common altloc when necessary. Using the ligand's three-dimensional coordinates as a reference point, we identified and extracted all protein chains containing atoms within 5.0 Å of any ligand atom, ensuring that relevant binding site residues were retained while excluding distant protein chains unnecessary for rigid-receptor docking. The resulting receptor complex was exported as a PDB file after removing all organic ligands, waters, and solvent molecules.
 
-### 3.1 Structural Validation
-The accuracy of the docking poses was evaluated by calculating the **Root Mean Square Deviation (RMSD)** of the MCS between the docked ligand and the reference crystal ligand using RDKit. A threshold of **2.0 Å** was established as the criterion for a "passed" docking pose across all benchmarks.
+The receptor underwent further refinement using Reduce2 (mmtbx.reduce2 from the CCTBX suite) to add hydrogen atoms and optimize the hydrogen-bond network. Grid maps for molecular docking were subsequently generated using Meeko's mk_prepare_receptor utility (with --allow_bad_res to handle non-standard residues) in combination with AutoGrid4. The docking grid was centered on the reference ligand position with 5.0 Å padding in all directions to define the search space.
 
-### 3.2 Performance Metrics
-Docking performance was assessed by correlating docking scores with experimental bioactivity (pChEMBL values). Several statistical metrics were calculated to filter and rank the results:
-*   **Percent Passed:** The percentage of compounds meeting the 2.0 Å RMSD threshold.
-*   **Coefficient of Determination ($R^2$)**
-*   **Pearson Correlation Coefficient**
-*   **Spearman's Rank Correlation Coefficient**
+## Ligand Preparation
 
-These metrics provide a comprehensive overview of both the structural accuracy and the scoring reliability of the docking workflow.
+Ligand data retrieved from ChEMBL included ChEMBL compound identifiers, canonical SMILES strings, and bioactivity measurements expressed as pChEMBL values (negative log of molar IC50, EC50, Ki, or Kd values). Bioactivity values were preprocessed at the assay level: duplicate SMILES entries within the same assay were consolidated using the median pChEMBL value. The ligands underwent a comprehensive multi-step preparation pipeline to ensure chemically valid and biologically relevant conformations:
+
+**Standardization:** RDKit was employed in conjunction with the MolStandardize module to strip salts (retaining only the largest fragment), neutralize charges where chemically sensible (Uncharger), and canonicalize SMILES representations, ensuring consistency across molecular representations.
+
+**Tautomer and Ionization State Generation:** MolScrub was utilized to enumerate appropriate tautomeric forms and ionization states within a physiologically relevant pH range of 6.4 to 8.4, approximating conditions in typical biochemical assays. A maximum of 16 distinct protonation/tautomeric states were retained per ligand to balance thoroughness with computational tractability.
+
+**Conformer Generation:** Three-dimensional conformers were generated using RDKit's ETKDGv3 (Experimental Torsion Knowledge Distance Geometry version 3) algorithm with small ring torsions enabled (useSmallRingTorsions=True), allowing exploration of realistic low-energy conformations. When initial embedding failed, random coordinate generation was employed as a fallback strategy. A single low-energy conformation was retained per state.
+
+**Docking Input Generation:** Final PDBQT files were prepared using Meeko's mk_prepare_ligand utility. Ligand preparation was parallelized across available CPU cores using Python's multiprocessing module with the spawn context to ensure thread-safe execution. A total limit of 32 prepared states/conformers per unique compound was enforced to maintain computational efficiency while capturing conformational and ionization state diversity.
+
+## Docking Campaign
+
+A large-scale docking campaign was executed using either AutoDock-GPU to leverage GPU acceleration for high-throughput performance or AutoDock Vina with the AD4 scoring function when GPU resources were unavailable. Hardware detection was performed automatically: when AutoDock-GPU was available and GPU resources were detected, the GPU backend was prioritized; otherwise, the workflow defaulted to Vina. For benchmarks evaluated with AutoDock Vina, we specified an exhaustiveness parameter of 32 and retained up to 10 poses per docking run. AutoDock-GPU similarly generated 10 poses per ligand (--nrun 10). All docking was performed against the AutoGrid4 maps generated during receptor preparation. Docking was executed across all prepared benchmark configurations, with each ligand docked into the binding site defined by its corresponding crystal structure. Prior to docking, a two-dimensional substructure filter was applied: only compounds containing the MCS fragment constraint (verified using RDKit substructure matching) were submitted for docking, ensuring that evaluated compounds represented genuine analogs of the crystallographic reference.
+
+## Structural Validation
+
+The accuracy of docked poses was evaluated by calculating the Root Mean Square Deviation (RMSD) of the maximum common substructure (MCS) between each docked ligand and the reference ligand from the experimentally determined structure. The MCS was matched in both the docked pose and the reference structure using RDKit's substructure matching algorithms, with robust fallback to loosened query parameters (generic bond matching, aromaticity adjustment) to handle tautomeric differences between docked and experimental states. RMSD was computed over atomic coordinates of the matched fragment atoms. A threshold of 2.0 Å was established as the criterion for a "passed" docking pose, consistent with the gold standard established by seminal docking validation studies.
+
+The 2.0 Å threshold has historical origins dating to the development of the first robust automated docking algorithms. In the development of the Genetic Optimization for Ligand Docking (GOLD) program, Jones et al. defined a successful docking prediction as one where the top-ranked pose was within 2.0 Å of the crystallographic reference, demonstrating that genetic algorithms could reliably reproduce experimental binding modes within this tolerance. Similarly, Morris et al., in their description of the Lamarckian Genetic Algorithm for AutoDock 3.0, utilized the 2.0 Å RMSD criterion to evaluate the convergence of their search method. The continued relevance of this standard was reinforced by Trott and Olson in the validation of AutoDock Vina, which remains one of the most widely used docking tools today.
+
+This distance typically corresponds to the resolution limits of many protein-ligand crystal structures and the tolerance for forming hydrogen bonds (2.5–3.5 Å). An RMSD deviation of less than 2.0 Å implies that the ligand has maintained the "native" binding mode, preserving critical polar and hydrophobic interactions. In rigorous benchmarks like the CASF-2016 study, top-performing docking tools (e.g., Glide, GOLD, Surflex) typically achieve success rates (RMSD < 2.0 Å) of 50–90% depending on target complexity. As established in the docking literature, RMSD < 2.0 Å corresponds to "good" or successful docking solutions, 2.0–3.0 Å indicates "acceptable" orientation with possible atomic interaction shifts, and RMSD > 3.0 Å represents "bad" solutions that are effectively random or trapped in local minima.
+
+For each ligand, the docking result selection followed an RMSD-first, score-second protocol: the best-scoring pose among those passing the RMSD threshold was selected. If no poses passed the 2.0 Å threshold, the best-scoring pose regardless of RMSD was reported with an invalid pose flag, enabling downstream analysis of both pose quality and scoring performance.
+
+## Performance Metrics
+
+Docking performance for each benchmark was assessed by correlating docking scores with experimental bioactivity values (pChEMBL). We calculated several statistical metrics to comprehensively evaluate both structural and scoring accuracy:
+
+- **Percent Passed**: The percentage of compounds achieving a docked pose within the 2.0 Å RMSD threshold, reflecting the ability of the docking protocol to reproduce crystallographic binding modes.
+
+- **Coefficient of Determination (R²)**: Measures the proportion of variance in experimental bioactivity explained by docking scores, indicating the utility of docking scores for activity prediction.
+
+- **Pearson Correlation Coefficient (r)**: Assesses the linear relationship between docking scores and bioactivity values, quantifying the strength and direction of correlation.
+
+- **Spearman's Rank Correlation Coefficient (ρ)**: Evaluates monotonic relationships between docking scores and bioactivity, providing a non-parametric alternative robust to outliers and non-linear relationships.
+
+These metrics collectively provide a comprehensive assessment of benchmark quality, enabling evaluation of docking programs across both geometric accuracy (pose prediction) and energetic accuracy (affinity ranking).
