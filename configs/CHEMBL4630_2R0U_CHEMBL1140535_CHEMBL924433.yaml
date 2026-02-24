@@ -1,7 +1,7 @@
 # ChEMBL Target: Serine/threonine-protein kinase Chk1
 # UniProt: O14757
 # PDB: 2R0U (Resolution: 1.90 Å)
-# Document: CHEMBL1140535 (patent, 44 compounds)
+# Document/Assay: CHEMBL1140535 / CHEMBL924433 (literature, 44 compounds)
 # Crystal Ligand: M54 (c1cc(cc(c1)O)C2=CNC(=O)c3c2cc(c4c3cc(cc4)c5c[nH]nc5)CCCN...)
 # Best Match Similarity: 1.000
 # MCS Fragment: O=C1NC=CC2=C1C1=C(C=CC=C1)C=C2
@@ -10,6 +10,7 @@ pdb_id: 2R0U
 output_dir: 2R0U_workflow
 target_id: CHEMBL4630
 doc_id: CHEMBL1140535
+assay_id: CHEMBL924433
 ligand_csv_path: null
 activity_column: pchembl_value
 id_column: molecule_chembl_id

@@ -1,8 +1,0 @@
-pdb_id: 7KCF
-target_id: CHEMBL3313835
-doc_id: CHEMBL4834423
-ligand_resname: J4A
-fragment_smiles: O=C1C=CNC2=CC=NN12
-low_score: -5.898
-high_score: -10.07
-rmsd_threshold: 2.0

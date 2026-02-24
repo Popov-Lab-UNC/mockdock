@@ -1,0 +1,21 @@
+# ChEMBL Target: Tyrosine-protein kinase ITK/TSK
+# UniProt: Q08881
+# PDB: 3QGW (Resolution: 2.10 Å)
+# Document/Assay: CHEMBL1765075 / CHEMBL1768448 (literature, 22 compounds)
+# Crystal Ligand: L7A (c1ccc(cc1)C(=O)NC2=CC(=CNC2=O)c3ccncc3...)
+# Best Match Similarity: 1.000
+# MCS Fragment: CC1=CNC(=O)C=C1
+
+pdb_id: 3QGW
+output_dir: 3QGW_workflow
+target_id: CHEMBL2959
+doc_id: CHEMBL1765075
+assay_id: CHEMBL1768448
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: L7A
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: CC1=CNC(=O)C=C1
+rmsd_threshold: 2.0

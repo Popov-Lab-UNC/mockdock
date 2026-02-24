@@ -68,3 +68,37 @@ python run_workflow.py --config configs/CHEMBL205_1YDA_CHEMBL2331308.yaml
 - `.fcgmb/`: (Generated) Local scratch space for grids, cached data, and results.
 - `configs/`: (Optional) User-provided benchmark configuration files.
 - `notebooks/`: Example notebooks for using the oracle and analyzing results.
+
+## Publication-Ready Variance Figures (SVG)
+
+Use the variance analysis script to generate publication-ready figures with consistent styling:
+
+```bash
+python analyze_variance_runs.py \
+  --runs-dir variance_runs \
+  --config-dir configs \
+  --output-dir variance_runs \
+  --mapping variance_runs/crystal_ligand_mapping.csv
+```
+
+Generated outputs include:
+- `variance_runs/system_mean_std_barplot.svg` (plus `.png`)
+- `variance_runs/<system_key>_variance_plot.svg` (plus `.png` for each system)
+
+Per-system variance plots include:
+- True lower-quartile split using the 25th percentile of `pchembl_value`
+- Color coding for model-visible compounds (lower 25%) versus remaining compounds
+- Crystal-ligand point annotation when mapping is available
+
+### Crystal-Ligand Mapping CSV
+
+Create `variance_runs/crystal_ligand_mapping.csv` with:
+
+```csv
+system_key,molecule_chembl_id,label
+CHEMBL204_1MU6_CHEMBL1145961_CHEMBL816574,CHEMBL1145961,Crystal ligand
+```
+
+- Required columns: `system_key`, `molecule_chembl_id`
+- Optional column: `label` (defaults to `Crystal ligand`)
+- If a system mapping is missing or unmatched, the figure is still generated and annotated accordingly.

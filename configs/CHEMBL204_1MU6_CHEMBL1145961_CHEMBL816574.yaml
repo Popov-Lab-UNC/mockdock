@@ -1,0 +1,21 @@
+# ChEMBL Target: Prothrombin
+# UniProt: P00734
+# PDB: 1MU6 (Resolution: 1.99 Å)
+# Document/Assay: CHEMBL1145961 / CHEMBL816574 (literature, 30 compounds)
+# Crystal Ligand: CDA (CC1=CN=C(C(=O)N1CC(=O)NCc2c(cccn2)F)NCC(c3ccccn3)(F)F...)
+# Best Match Similarity: 1.000
+# MCS Fragment: CCCNC1=NC=CN(CC(=O)NCC)C1=O
+
+pdb_id: 1MU6
+output_dir: 1MU6_workflow
+target_id: CHEMBL204
+doc_id: CHEMBL1145961
+assay_id: CHEMBL816574
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: CDA
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: CCCNC1=NC=CN(CC(=O)NCC)C1=O
+rmsd_threshold: 2.0

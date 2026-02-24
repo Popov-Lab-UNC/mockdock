@@ -1,0 +1,21 @@
+# ChEMBL Target: Fructose-1,6-bisphosphatase 1
+# UniProt: P09467
+# PDB: 5PZS (Resolution: 2.37 Å)
+# Document/Assay: CHEMBL1155936 / CHEMBL974537 (literature, 25 compounds)
+# Crystal Ligand: 93Y (c1cc(cc(c1)Cl)S(=O)(=O)NC(=O)NCCCCCCNC(=O)NS(=O)(=O)c2cccc(c...)
+# Best Match Similarity: 1.000
+# MCS Fragment: CNC(=O)NS(=O)(=O)C1=CC=CC=C1
+
+pdb_id: 5PZS
+output_dir: 5PZS_workflow
+target_id: CHEMBL3975
+doc_id: CHEMBL1155936
+assay_id: CHEMBL974537
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: 93Y
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: CNC(=O)NS(=O)(=O)C1=CC=CC=C1
+rmsd_threshold: 2.0

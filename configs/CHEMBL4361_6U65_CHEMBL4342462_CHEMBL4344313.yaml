@@ -1,0 +1,21 @@
+# ChEMBL Target: Induced myeloid leukemia cell differentiation protein Mcl-1
+# UniProt: Q07820
+# PDB: 6U65 (Resolution: 2.09 Å)
+# Document/Assay: CHEMBL4342462 / CHEMBL4344313 (literature, 27 compounds)
+# Crystal Ligand: Q0A (c1ccc(cc1)CCSc2ccc(c(c2)C(=O)O)NS(=O)(=O)N3CCN(CC3)Cc4ccc(cc...)
+# Best Match Similarity: 1.000
+# MCS Fragment: NC1=CC=CC=C1C(=O)O
+
+pdb_id: 6U65
+output_dir: 6U65_workflow
+target_id: CHEMBL4361
+doc_id: CHEMBL4342462
+assay_id: CHEMBL4344313
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: Q0A
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: NC1=CC=CC=C1C(=O)O
+rmsd_threshold: 2.0

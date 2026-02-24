@@ -1,0 +1,21 @@
+# ChEMBL Target: Phosphoenolpyruvate carboxykinase, cytosolic [GTP]
+# UniProt: P35558
+# PDB: 2GMV (Resolution: 2.30 Å)
+# Document/Assay: CHEMBL1145376 / CHEMBL889299 (literature, 21 compounds)
+# Crystal Ligand: UN8 (CCCCN1c2c([nH]c(n2)Cc3ccc(cc3)NS(=O)(=O)c4cn(cn4)C)C(=O)N(C1...)
+# Best Match Similarity: 1.000
+# MCS Fragment: CN1C(=O)N(CC2=CC=CC=C2F)C(=O)C2=C1N=C(CC1=CC=C(N)C=C1)N2
+
+pdb_id: 2GMV
+output_dir: 2GMV_workflow
+target_id: CHEMBL2911
+doc_id: CHEMBL1145376
+assay_id: CHEMBL889299
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: UN8
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: CN1C(=O)N(CC2=CC=CC=C2F)C(=O)C2=C1N=C(CC1=CC=C(N)C=C1)N2
+rmsd_threshold: 2.0

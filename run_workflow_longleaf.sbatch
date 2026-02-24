@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=32G
-#SBATCH --time=7-00:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --output=benchmark_%j.log
 #SBATCH --error=benchmark_%j.err
 #SBATCH --mail-type=ALL
@@ -20,23 +20,14 @@ source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
 cd /work/users/s/h/shuhang/benchmark
 
 # Skip configs already completed in previous runs.
-# Default: skip previously SUCCESSful workflows + common non-recoverable failures.
-# Override to re-try failures, e.g.:
-#   export SKIP_STATUSES="SUCCESS"
-# or to customize:
-#   export SKIP_STATUSES="SUCCESS,FAILED_REF_MATCH,FAILED_PDB_404,FAILED_LIGAND_MISSING"
-#SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS,FAILED_REF_MATCH,FAILED_LIGAND_MISSING}"
 SKIP_STATUSES="${SKIP_STATUSES:-SUCCESS,FAILED_REF_MATCH,FAILED_GRID_PREP}"
-# Make sure the Python skip-scanner can see it.
 export SKIP_STATUSES
 
-# Build a lookup table of (target_id|pdb_id|doc_id) keys to skip
+# Build a lookup table of (target_id|pdb_id|doc_id|assay_id) keys to skip
 declare -A SKIP_KEYS
 echo "Scanning prior runs for completed workflows (SKIP_STATUSES=${SKIP_STATUSES})..."
 while IFS= read -r key; do
-    if [ -n "$key" ]; then
-        SKIP_KEYS["$key"]=1
-    fi
+    [ -n "$key" ] && SKIP_KEYS["$key"]=1
 done < <(
 python - <<'PY'
 import csv
@@ -56,10 +47,10 @@ for p in paths:
                     target_id = (row.get("target_id") or "").strip()
                     pdb_id = (row.get("pdb_id") or "").strip()
                     doc_id = (row.get("doc_id") or "").strip()
-                    if target_id and pdb_id and doc_id:
-                        keys.add(f"{target_id}|{pdb_id}|{doc_id}")
+                    assay_id = (row.get("assay_id") or "").strip()
+                    if target_id and pdb_id and doc_id and assay_id:
+                        keys.add(f"{target_id}|{pdb_id}|{doc_id}|{assay_id}")
     except Exception:
-        # Ignore unreadable/partial files
         continue
 
 for k in sorted(keys):
@@ -77,32 +68,29 @@ mkdir -p "$RUN_DIR"
 echo "Centralized Run Directory: $RUN_DIR"
 echo ""
 
-# Loop through all YAML configs in generated_configs/
+# Loop through all YAML configs in generated_configs/ as:
+# <target_id>_<pdb_id>_<doc_id>_<assay_id>.yaml
+shopt -s nullglob
 for config_file in generated_configs/*.yaml; do
-    if [ -f "$config_file" ]; then
-        # Configs are generated as: <target_id>_<pdb_id>_<doc_id>.yaml
         base="$(basename "$config_file" .yaml)"
-        target_id="${base%%_*}"
-        rest="${base#*_}"
-        pdb_id="${rest%%_*}"
-        doc_id="${rest#*_}"
-        key="${target_id}|${pdb_id}|${doc_id}"
+        IFS='_' read -r target_id pdb_id doc_id assay_id extra <<< "$base"
+        if [ -n "${extra:-}" ] || [ -z "${target_id:-}" ] || [ -z "${pdb_id:-}" ] || [ -z "${doc_id:-}" ] || [ -z "${assay_id:-}" ]; then
+            echo "Skipping malformed config name (expected 4 parts): $config_file"
+            continue
+        fi
+        key="${target_id}|${pdb_id}|${doc_id}|${assay_id}"
 
-        if [ -n "${SKIP_KEYS[$key]}" ]; then
-            echo "===================="
+        if [ -n "${SKIP_KEYS[$key]:-}" ]; then
             echo "Skipping (already done): $config_file"
             echo "Key: $key"
-            echo "===================="
             echo ""
             continue
         fi
 
-        echo "===================="
         echo "Running: $config_file"
         echo "===================="
-        python -u run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" --cpus "$SLURM_CPUS_PER_TASK" --cache-dir "data/chembl_cache"
+        python -u run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" --cpus "${SLURM_CPUS_PER_TASK:-32}" --gpus "${SLURM_GPUS:-1}" --backend autodock_gpu --cache-dir "data/chembl_cache"
         echo ""
-    fi
 done
 
 echo "All workflows completed! Results summary at $RUN_DIR/benchmark_summary.csv"

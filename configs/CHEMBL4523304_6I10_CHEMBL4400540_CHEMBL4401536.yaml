@@ -1,0 +1,21 @@
+# ChEMBL Target: Fascin
+# UniProt: Q16658
+# PDB: 6I10 (Resolution: 2.10 Å)
+# Document/Assay: CHEMBL4400540 / CHEMBL4401536 (literature, 22 compounds)
+# Crystal Ligand: GZK (c1cc(c(cc1CN2C=Nc3c(cnn3[C@@H]4CCS(=O)(=O)C4)C2=O)Cl)Cl...)
+# Best Match Similarity: 1.000
+# MCS Fragment: NCC1=CC=CC=C1
+
+pdb_id: 6I10
+output_dir: 6I10_workflow
+target_id: CHEMBL4523304
+doc_id: CHEMBL4400540
+assay_id: CHEMBL4401536
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: GZK
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: NCC1=CC=CC=C1
+rmsd_threshold: 2.0

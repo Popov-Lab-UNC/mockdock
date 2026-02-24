@@ -1,0 +1,10 @@
+benchmark_name: ITK
+pdb_id: 3QGW
+target_id: CHEMBL2959
+doc_id: CHEMBL1765075
+assay_id: CHEMBL1768448
+ligand_resname: L7A
+fragment_smiles: CC1=CNC(=O)C=C1
+low_score: -9.13
+high_score: -11.366
+rmsd_threshold: 2.0

@@ -1,0 +1,21 @@
+# ChEMBL Target: High affinity nerve growth factor receptor
+# UniProt: P04629
+# PDB: 6D1Y (Resolution: 1.93 Å)
+# Document/Assay: CHEMBL4308832 / CHEMBL4309191 (literature, 24 compounds)
+# Crystal Ligand: FQJ (Cc1cc(n(n1)c2ccccc2)NC(=O)c3ccc(cc3Cl)Cl...)
+# Best Match Similarity: 1.000
+# MCS Fragment: CC1=NN(C2=CC=CC=C2)C(NC(=O)C2=CC=CC=C2Cl)=C1
+
+pdb_id: 6D1Y
+output_dir: 6D1Y_workflow
+target_id: CHEMBL2815
+doc_id: CHEMBL4308832
+assay_id: CHEMBL4309191
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: FQJ
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: CC1=NN(C2=CC=CC=C2)C(NC(=O)C2=CC=CC=C2Cl)=C1
+rmsd_threshold: 2.0

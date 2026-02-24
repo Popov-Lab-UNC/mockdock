@@ -1,0 +1,21 @@
+# ChEMBL Target: Dipeptidyl peptidase 4
+# UniProt: P27487
+# PDB: 2HHA (Resolution: 2.35 Å)
+# Document/Assay: CHEMBL1137276 / CHEMBL856512 (literature, 36 compounds)
+# Crystal Ligand: 3TP (C[C@H](c1nc(no1)c2ccc(cc2)S(=O)(=O)C)[C@@H](C(=O)N3CCCC3)N...)
+# Best Match Similarity: 1.000
+# MCS Fragment: CC(C)C(N)C(=O)N1CCCC1
+
+pdb_id: 2HHA
+output_dir: 2HHA_workflow
+target_id: CHEMBL284
+doc_id: CHEMBL1137276
+assay_id: CHEMBL856512
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: 3TP
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: CC(C)C(N)C(=O)N1CCCC1
+rmsd_threshold: 2.0

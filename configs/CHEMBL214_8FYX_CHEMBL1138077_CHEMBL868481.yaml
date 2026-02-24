@@ -1,0 +1,21 @@
+# ChEMBL Target: 5-hydroxytryptamine receptor 1A
+# UniProt: P08908
+# PDB: 8FYX (Resolution: 2.62 Å)
+# Document/Assay: CHEMBL1138077 / CHEMBL868481 (literature, 25 compounds)
+# Crystal Ligand: YLX (c1cnc(nc1)N2CCN(CC2)CCCCN3C(=O)CC4(CCCC4)CC3=O...)
+# Best Match Similarity: 1.000
+# MCS Fragment: CN1CCN(CCC)CC1
+
+pdb_id: 8FYX
+output_dir: 8FYX_workflow
+target_id: CHEMBL214
+doc_id: CHEMBL1138077
+assay_id: CHEMBL868481
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: YLX
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: CN1CCN(CCC)CC1
+rmsd_threshold: 2.0

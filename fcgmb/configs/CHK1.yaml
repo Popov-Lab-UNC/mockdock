@@ -1,8 +1,10 @@
+benchmark_name: CHK1
 pdb_id: 2R0U
 target_id: CHEMBL4630
 doc_id: CHEMBL1140535
+assay_id: CHEMBL924433
 ligand_resname: M54
 fragment_smiles: O=C1NC=CC2=C1C1=C(C=CC=C1)C=C2
-low_score: -7.45
-high_score: -13.064
+low_score: -8.008
+high_score: -12.978
 rmsd_threshold: 2.0

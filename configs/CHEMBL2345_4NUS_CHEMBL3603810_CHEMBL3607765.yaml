@@ -1,0 +1,21 @@
+# ChEMBL Target: Ribosomal protein S6 kinase alpha-3
+# UniProt: P51812
+# PDB: 4NUS (Resolution: 2.39 Å)
+# Document/Assay: CHEMBL3603810 / CHEMBL3607765 (literature, 35 compounds)
+# Crystal Ligand: 2NK (CN1CCN(CC1)c2ccc(cc2)c3ccncc3c4cc(c(c(c4)F)O)F...)
+# Best Match Similarity: 1.000
+# MCS Fragment: OC1=CC=CC=C1
+
+pdb_id: 4NUS
+output_dir: 4NUS_workflow
+target_id: CHEMBL2345
+doc_id: CHEMBL3603810
+assay_id: CHEMBL3607765
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: 2NK
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: OC1=CC=CC=C1
+rmsd_threshold: 2.0

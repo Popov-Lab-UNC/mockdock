@@ -1,0 +1,21 @@
+# ChEMBL Target: Vascular endothelial growth factor receptor 2
+# UniProt: P35968
+# PDB: 3VHE (Resolution: 1.55 Å)
+# Document/Assay: CHEMBL1250545 / CHEMBL1250641 (literature, 24 compounds)
+# Crystal Ligand: 42Q (Cn1ccc2c1c(ncn2)Oc3ccc(c(c3)F)NC(=O)Nc4cccc(c4)C(F)(F)F...)
+# Best Match Similarity: 1.000
+# MCS Fragment: C1=CC2=C(C=NC=N2)N1
+
+pdb_id: 3VHE
+output_dir: 3VHE_workflow
+target_id: CHEMBL279
+doc_id: CHEMBL1250545
+assay_id: CHEMBL1250641
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: 42Q
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: C1=CC2=C(C=NC=N2)N1
+rmsd_threshold: 2.0

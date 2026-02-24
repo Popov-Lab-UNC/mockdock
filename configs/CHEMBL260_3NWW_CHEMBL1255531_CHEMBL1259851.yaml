@@ -1,0 +1,21 @@
+# ChEMBL Target: Mitogen-activated protein kinase 14
+# UniProt: Q16539
+# PDB: 3NWW (Resolution: 2.09 Å)
+# Document/Assay: CHEMBL1255531 / CHEMBL1259851 (literature, 26 compounds)
+# Crystal Ligand: 3NW (CCNC(=O)NCc1ccccc1c2cc(nc(n2)NCCN(C)C)c3cnc(s3)NC(C)C...)
+# Best Match Similarity: 1.000
+# MCS Fragment: NC1=NC=C(C2=NC=NC=C2)S1
+
+pdb_id: 3NWW
+output_dir: 3NWW_workflow
+target_id: CHEMBL260
+doc_id: CHEMBL1255531
+assay_id: CHEMBL1259851
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: 3NW
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: NC1=NC=C(C2=NC=NC=C2)S1
+rmsd_threshold: 2.0

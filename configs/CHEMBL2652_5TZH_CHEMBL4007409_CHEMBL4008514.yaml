@@ -1,0 +1,21 @@
+# ChEMBL Target: cGMP-dependent 3',5'-cyclic phosphodiesterase
+# UniProt: O00408
+# PDB: 5TZH (Resolution: 1.60 Å)
+# Document/Assay: CHEMBL4007409 / CHEMBL4008514 (literature, 24 compounds)
+# Crystal Ligand: 7OP (Cc1cc(n2c(n1)ncn2)[C@H]3CC(CN(C3)C(=O)c4ccc(cc4)F)(F)F...)
+# Best Match Similarity: 1.000
+# MCS Fragment: C1=CN2N=CN=C2N=C1
+
+pdb_id: 5TZH
+output_dir: 5TZH_workflow
+target_id: CHEMBL2652
+doc_id: CHEMBL4007409
+assay_id: CHEMBL4008514
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: 7OP
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: C1=CN2N=CN=C2N=C1
+rmsd_threshold: 2.0

@@ -1,0 +1,21 @@
+# ChEMBL Target: DDB1- and CUL4-associated factor 1
+# UniProt: Q9Y4B6
+# PDB: 7UFV (Resolution: 1.90 Å)
+# Document/Assay: CHEMBL5380828 / CHEMBL5383577 (literature, 24 compounds)
+# Crystal Ligand: N6O (c1ccc(c(c1)c2c(c[nH]n2)C(=O)N[C@@H](CC(=O)N)c3cccc(c3)Cl)F...)
+# Best Match Similarity: 1.000
+# MCS Fragment: CCC(NC(=O)C1=CNN=C1C1=CC=CC=C1)C1=CC=CC=C1
+
+pdb_id: 7UFV
+output_dir: 7UFV_workflow
+target_id: CHEMBL5465521
+doc_id: CHEMBL5380828
+assay_id: CHEMBL5383577
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: N6O
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: CCC(NC(=O)C1=CNN=C1C1=CC=CC=C1)C1=CC=CC=C1
+rmsd_threshold: 2.0

@@ -10,7 +10,26 @@ import numpy as np
 import polars as pl
 import seaborn as sns
 import yaml
-from scipy.stats import pearsonr, spearmanr
+
+PALETTE = {
+    "periwinkle": "#B8B8FF",
+    "light_green": "#90EE90",
+    "light_blue": "#0072B2",
+    "orange": "#FF7F00",
+    "soft_pink": "#E89EB8",
+    "caramel": "#C08552",
+}
+
+
+def set_publication_style():
+    """Set publication-ready defaults for variance plots."""
+    sns.set_context("paper", font_scale=1.5)
+    sns.set_style("ticks")
+    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["svg.fonttype"] = "none"
+    plt.rcParams["axes.spines.top"] = False
+    plt.rcParams["axes.spines.right"] = False
+
 
 def get_pactivity(df: pl.DataFrame, config_path: Path):
     """
@@ -102,7 +121,11 @@ def run_variance_tests(
             dst_work = dst_target_dir / str(doc_id)
             dst_work.mkdir(parents=True, exist_ok=True)
             
+            # Keep cleaned-data filename consistent with workflow.py naming.
             prefix = f"{target_id}_{pdb_id}_{doc_id}"
+            assay_id = config.get("assay_id")
+            if assay_id:
+                prefix += f"_{assay_id}"
             data_file = f"{prefix}_cleaned_data.csv"
             
             if (src_work / data_file).exists() and not (dst_work / data_file).exists():
@@ -189,21 +212,46 @@ def analyze_variance_results(
         config_path = config_dir / f"{system_key}.yaml"
         p_activities, activity_label = get_pactivity(clean_merged, config_path)
 
-        # Plot
-        plt.figure(figsize=(10, 7))
-        sns.set_style("whitegrid")
-        plt.errorbar(means, p_activities, xerr=stds, fmt='o', color='#2c7bb6', ecolor='#d7191c', 
-                    alpha=0.6, capsize=3, markersize=5, label='Ligand Variance (Multiple Runs)')
-        
-        if len(means) > 1:
-            p_corr, _ = pearsonr(means, p_activities)
-            s_corr, _ = spearmanr(means, p_activities)
-            plt.text(0.05, 0.95, f"N: {len(means)}\nPearson: {p_corr:.3f}\nSpearman: {s_corr:.3f}", 
-                     transform=plt.gca().transAxes, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        # Plot with true lower-quartile highlighting.
+        q25_threshold = np.percentile(p_activities, 25)
+        is_lower_quartile = p_activities <= q25_threshold
 
-        plt.title(f"Score Variance vs {activity_label}\nSystem: {system_key}", fontsize=13)
-        plt.xlabel("Mean Docking Score (kcal/mol)", fontsize=11)
-        plt.ylabel(activity_label, fontsize=11)
-        plt.savefig(output_dir / f"{system_key}_variance_plot.png", dpi=300, bbox_inches="tight")
+        set_publication_style()
+        plt.figure(figsize=(12, 8))
+        plt.errorbar(
+            means[~is_lower_quartile],
+            p_activities[~is_lower_quartile],
+            xerr=stds[~is_lower_quartile],
+            fmt="o",
+            color=PALETTE["light_blue"],
+            ecolor=PALETTE["soft_pink"],
+            alpha=0.7,
+            capsize=3,
+            markersize=9,
+            markeredgecolor="black",
+            markeredgewidth=0.5,
+            label="Analogs",
+        )
+        plt.errorbar(
+            means[is_lower_quartile],
+            p_activities[is_lower_quartile],
+            xerr=stds[is_lower_quartile],
+            fmt="o",
+            color=PALETTE["orange"],
+            ecolor=PALETTE["soft_pink"],
+            alpha=0.8,
+            capsize=3,
+            markersize=9,
+            markeredgecolor="black",
+            markeredgewidth=0.5,
+            label="Model visible (Lower 25%)",
+        )
+        
+        plt.title(f"Score Variance vs {activity_label}\nSystem: {system_key}")
+        plt.xlabel("Mean Docking Score")
+        plt.ylabel(activity_label)
+        plt.legend(frameon=True, facecolor="white", framealpha=0.9, loc="upper right")
+        svg_path = output_dir / f"{system_key}_variance_plot.svg"
+        plt.savefig(svg_path, bbox_inches="tight")
         plt.close()
-        print(f"  Analysis saved to {output_dir / f'{system_key}_variance_plot.png'}")
+        print(f"  Analysis saved to {svg_path}")

@@ -1,0 +1,21 @@
+# ChEMBL Target: Dual specificity protein kinase TTK
+# UniProt: P33981
+# PDB: 3WZJ (Resolution: 2.75 Å)
+# Document/Assay: CHEMBL3407417 / CHEMBL3411333 (literature, 25 compounds)
+# Crystal Ligand: O43 (c1cc(ccc1c2cnc3n2nc(cc3NCC4CCOCC4)NC5CCCCC5)C(=O)NC6CC6...)
+# Best Match Similarity: 1.000
+# MCS Fragment: NC(=O)C1=CC=C(C2=CN=CN2)C=C1
+
+pdb_id: 3WZJ
+output_dir: 3WZJ_workflow
+target_id: CHEMBL3983
+doc_id: CHEMBL3407417
+assay_id: CHEMBL3411333
+ligand_csv_path: null
+activity_column: pchembl_value
+id_column: molecule_chembl_id
+ligand_resname: O43
+protein_pdb_path: null
+ligand_pdb_path: null
+fragment_smiles: NC(=O)C1=CC=C(C2=CN=CN2)C=C1
+rmsd_threshold: 2.0

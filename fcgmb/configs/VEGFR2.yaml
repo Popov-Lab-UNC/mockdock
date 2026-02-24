@@ -1,0 +1,10 @@
+benchmark_name: VEGFR2
+pdb_id: 3VHE
+target_id: CHEMBL279
+doc_id: CHEMBL1250545
+assay_id: CHEMBL1250641
+ligand_resname: 42Q
+fragment_smiles: C1=CC2=C(C=NC=N2)N1
+low_score: -10.378
+high_score: -12.414
+rmsd_threshold: 2.0
