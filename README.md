@@ -1,6 +1,6 @@
 # FCGMB: Fragment-Constrained Generative Model Benchmark
 
-A benchmark package for generative molecular models, specifically using fragment-constrained docking with publicly available data and Autodock as a benchmark.
+A benchmarking package for generative molecular models. Each benchmark is built around a protein–ligand system from the PDB and a corresponding set of bioactivity-annotated compounds from ChEMBL. Models are scored by docking compounds that contain a specified molecular fragment, using AutoDock-GPU as the backend.
 
 ## Installation
 
@@ -10,95 +10,123 @@ cd fcgmb
 pip install -e .
 ```
 
-or using UV:
+Or using [uv](https://github.com/astral-sh/uv):
+
 ```bash
 git clone https://github.com/Popov-Lab-UNC/fcgmb.git
 cd fcgmb
-uv venv
-uv sync
+uv venv && uv sync
 ```
 
-## Core Features
-
-### 1. FCGMB Oracle
-The `FCGMBOracle` class provides a simple interface for generative models to score compounds. It handles ChEMBL data retrieval, receptor preparation, and fragment-constrained docking automatically.
+## Quickstart
 
 ```python
 from fcgmb import FCGMBOracle
 
-# 1. List available benchmarks (retrieved from internal package configs)
-benchmarks = FCGMBOracle.list_benchmarks()
-print(f"Available systems: {benchmarks}")
+# List all available benchmarks
+FCGMBOracle.list_benchmarks()
+# ['AKT1', 'CHK1', 'ITK', 'PCK1', 'TTK', 'VEGFR2']
 
-# 2. Instantiate for a specific system
-# No need to provide a config path; it uses internal benchmarks by name
+# Instantiate for a specific benchmark
 oracle = FCGMBOracle("CHK1", budget=5000)
 
-# 3. Get the fragment constraint (SMILES) the model must adhere to
-fragment = oracle.fragment
-print(f"Target Fragment: {fragment}")
+# The fragment SMILES that every submitted molecule must contain
+print(oracle.fragment)
 
-# 4. Get initial set of compounds (lower quartile by pchembl_value from ChEMBL)
+# Lower-quartile compounds from ChEMBL — provide these to your generative model
 initial_df = oracle.get_initial_compounds()
 
-# 5. Score a list of SMILES
-# Compounds not matching the fragment OR exceeding budget return 0.0 or NaN
-scores = oracle.score(["CCO", "CCC", "CN(C)C"])
-# Returns a dict: {SMILES: docking_score}
+# Score a list of SMILES; returns {smiles: normalized_score}
+scores = oracle.score(["CCO", "CCC"])
+
+# Inspect results so far
+print(oracle.results_df)
+print(oracle.budget_remaining)  # how many compounds remain in the budget
+print(oracle.status)            # 'active' or 'finished'
 ```
 
-### 2. Zero-Config & Automatic Storage
-FCGMB is designed to be run anywhere. It uses a local `.fcgmb` directory for storage:
-- **`.fcgmb/grids/`**: Protein grids are prepared once and shared across benchmarks using the same PDB.
-- **`.fcgmb/ligand_data/`**: ChEMBL bioactivity data is cached locally to speed up initialization.
-- **`.fcgmb/benchmarks/`**: Results and log files for each specific run.
+## Available Benchmarks
 
-### 3. Docking Workflow
-Run the standard docking workflow via the CLI for manual analysis:
+| Name   | PDB  | Target      |
+|--------|------|-------------|
+| AKT1   | 4EJN | CHEMBL4282  |
+| CHK1   | 2R0U | CHEMBL4630  |
+| ITK    | 3QGW | CHEMBL2959  |
+| PCK1   | 1NHX | CHEMBL2911  |
+| TTK    | 3WZJ | CHEMBL3983  |
+| VEGFR2 | 3VHE | CHEMBL279   |
 
-```bash
-python run_workflow.py --config configs/CHEMBL205_1YDA_CHEMBL2331308.yaml
+## API Reference
+
+### `FCGMBOracle(benchmark_name, budget, docking_backend, scratch_dir, n_cpus, n_gpus)`
+
+| Parameter | Default | Description |
+|---|---|---|
+| `benchmark_name` | required | Name of the benchmark (see table above) |
+| `budget` | `5000` | Maximum number of compounds that can be scored |
+| `docking_backend` | `"auto"` | `"autodock_gpu"`, `"vina"`, or `"auto"` |
+| `scratch_dir` | `.fcgmb/` | Directory for cached grids, bioactivity data, and results |
+| `n_cpus` | autodetect | CPUs for ligand preparation |
+| `n_gpus` | autodetect | GPUs for AutoDock-GPU |
+
+### Public attributes
+
+| Attribute | Description |
+|---|---|
+| `oracle.benchmark_name` | Name of this benchmark |
+| `oracle.pdb_id` | PDB ID of the receptor structure |
+| `oracle.fragment` | Fragment SMILES molecules must contain |
+| `oracle.config` | `{rmsd_threshold, low_score, high_score}` |
+| `oracle.n_cpus` / `n_gpus` | Hardware in use |
+| `oracle.max_budget` | Total scoring budget |
+| `oracle.budget_used` | Compounds scored so far |
+| `oracle.budget_remaining` | Remaining budget |
+| `oracle.status` | `"active"` or `"finished"` |
+| `oracle.results_df` | Polars DataFrame of all scored compounds |
+
+### Methods
+
+```python
+FCGMBOracle.list_benchmarks()          # class method — list bundled benchmarks
+oracle.get_initial_compounds()         # lower-quartile bioactivity compounds (DataFrame)
+oracle.get_validation_compounds()      # upper-quartile bioactivity compounds (DataFrame)
+oracle.score(smiles_list)              # dock and score; returns {smiles: float}
+oracle.set_backend_config(**kwargs)    # override vina_exhaustiveness, n_poses, etc.
 ```
 
-## Directory Structure
+### Scoring
 
-- `fcgmb/`: Core package containing logic for docking, receptor preparation, and the Oracle.
-  - `configs/`: Bundled benchmark configuration files.
-  - `pipeline/`: Scripts for generating benchmark configurations from ChEMBL.
-- `.fcgmb/`: (Generated) Local scratch space for grids, cached data, and results.
-- `configs/`: (Optional) User-provided benchmark configuration files.
-- `notebooks/`: Example notebooks for using the oracle and analyzing results.
+`score()` returns a normalized score in **[0.0, 1.0]**:
+- Molecules can exceed the score if they have better docking scores than the ChEMBL data
+- Molecules that do **not** contain the fragment substructure are skipped and score `0.0`.
+- Valid docking poses (RMSD ≤ threshold relative to the crystal ligand) are normalized between the empirical `low_score` and `high_score` from the config. Otherwise, they score a `0.0`.
+- Once `budget` compounds have been scored, all further calls return `0.0`.
 
-## Publication-Ready Variance Figures (SVG)
+## Local Storage
 
-Use the variance analysis script to generate publication-ready figures with consistent styling:
+FCGMB caches all runtime data under a `.fcgmb/` scratch directory (configurable via `scratch_dir`):
 
-```bash
-python analyze_variance_runs.py \
-  --runs-dir variance_runs \
-  --config-dir configs \
-  --output-dir variance_runs \
-  --mapping variance_runs/crystal_ligand_mapping.csv
+```
+.fcgmb/
+├── grids/<pdb_id>/         # AutoGrid maps (prepared once, reused)
+├── bioactivity_data/       # Cached ChEMBL CSVs
+└── runs/<benchmark>/
+    └── results/            # Docking output files
 ```
 
-Generated outputs include:
-- `variance_runs/system_mean_std_barplot.svg` (plus `.png`)
-- `variance_runs/<system_key>_variance_plot.svg` (plus `.png` for each system)
+Bundled assets (pre-built grids and curated bioactivity CSVs) are shipped inside the package under `fcgmb/configs/`, `fcgmb/grids/`, and `fcgmb/bioactivity_data/`, and are used automatically.
 
-Per-system variance plots include:
-- True lower-quartile split using the 25th percentile of `pchembl_value`
-- Color coding for model-visible compounds (lower 25%) versus remaining compounds
-- Crystal-ligand point annotation when mapping is available
+## Package Layout
 
-### Crystal-Ligand Mapping CSV
-
-Create `variance_runs/crystal_ligand_mapping.csv` with:
-
-```csv
-system_key,molecule_chembl_id,label
-CHEMBL204_1MU6_CHEMBL1145961_CHEMBL816574,CHEMBL1145961,Crystal ligand
 ```
-
-- Required columns: `system_key`, `molecule_chembl_id`
-- Optional column: `label` (defaults to `Crystal ligand`)
-- If a system mapping is missing or unmatched, the figure is still generated and annotated accordingly.
+fcgmb/
+├── configs/           # Bundled YAML benchmark configs
+├── bioactivity_data/  # Curated ChEMBL CSVs (ground truth)
+├── grids/             # Pre-built AutoGrid maps
+├── oracle.py          # FCGMBOracle — main user-facing class
+├── docking.py         # AutoDock-GPU and Vina backends
+├── receptor.py        # Receptor preparation pipeline
+├── ligand_prep.py     # Ligand preparation (PDBQT conversion)
+├── analysis.py        # RMSD filtering and pose analysis
+└── data.py            # ChEMBL data fetching
+```
