@@ -97,9 +97,9 @@ oracle.set_backend_config(**kwargs)    # override vina_exhaustiveness, n_poses, 
 ### Scoring
 
 `score()` returns a normalized score in **[0.0, 1.0]**:
-- Molecules can exceed the score if they have better docking scores than the ChEMBL data
-- Molecules that do **not** contain the fragment substructure are skipped and score `0.0`.
-- Valid docking poses (RMSD ≤ threshold relative to the crystal ligand) are normalized between the empirical `low_score` and `high_score` from the config. Otherwise, they score a `0.0`.
+- Valid docking poses (RMSD ≤ threshold relative to the crystal ligand) are normalized between the empirical `low_score` and `high_score` from the config. Otherwise, they score `0.0`.
+- Molecules can exceed `1.0` if they have better docking scores than the ChEMBL data.
+- Molecules that do **not** contain the fragment substructure are skipped and score `0.0` (no oracle calls consumed).
 - Once `budget` compounds have been scored, all further calls return `0.0`.
 
 ## Local Storage
