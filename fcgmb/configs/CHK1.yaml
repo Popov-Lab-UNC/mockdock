@@ -5,8 +5,8 @@ doc_id: CHEMBL1140535
 assay_id: CHEMBL924433
 ligand_resname: M54
 fragment_smiles: O=C1NC=CC2=C1C1=C(C=CC=C1)C=C2
+require_fragment_match: true
+require_pose_rmsd: true
 low_score: -8.008
 high_score: -12.978
 rmsd_threshold: 2.0
-require_fragment_match: true
-require_pose_rmsd: true

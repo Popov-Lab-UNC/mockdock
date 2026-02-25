@@ -5,8 +5,8 @@ doc_id: CHEMBL1145376
 assay_id: CHEMBL889299
 ligand_resname: FTB
 fragment_smiles: CN1C(=O)N(CC2=CC=CC=C2F)C(=O)C2=C1N=C(CC1=CC=C(N)C=C1)N2
+require_fragment_match: true
+require_pose_rmsd: true
 low_score: -11.205
 high_score: -13.692
 rmsd_threshold: 2.0
-require_fragment_match: true
-require_pose_rmsd: true
