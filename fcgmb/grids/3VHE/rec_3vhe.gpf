@@ -1,0 +1,27 @@
+parameter_file boron-silicon-atom_par.dat
+npts 56 48 56
+gridfld rec_3vhe.maps.fld
+spacing 0.375
+receptor_types HD C A N NA OA F P SA S Cl Br I Mg Ca Mn Fe Zn
+ligand_types HD C A N NA OA F P SA S Cl Br I Si B
+receptor rec_3vhe.pdbqt
+gridcenter -24.303 -0.681 -8.954
+smooth 0.500
+map rec_3vhe.HD.map
+map rec_3vhe.C.map
+map rec_3vhe.A.map
+map rec_3vhe.N.map
+map rec_3vhe.NA.map
+map rec_3vhe.OA.map
+map rec_3vhe.F.map
+map rec_3vhe.P.map
+map rec_3vhe.SA.map
+map rec_3vhe.S.map
+map rec_3vhe.Cl.map
+map rec_3vhe.Br.map
+map rec_3vhe.I.map
+map rec_3vhe.Si.map
+map rec_3vhe.B.map
+elecmap rec_3vhe.e.map
+dsolvmap rec_3vhe.d.map
+dielectric -42.000

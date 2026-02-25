@@ -32,7 +32,7 @@ print(f"Available systems: {benchmarks}")
 
 # 2. Instantiate for a specific system
 # No need to provide a config path; it uses internal benchmarks by name
-oracle = FCGMBOracle("CHEMBL205_1YDA_CHEMBL2331308", budget=5000)
+oracle = FCGMBOracle("CHK1", budget=5000)
 
 # 3. Get the fragment constraint (SMILES) the model must adhere to
 fragment = oracle.fragment

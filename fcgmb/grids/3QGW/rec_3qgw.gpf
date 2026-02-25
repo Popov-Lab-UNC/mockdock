@@ -1,0 +1,27 @@
+parameter_file boron-silicon-atom_par.dat
+npts 56 36 42
+gridfld rec_3qgw.maps.fld
+spacing 0.375
+receptor_types HD C A N NA OA F P SA S Cl Br I Mg Ca Mn Fe Zn
+ligand_types HD C A N NA OA F P SA S Cl Br I Si B
+receptor rec_3qgw.pdbqt
+gridcenter 37.537 50.721 13.378
+smooth 0.500
+map rec_3qgw.HD.map
+map rec_3qgw.C.map
+map rec_3qgw.A.map
+map rec_3qgw.N.map
+map rec_3qgw.NA.map
+map rec_3qgw.OA.map
+map rec_3qgw.F.map
+map rec_3qgw.P.map
+map rec_3qgw.SA.map
+map rec_3qgw.S.map
+map rec_3qgw.Cl.map
+map rec_3qgw.Br.map
+map rec_3qgw.I.map
+map rec_3qgw.Si.map
+map rec_3qgw.B.map
+elecmap rec_3qgw.e.map
+dsolvmap rec_3qgw.d.map
+dielectric -42.000
