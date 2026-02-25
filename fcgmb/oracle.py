@@ -107,6 +107,11 @@ class FCGMBOracle:
         self._doc_id = _raw.get("doc_id")
         self._fragment_smiles = _raw.get("fragment_smiles")
         self._rmsd_threshold = _raw.get("rmsd_threshold", 2.0)
+        self._require_fragment_match = _raw.get("require_fragment_match", True)
+        self._require_pose_rmsd = _raw.get("require_pose_rmsd", True)
+        # Invariant: without a 2D fragment match, fragment RMSD is undefined
+        if not self._require_fragment_match:
+            self._require_pose_rmsd = False
         self._ligand_resname = _raw.get("ligand_resname")
         self._low_score = _raw.get("low_score")
         self._high_score = _raw.get("high_score")
@@ -145,6 +150,8 @@ class FCGMBOracle:
         """Key benchmark configuration parameters."""
         return {
             "rmsd_threshold": self._rmsd_threshold,
+            "require_fragment_match": self._require_fragment_match,
+            "require_pose_rmsd": self._require_pose_rmsd,
             "low_score": self._low_score,
             "high_score": self._high_score,
         }
@@ -213,7 +220,7 @@ class FCGMBOracle:
         skipped_results = []
 
         for smi in smiles_list:
-            if not self._docking_analyzer.check_2d_fragment_match(smi):
+            if self._require_fragment_match and not self._docking_analyzer.check_2d_fragment_match(smi):
                 skipped_results.append({
                     "smiles": smi,
                     "docking_score": float("nan"),
@@ -263,13 +270,22 @@ class FCGMBOracle:
                     best_v, passed, _bm, best_a, _bam = (
                         self._docking_analyzer.filter_poses_by_rmsd(dlg_path, smi)
                     )
-                    if passed:
-                        valid_pose_found = True
-                        if math.isnan(best_valid) or best_v < best_valid:
-                            best_valid = best_v
-                            best_dlg = str(dlg_path)
                     if math.isnan(best_any) or best_a < best_any:
                         best_any = best_a
+                    if self._require_pose_rmsd:
+                        # Standard mode: only accept poses within RMSD threshold
+                        if passed:
+                            valid_pose_found = True
+                            if math.isnan(best_valid) or best_v < best_valid:
+                                best_valid = best_v
+                                best_dlg = str(dlg_path)
+                    else:
+                        # Relaxed mode: accept any pose; use best overall score
+                        if not math.isnan(best_a):
+                            valid_pose_found = True
+                            if math.isnan(best_valid) or best_a < best_valid:
+                                best_valid = best_a
+                                best_dlg = str(dlg_path)
 
                 if valid_pose_found and self._low_score is not None and self._high_score is not None:
                     denom = self._low_score - self._high_score

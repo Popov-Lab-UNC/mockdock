@@ -76,7 +76,7 @@ print(oracle.status)            # 'active' or 'finished'
 | `oracle.benchmark_name` | Name of this benchmark |
 | `oracle.pdb_id` | PDB ID of the receptor structure |
 | `oracle.fragment` | Fragment SMILES molecules must contain |
-| `oracle.config` | `{rmsd_threshold, low_score, high_score}` |
+| `oracle.config` | `{rmsd_threshold, require_fragment_match, require_pose_rmsd, low_score, high_score}` |
 | `oracle.n_cpus` / `n_gpus` | Hardware in use |
 | `oracle.max_budget` | Total scoring budget |
 | `oracle.budget_used` | Compounds scored so far |
@@ -99,8 +99,37 @@ oracle.set_backend_config(**kwargs)    # override vina_exhaustiveness, n_poses, 
 `score()` returns a normalized score in **[0.0, 1.0]**:
 - Valid docking poses (RMSD ≤ threshold relative to the crystal ligand) are normalized between the empirical `low_score` and `high_score` from the config. Otherwise, they score `0.0`.
 - Molecules can exceed `1.0` if they have better docking scores than the ChEMBL data.
-- Molecules that do **not** contain the fragment substructure are skipped and score `0.0` (no oracle calls consumed).
+- Molecules that do **not** contain the fragment substructure are skipped and score `0.0` (no oracle calls consumed) — unless `require_fragment_match` is `False`.
 - Once `budget` compounds have been scored, all further calls return `0.0`.
+
+### Relaxing Scoring Constraints
+
+Both constraints are `True` by default (standard benchmark behaviour). They can be relaxed to explore molecules outside the fragment-constrained design space.
+
+**Disable the 2D fragment filter** — any molecule is docked, regardless of whether it contains the fragment. This also disables the 3D RMSD check (since there is no fragment to measure RMSD against):
+
+```python
+from fcgmb import FCGMBOracle
+
+oracle = FCGMBOracle("AKT1", budget=5000)
+oracle._require_fragment_match = False  # molecules without fragment are now docked
+oracle._require_pose_rmsd = False       # automatically implied, but set explicitly for clarity
+
+scores = oracle.score(["CCO", "CCC"])  # both are docked even without the AKT1 fragment
+```
+
+**Disable only the 3D RMSD filter** — the fragment must still be present (2D check passes), but any docking pose is accepted rather than requiring the fragment to overlay the crystal pose within the RMSD threshold:
+
+```python
+from fcgmb import FCGMBOracle
+
+oracle = FCGMBOracle("CHK1", budget=5000)
+oracle._require_pose_rmsd = False  # best docking score accepted regardless of pose RMSD
+
+scores = oracle.score(my_smiles_list)
+```
+
+> **Note:** These flags are also configurable per-benchmark via the YAML configs (`require_fragment_match`, `require_pose_rmsd`). Overriding the instance attributes (as shown above) takes effect immediately for that oracle session.
 
 ## Local Storage
 

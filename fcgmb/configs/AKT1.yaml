@@ -8,3 +8,5 @@ fragment_smiles: C1=CN=CC(C2=NC3=CC=CN=C3N2)=C1
 low_score: -9.741
 high_score: -14.342
 rmsd_threshold: 2.0
+require_fragment_match: true
+require_pose_rmsd: true
