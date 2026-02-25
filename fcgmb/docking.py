@@ -43,6 +43,9 @@ class DockingOracle(ABC):
         pass
 
 class AutoDockGPUOracle(DockingOracle):
+    # Extensions required for AutoDock-GPU docking
+    ALLOWED_RECEPTOR_EXTENSIONS = {".map", ".fld", ".xyz", ".pdbqt"}
+
     def __init__(
         self,
         receptor_file: Union[str, Path],
@@ -80,7 +83,10 @@ class AutoDockGPUOracle(DockingOracle):
             # Symlink receptor files
             receptor_dir = self.receptor_file.parent
             for ref_file in receptor_dir.iterdir():
-                if ref_file.is_file():
+                if ref_file.is_file() and (
+                    ref_file.suffix in self.ALLOWED_RECEPTOR_EXTENSIONS or
+                    ref_file.name == self.receptor_file.name
+                ):
                     target = tmp_path / ref_file.name
                     if not target.exists():
                         try:
