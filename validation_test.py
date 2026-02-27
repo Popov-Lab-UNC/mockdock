@@ -92,14 +92,11 @@ def run_validation(
     # By default use only the curated package benchmarks (fcgmb/configs/).
     # Pass include_user_configs=True to also pick up local configs/.
     all_available = FCGMBOracle.list_benchmarks()
-    bundled = FCGMBOracle.list_bundled_benchmarks()
 
     if benchmarks:
         to_run = benchmarks
-    elif include_user_configs:
-        to_run = all_available
     else:
-        to_run = bundled
+        to_run = all_available
 
     if not to_run:
         print("[ERROR] No benchmark configs found. Check fcgmb/configs/ or local configs/.")

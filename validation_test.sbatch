@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=fcgmb_val
-#SBATCH --partition=gpu
+#SBATCH --partition=volta-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --mem=48G

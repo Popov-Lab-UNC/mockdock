@@ -1,0 +1,42 @@
+# AceGen-REINVENT x FCGMB configuration
+# Based on acegen-open/scripts/reinvent/config_scaffold.yaml
+# PromptSMILES scaffold (promptsmiles) is set dynamically per benchmark
+# from the FCGMB oracle's fragment SMILES.
+
+# Logging
+experiment_name: fcgmb           # overridden per benchmark in run.py
+agent_name: reinvent              # overridden in run.py
+log_dir: results                  # overridden to absolute path in run.py
+logger_backend: null              # set to wandb or tensorboard to enable
+
+# Environment
+num_envs: 128
+total_smiles: 5000                # overridden to remaining budget after warmup
+
+# Scoring — handled externally via FCGMBTask; all molscore fields must be null
+molscore_mode: null
+molscore_task: null
+custom_task: null
+
+# Fragment conditioning — set dynamically per benchmark in run.py
+promptsmiles: null
+promptsmiles_optimize: true
+promptsmiles_shuffle: true
+promptsmiles_multi: false
+
+# Model
+model: gru
+custom_model_factory: null
+
+# Optimizer
+lr: 0.0001
+eps: 1.0e-08
+weight_decay: 0.0
+
+# REINVENT-specific
+sigma: 120
+
+# Experience replay
+experience_replay: true
+replay_buffer_size: 100
+replay_batch_size: 10

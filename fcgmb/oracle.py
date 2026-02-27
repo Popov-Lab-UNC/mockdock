@@ -18,7 +18,8 @@ from .analysis import DockingAnalyzer
 from .data import fetch_chembl_data
 from .docking import AutoDockGPUOracle, AutoDockVinaOracle
 from .ligand_prep import LigandPreparer
-from .receptor import ReceptorPreparer
+# ReceptorPreparer (requires prody) is imported lazily below — only needed
+# when no pre-built grid is found.
 
 
 def _detect_gpus() -> int:
@@ -106,6 +107,7 @@ class FCGMBOracle:
         self._target_id = _raw.get("target_id")
         self._doc_id = _raw.get("doc_id")
         self._fragment_smiles = _raw.get("fragment_smiles")
+        self._fragment_smiles_with_dummies = _raw.get("fragment_smiles_with_dummies")
         self._rmsd_threshold = _raw.get("rmsd_threshold", 2.0)
         self._require_fragment_match = _raw.get("require_fragment_match", True)
         self._require_pose_rmsd = _raw.get("require_pose_rmsd", True)
@@ -141,9 +143,15 @@ class FCGMBOracle:
     # ──────────────────────────────────────────────────────────────────
 
     @property
-    def fragment(self) -> str:
+    def fragment_smiles(self) -> str:
         """Fragment SMILES that every submitted molecule must contain."""
         return self._fragment_smiles
+
+    @property
+    def fragment_smiles_with_dummies(self) -> Optional[str]:
+        """Fragment SMILES with (*) dummy attachment point(s) for PromptSMILES
+        scaffold decoration.  Returns None if not yet set in the benchmark config YAML."""
+        return self._fragment_smiles_with_dummies
 
     @property
     def config(self) -> dict:
@@ -417,6 +425,13 @@ class FCGMBOracle:
 
         if not fld_files:
             print(f"[FCGMB] No pre-built grid found — preparing receptor for {self.pdb_id}...")
+            try:
+                from .receptor import ReceptorPreparer
+            except ImportError as e:
+                raise ImportError(
+                    "Receptor preparation requires 'prody', which is an optional dependency. "
+                    "Install it with: pip install fcgmb[receptor]  or  conda install -c conda-forge prody"
+                ) from e
             preparer = ReceptorPreparer(
                 autogrid_executable="autogrid4",
                 mk_prepare_receptor_executable="mk_prepare_receptor.py",

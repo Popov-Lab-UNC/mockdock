@@ -1,0 +1,43 @@
+# AceGen-A2C x FCGMB configuration
+# Based on acegen-open/scripts/a2c/config_scaffold.yaml
+# PromptSMILES scaffold (promptsmiles) is set dynamically per benchmark.
+
+# Logging
+experiment_name: fcgmb
+agent_name: a2c
+log_dir: results
+logger_backend: null
+
+# Environment
+num_envs: 16
+total_smiles: 5000
+
+# Scoring — handled externally via FCGMBTask
+molscore_mode: null
+molscore_task: null
+custom_task: null
+
+# Fragment conditioning — set dynamically per benchmark in run.py
+promptsmiles: null
+promptsmiles_optimize: true
+promptsmiles_shuffle: true
+promptsmiles_multi: false
+
+# Model
+shared_nets: false
+model: gru
+custom_model_factory: null
+
+# Optimizer
+lr: 0.0001
+eps: 1.0e-06
+weight_decay: 0.0
+
+# A2C-specific
+gamma: 0.999
+lmbda: 0.99
+critic_coef: 0.5
+entropy_coef: 0.05
+kl_coef: 0.001
+mini_batch_size: 16
+max_grad_norm: 0.5

@@ -13,15 +13,19 @@ dependencies = [
     "seaborn",
     "scipy",
     "gemmi>=0.7.4",
-    "prody>=2.4.1",
     "molscrub>=0.2.2",
     "pyyaml>=6.0.3",
     "tqdm>=4.67.1",
     "aiohttp>=3.9.0",
     "asttokens>=3.0.1",
     "comm>=0.2.3",
-    "vina>=1.2.7",
 ]
+
+[project.optional-dependencies]
+# Vina docking backend (alternative to AutoDock-GPU)
+vina = ["vina>=1.2.7"]
+# Receptor preparation from raw PDB (only needed if pre-built grids are absent)
+receptor = ["prody>=2.4.1"]
 
 [build-system]
 requires = ["setuptools", "wheel"]
@@ -46,7 +50,7 @@ exclude = [
 ]
 
 [tool.setuptools.package-data]
-fcgmb = ["configs/*.yaml"]
+fcgmb = ["configs/*.yaml", "grids/**/*", "bioactivity_data/*.csv"]
 
 [tool.ruff]
 # Avoid linting large/generated artifacts.

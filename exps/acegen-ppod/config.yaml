@@ -1,0 +1,50 @@
+# AceGen-PPOD x FCGMB configuration
+# PPOD = PPO + Diversity (experience replay enabled).
+# Based on acegen-open/scripts/ppo/config_scaffold.yaml with experience_replay: true.
+# PromptSMILES scaffold (promptsmiles) is set dynamically per benchmark.
+
+# Logging
+experiment_name: fcgmb
+agent_name: ppod
+log_dir: results
+logger_backend: null
+
+# Environment
+num_envs: 64
+total_smiles: 5000
+
+# Scoring — handled externally via FCGMBTask
+molscore_mode: null
+molscore_task: null
+custom_task: null
+
+# Fragment conditioning — set dynamically per benchmark in run.py
+promptsmiles: null
+promptsmiles_optimize: true
+promptsmiles_shuffle: true
+promptsmiles_multi: false
+
+# Model
+shared_nets: false
+model: gru
+custom_model_factory: null
+
+# Optimizer
+lr: 0.0005
+eps: 1.0e-06
+weight_decay: 1.0e-06
+
+# PPO-specific
+gamma: 0.999
+lmbda: 1.0
+critic_coef: 0.25
+entropy_coef: 0.01
+kl_coef: 0.001
+ppo_epochs: 3
+max_grad_norm: 0.25
+ppo_clip: 0.5
+
+# Experience replay — enabled, defining PPOD vs plain PPO
+experience_replay: true
+replay_batch_size: 24
+replay_buffer_size: 100

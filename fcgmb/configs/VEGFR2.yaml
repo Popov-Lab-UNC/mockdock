@@ -5,6 +5,7 @@ doc_id: CHEMBL1250545
 assay_id: CHEMBL1250641
 ligand_resname: 42Q
 fragment_smiles: C1=CC2=C(C=NC=N2)N1
+fragment_smiles_with_dummies: [*]N1C(C([*])=NC=N2)=C2C=C1
 require_fragment_match: true
 require_pose_rmsd: true
 low_score: -10.378
