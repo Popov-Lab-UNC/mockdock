@@ -76,9 +76,16 @@ def warmup_oracle(oracle: FCGMBOracle, output_dir: pathlib.Path, n: int = 25) ->
         return
 
     smiles_col = "canonical_smiles"
-    smiles_list = initial_df[smiles_col].to_list()[:n]
-    log.info("Warming up oracle with %d initial compounds …", len(smiles_list))
-    scores = oracle.score(smiles_list)
+    subset = initial_df.head(n)
+    smiles_list = subset[smiles_col].to_list()
+
+    if "score" in subset.columns:
+        log.info("Using pre-computed docking scores for %d warmup compounds.", len(smiles_list))
+        scores = {row["canonical_smiles"]: row["score"] for row in subset.iter_rows(named=True)}
+    else:
+        log.info("Warming up oracle with %d initial compounds …", len(smiles_list))
+        scores = oracle.score(smiles_list)
+
     nonzero = sum(1 for v in scores.values() if v > 0)
     log.info("Warmup complete: %d/%d compounds scored > 0.", nonzero, len(smiles_list))
 
@@ -155,6 +162,7 @@ def run_benchmark(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     oracle = FCGMBOracle(benchmark, budget=budget)
+    log.info("Run directory: %s", oracle.run_dir)
 
     if n_warmup > 0:
         warmup_oracle(oracle, output_dir, n=n_warmup)
@@ -185,9 +193,18 @@ def run_benchmark(
 
     task = FCGMBTask(oracle)
     log.info("Starting %s RL loop …", ALGORITHM)
-    run_fn(cfg, task)
-
-    log.info("Benchmark %s complete. Budget used: %d/%d", benchmark, oracle.budget_used, oracle.max_budget)
+    try:
+        run_fn(cfg, task)
+    finally:
+        try:
+            oracle.export_top_poses(n=10)
+        except Exception as exc:
+            log.warning("Could not export top poses: %s", exc)
+        oracle.save_metrics(extra={"model": f"acegen-{ALGORITHM}", "seed": seed})
+        log.info(
+            "Benchmark %s complete. Budget used: %d/%d, rounds: %d",
+            benchmark, oracle.budget_used, oracle.max_budget, oracle.generation_round,
+        )
     torch.cuda.empty_cache()
 
 

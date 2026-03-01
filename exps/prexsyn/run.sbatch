@@ -15,8 +15,12 @@
 module load autodock-gpu
 module load autogrid
 
-source $HOME/miniconda3/etc/profile.d/conda.sh
+CONDA_PATH=$HOME/miniconda3/bin/conda
+eval "$($CONDA_PATH shell.bash hook)"
 conda activate prexsyn
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+export PYTHONPATH=$PYTHONPATH:/work/users/s/h/shuhang/prexsyn
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR=/work/users/s/h/shuhang/benchmark/exps/prexsyn

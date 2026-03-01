@@ -126,6 +126,7 @@ class FRAGFCGMB:
         out_dir: pathlib.Path,
         f_rag_root: pathlib.Path | None,
         hparams: HParams,
+        safe_model_path: str | None,
         logger: logging.Logger,
     ) -> None:
         self.benchmark_name = benchmark_name
@@ -133,6 +134,7 @@ class FRAGFCGMB:
         self.args = hparams
         self.logger = logger
         self.out_dir = out_dir
+        self.safe_model_path = safe_model_path
 
         random.seed(seed)
         np.random.seed(seed)
@@ -147,12 +149,36 @@ class FRAGFCGMB:
         self.oracle = FCGMBOracle(benchmark_name, budget=budget)
         self.designer = self.SAFEFusionDesign.load_default()
         self.designer.load_fuser(self.args.injection_model_path)
+        # Fallback generator: vanilla SAFE-GPT without f-RAG fusion, used when
+        # fragment-based generation repeatedly fails to produce valid molecules.
+        self.safe_fallback = self._init_safe_fallback()
         self.slicer = self.MolSlicer(shortest_linker=True)
+        self._safe_fallback_calls = 0  # incremented each call to vary random_seed
         self.co.MIN_SIZE = self.args.min_mol_size
         self.co.MAX_SIZE = self.args.max_mol_size
 
         self.results_path = self.out_dir / f"seed_{seed}.csv"
         self._init_from_oracle_context()
+
+    def _init_safe_fallback(self):
+        """Initialise the SAFE-only fallback generator, optionally from a custom model path."""
+        try:
+            if self.safe_model_path:
+                from safe.trainer.model import SAFEDoubleHeadsModel
+                from safe.tokenizer import SAFETokenizer
+
+                tokenizer = SAFETokenizer.from_pretrained(self.safe_model_path)
+                model = SAFEDoubleHeadsModel.from_pretrained(self.safe_model_path)
+                designer = self.sf.SAFEDesign(model=model, tokenizer=tokenizer)
+            else:
+                designer = self.sf.SAFEDesign.load_default(verbose=False)
+            return designer
+        except Exception as exc:  # pragma: no cover
+            self.logger.warning(
+                "SAFE-only fallback is unavailable (SAFEDesign initialisation failed: %s).",
+                exc,
+            )
+            return None
 
     def _init_from_oracle_context(self) -> None:
         initial_df = self.oracle.get_initial_compounds()
@@ -192,9 +218,51 @@ class FRAGFCGMB:
         if not cleaned_rows:
             raise RuntimeError("Initial compounds became empty after cleaning.")
 
-        pvals = np.array([row[1] for row in cleaned_rows], dtype=float)
-        lo, hi = float(np.min(pvals)), float(np.max(pvals))
-        denom = max(1e-8, hi - lo)
+        # Log the raw initial compound set for traceability.
+        for idx, (smi, proxy_score) in enumerate(cleaned_rows, start=1):
+            self.logger.info(
+                "Initial compound %d: smiles=%s, proxy_score=%.4f",
+                idx,
+                smi,
+                proxy_score,
+            )
+
+        # Use pre-computed docking scores if available, otherwise dock them.
+        seed_smiles = [smi for smi, _ in cleaned_rows]
+        if "score" in initial_df.columns:
+            self.logger.info(
+                "Using pre-computed docking scores for %d initial compounds.",
+                len(seed_smiles),
+            )
+            docking_scores = {
+                row[smiles_col]: row["score"]
+                for row in initial_df.iter_rows(named=True)
+                if row[smiles_col] in seed_smiles
+            }
+        else:
+            self.logger.info(
+                "Scoring %d initial seed compounds with oracle.", len(seed_smiles)
+            )
+            docking_scores = self.oracle.score(seed_smiles)
+
+        if not docking_scores:
+            raise RuntimeError("Oracle returned no scores for initial compounds.")
+
+        scored = [float(docking_scores[s]) for s in seed_smiles if s in docking_scores]
+        if scored:
+            self.logger.info(
+                "Initial docking scores summary: n_scored=%d, min=%.4f, mean=%.4f, max=%.4f",
+                len(scored),
+                float(np.min(scored)),
+                float(np.mean(scored)),
+                float(np.max(scored)),
+            )
+        else:
+            self.logger.warning(
+                "Oracle returned scores for %d SMILES, but none matched the cleaned "
+                "seed SMILES exactly; all scores will default to 0.0.",
+                len(docking_scores),
+            )
 
         mol_population: list[tuple[float, str]] = []
         arm_scores: dict[str, float] = defaultdict(float)
@@ -202,8 +270,9 @@ class FRAGFCGMB:
         linker_scores: dict[str, float] = defaultdict(float)
         linker_counts: dict[str, int] = defaultdict(int)
 
-        for smi, raw_score in cleaned_rows:
-            score = (raw_score - lo) / denom
+        for smi, _ in cleaned_rows:
+            # Oracle scores are already normalised to [0, 1].
+            score = float(docking_scores.get(smi, 0.0))
             mol = Chem.MolFromSmiles(smi)
             if mol is None:
                 continue
@@ -239,16 +308,27 @@ class FRAGFCGMB:
         self.linker_population = linker_population[: self.args.frag_population_size]
 
         if len(self.arm_population) < 2 or len(self.linker_population) < 1:
-            raise RuntimeError(
+            self.logger.warning(
                 "Insufficient initial fragment context to start f-RAG. "
-                f"arms={len(self.arm_population)}, linkers={len(self.linker_population)}"
+                "arms=%d, linkers=%d; will rely on SAFE-only fallback to bootstrap.",
+                len(self.arm_population),
+                len(self.linker_population),
             )
 
+        raw_init_best = max(
+            [s for s, _ in self.mol_population], default=float("-inf")
+        )
+        # For logging, treat a non-positive best seed score as "no useful signal yet".
+        init_best_score = raw_init_best if raw_init_best > 0 else float("-inf")
         self.logger.info(
-            "Initialized from oracle context: %d seed molecules, %d arm frags, %d linker frags",
+            "Initialized from oracle context: %d seed molecules, %d arm frags, %d linker frags "
+            "(using docking-based seed scores; budget_used=%d/%d; initial_best_score=%.4f)",
             len(self.mol_population),
             len(self.arm_population),
             len(self.linker_population),
+            self.oracle.budget_used,
+            self.oracle.max_budget,
+            init_best_score,
         )
 
     def attach(self, frag1: str, frag2: str) -> str:
@@ -302,10 +382,117 @@ class FRAGFCGMB:
         self.arm_population = self.arm_population[: self.args.frag_population_size]
         self.linker_population = self.linker_population[: self.args.frag_population_size]
 
-    def generate(self) -> str | None:
-        for _ in range(1000):
+    def _generate_safe_only(self) -> str | None:
+        """Fallback: use vanilla SAFE-GPT (no f-RAG fusion) to propose a molecule.
+
+        Two strategies are tried in order:
+          1. scaffold_decoration — constrained to the benchmark fragment scaffold.
+          2. de_novo_generation  — unconstrained, if scaffold decoration yields nothing.
+
+        The random seed is incremented on each call so different molecules are
+        explored across repeated fallback invocations.
+        """
+        if self.safe_fallback is None:
+            self.logger.warning("SAFE-only fallback is unavailable (SAFEDesign not initialised).")
+            return None
+
+        self._safe_fallback_calls += 1
+        varied_seed = self.seed + self._safe_fallback_calls
+        core = getattr(self.oracle, "fragment_smiles_with_dummies", None)
+
+        # --- Strategy 1: scaffold_decoration ---
+        if core:
             try:
-                if random.random() < 0.5:  # arm + arm
+                candidates = self.safe_fallback.scaffold_decoration(
+                    scaffold=core,
+                    n_samples_per_trial=10,
+                    n_trials=3,
+                    sanitize=True,
+                    random_seed=varied_seed,
+                )
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                self.logger.warning("SAFE-only scaffold_decoration failed: %s", exc)
+                candidates = []
+
+            for smi in candidates or []:
+                mol = Chem.MolFromSmiles(smi)
+                if mol is None:
+                    continue
+                n_atoms = mol.GetNumAtoms()
+                if self.args.min_mol_size <= n_atoms <= self.args.max_mol_size:
+                    self.logger.info(
+                        "SAFE-only fallback (scaffold_decoration) produced candidate (atoms=%d).",
+                        n_atoms,
+                    )
+                    return smi
+                self.logger.debug(
+                    "SAFE scaffold_decoration candidate rejected: atoms=%d not in [%d, %d].",
+                    n_atoms, self.args.min_mol_size, self.args.max_mol_size,
+                )
+        else:
+            self.logger.warning(
+                "SAFE-only fallback: oracle fragment_smiles_with_dummies unavailable; "
+                "skipping scaffold_decoration."
+            )
+
+        # --- Strategy 2: de_novo_generation (unconstrained) ---
+        try:
+            candidates = self.safe_fallback.de_novo_generation(
+                n_samples_per_trial=10,
+                n_trials=3,
+                sanitize=True,
+                random_seed=varied_seed,
+            )
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            self.logger.warning("SAFE-only de_novo_generation failed: %s", exc)
+            candidates = []
+
+        for smi in candidates or []:
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                continue
+            n_atoms = mol.GetNumAtoms()
+            if self.args.min_mol_size <= n_atoms <= self.args.max_mol_size:
+                self.logger.info(
+                    "SAFE-only fallback (de_novo) produced candidate (atoms=%d).",
+                    n_atoms,
+                )
+                return smi
+            self.logger.debug(
+                "SAFE de_novo candidate rejected: atoms=%d not in [%d, %d].",
+                n_atoms, self.args.min_mol_size, self.args.max_mol_size,
+            )
+
+        self.logger.info(
+            "SAFE-only fallback produced no valid molecule (varied_seed=%d, calls=%d).",
+            varied_seed, self._safe_fallback_calls,
+        )
+        return None
+
+    def generate(self) -> str | None:
+        """Return a single valid molecule or None if generation fails.
+
+        This first tries f-RAG's fragment-based SAFE-fusion generation; if that
+        fails repeatedly, it falls back to a vanilla SAFE-GPT generation.
+        """
+        attempts = 0
+        for _ in range(1000):
+            attempts += 1
+            try:
+                can_arm_arm = len(self.arm_population) >= 2
+                can_arm_linker = (
+                    len(self.arm_population) >= 1 and len(self.linker_population) >= 1
+                )
+
+                if not (can_arm_arm or can_arm_linker):
+                    # No fragment-based generation possible yet; break to SAFE-only.
+                    break
+
+                if can_arm_arm and (not can_arm_linker or random.random() < 0.5):  # arm + arm
                     frag1, frag2 = random.sample(
                         [frag for _, frag in self.arm_population], 2
                     )
@@ -327,16 +514,34 @@ class FRAGFCGMB:
                         random_seed=self.seed,
                     )[0]
                     smiles = sorted(smiles.split("."), key=len)[-1]
-                smiles = self.sf.decode(smiles)
-                mol = Chem.MolFromSmiles(smiles)
+
+                decoded = self.sf.decode(smiles)
+                mol = Chem.MolFromSmiles(decoded)
                 if mol is None:
+                    # Invalid molecule; try again.
                     continue
-                if self.args.min_mol_size <= mol.GetNumAtoms() <= self.args.max_mol_size:
-                    return smiles
+                n_atoms = mol.GetNumAtoms()
+                if self.args.min_mol_size <= n_atoms <= self.args.max_mol_size:
+                    self.logger.info(
+                        "Generated candidate molecule (atoms=%d) after %d attempts.",
+                        n_atoms,
+                        attempts,
+                    )
+                    return decoded
             except KeyboardInterrupt:  # pragma: no cover
                 raise
             except Exception:
                 continue
+
+        # Fragment-based generation failed; fall back to SAFE-only generation.
+        fallback = self._generate_safe_only()
+        if fallback is not None:
+            return fallback
+
+        self.logger.warning(
+            "Generation failed to produce a valid molecule after %d attempts (including SAFE-only fallback).",
+            attempts,
+        )
         return None
 
     def score_batch(self, smiles_list: list[str]) -> list[float]:
@@ -366,6 +571,10 @@ class FRAGFCGMB:
                 self.update_population(safe_prop_list, safe_smiles_list)
                 self.record(safe_smiles_list, safe_prop_list)
                 generated += len(safe_smiles_list)
+            else:
+                self.logger.info(
+                    "SAFE step produced no valid molecules in this iteration."
+                )
 
             if len(self.mol_population) == self.args.mol_population_size:
                 ga_smiles_list = [
@@ -378,6 +587,10 @@ class FRAGFCGMB:
                     self.update_population(ga_prop_list, ga_smiles_list)
                     self.record(ga_smiles_list, ga_prop_list)
                     generated += len(ga_smiles_list)
+                else:
+                    self.logger.info(
+                        "GA step produced no valid molecules in this iteration."
+                    )
 
             if self.oracle.budget_used == prev_budget_used:
                 no_progress_steps += 1
@@ -385,12 +598,19 @@ class FRAGFCGMB:
                 prev_budget_used = self.oracle.budget_used
                 no_progress_steps = 0
 
+            raw_best = max(
+                [s for s, _ in self.mol_population], default=float("-inf")
+            )
+            # For logging, emphasise only strictly positive oracle scores; otherwise
+            # display -inf to indicate no improvement beyond a zero baseline.
+            best_score = raw_best if raw_best > 0 else float("-inf")
             self.logger.info(
-                "generated=%d, budget_used=%d/%d, best_score=%.4f",
+                "generated=%d, budget_used=%d/%d, round=%d, best_score=%.4f",
                 generated,
                 self.oracle.budget_used,
                 self.oracle.max_budget,
-                max([s for s, _ in self.mol_population], default=0.0),
+                self.oracle.generation_round,
+                best_score,
             )
 
             if no_progress_steps >= self.args.max_no_budget_progress_steps:
@@ -439,6 +659,12 @@ class FRAGFCGMB:
     help="Path to f-RAG injection module model.safetensors.",
 )
 @click.option(
+    "--safe-model-path",
+    type=str,
+    default=None,
+    help="Optional path to SAFE-GPT base model directory.",
+)
+@click.option(
     "--budget",
     type=int,
     default=5000,
@@ -462,6 +688,7 @@ def main(
     f_rag_root: pathlib.Path | None,
     hparams_path: pathlib.Path,
     injection_model_path: str | None,
+    safe_model_path: str | None,
     budget: int,
     num_runs: int,
     seed: int,
@@ -535,17 +762,31 @@ def main(
                 out_dir=task_dir,
                 f_rag_root=f_rag_root,
                 hparams=hparams,
+                safe_model_path=safe_model_path,
                 logger=logger,
             )
-            runner.run()
-
-            runner.oracle.results_df.write_csv(task_dir / f"oracle_results_seed_{run_seed}.csv")
-            logger.info(
-                "Finished seed=%d, budget_used=%d/%d",
-                run_seed,
-                runner.oracle.budget_used,
-                runner.oracle.max_budget,
-            )
+            logger.info("Run directory: %s", runner.oracle.run_dir)
+            try:
+                runner.run()
+            finally:
+                runner.oracle.results_df.write_csv(
+                    task_dir / f"oracle_results_seed_{run_seed}.csv"
+                )
+                try:
+                    runner.oracle.export_top_poses(n=10)
+                except Exception as exc:
+                    logger.warning("Could not export top poses: %s", exc)
+                runner.oracle.save_metrics(extra={
+                    "model": "f-rag",
+                    "seed": run_seed,
+                })
+                logger.info(
+                    "Finished seed=%d, budget_used=%d/%d, rounds=%d",
+                    run_seed,
+                    runner.oracle.budget_used,
+                    runner.oracle.max_budget,
+                    runner.oracle.generation_round,
+                )
 
 
 if __name__ == "__main__":

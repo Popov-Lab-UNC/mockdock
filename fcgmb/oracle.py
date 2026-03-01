@@ -1,9 +1,11 @@
 # Standard library imports
+import json
 import math
 import multiprocessing
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -47,6 +49,7 @@ class FCGMBOracle:
         budget: int = 5000,
         docking_backend: str = "auto",
         scratch_dir: Optional[Union[str, Path]] = None,
+        run_dir: Optional[Union[str, Path]] = None,
         n_cpus: Optional[int] = None,
         n_gpus: Optional[int] = None,
     ):
@@ -59,7 +62,10 @@ class FCGMBOracle:
                 the full list.
             budget: Total number of compounds allowed to be scored.
             docking_backend: Backend to use ('autodock_gpu', 'vina', or 'auto').
-            scratch_dir: Directory to store benchmark data (grids, results, etc.).
+            scratch_dir: Directory to store persistent cache assets (grids,
+                bioactivity data). Defaults to ~/.fcgmb.
+            run_dir: Directory for this run's outputs (docking results, live CSV,
+                metrics, top poses). Defaults to ./run_<timestamp>/ in CWD.
             n_cpus: Number of CPUs for parallel operations. Autodetected if None.
             n_gpus: Number of GPUs for docking. Autodetected if None.
         """
@@ -67,10 +73,17 @@ class FCGMBOracle:
         self.benchmark_name = benchmark_name
         self.max_budget = budget
         self.budget_used = 0
+        self._generation_round = 0
         self.pdb_id: Optional[str] = None   # set after config load below
         self.n_cpus = n_cpus or multiprocessing.cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else _detect_gpus()
         self.results_df = pl.DataFrame()
+        # Timing accumulators
+        self._total_prep_time = 0.0
+        self._total_dock_time = 0.0
+        self._total_analysis_time = 0.0
+        self._n_prepped = 0
+        self._n_docked = 0
 
         # ── Backend settings (private) ────────────────────────────────
         self._docking_backend = docking_backend
@@ -119,18 +132,30 @@ class FCGMBOracle:
         self._high_score = _raw.get("high_score")
 
         # ── Directory layout (all private) ────────────────────────────
-        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.cwd() / ".fcgmb"
+        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".fcgmb"
         _pkg = Path(__file__).parent
         self._pkg_bioactivity_dir = _pkg / "bioactivity_data"
         self._pkg_grids_dir = _pkg / "grids"
         self._grids_base_dir = _scratch / "grids"
         self._grid_dir = self._grids_base_dir / self.pdb_id
         self._bioactivity_data_dir = _scratch / "bioactivity_data"
-        self._results_dir = _scratch / "runs" / benchmark_name / "results"
+        # Lazy: cache dirs are created only when actually needed (before first ChEMBL
+        # fetch or grid generation) so that a fresh install with pre-built grids and
+        # bundled bioactivity data never creates directories unnecessarily.
 
-        self._grid_dir.mkdir(parents=True, exist_ok=True)
-        self._bioactivity_data_dir.mkdir(parents=True, exist_ok=True)
+        # ── Timestamped run directory ──────────────────────────────────
+        # This is the visible output directory for all run-specific artifacts.
+        # Unlike scratch_dir (which is a persistent cache), run_dir lives in the
+        # user's current working directory so it is easy to find.
+        if run_dir is not None:
+            self._run_dir = Path(run_dir).resolve()
+        else:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            self._run_dir = Path.cwd() / f"run_{timestamp}"
+        self._run_dir.mkdir(parents=True, exist_ok=True)
+        self._results_dir = self._run_dir / "docking_results"
         self._results_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[FCGMB] Run directory: {self._run_dir}")
 
         # ── Lazy-initialised components (private) ─────────────────────
         self._docking_oracle = None
@@ -141,6 +166,16 @@ class FCGMBOracle:
     # ──────────────────────────────────────────────────────────────────
     # Public API
     # ──────────────────────────────────────────────────────────────────
+
+    @property
+    def run_dir(self) -> Path:
+        """Timestamped run directory for this oracle session."""
+        return self._run_dir
+
+    @property
+    def generation_round(self) -> int:
+        """Number of score() batch calls made so far (i.e., generation rounds)."""
+        return self._generation_round
 
     @property
     def fragment_smiles(self) -> str:
@@ -193,9 +228,11 @@ class FCGMBOracle:
         if df.is_empty():
             return df
         initial_df = df.filter(pl.col(act_col) <= threshold)
+        has_score = "score" in initial_df.columns
         print(
             f"[FCGMB] Prepared {len(initial_df)} initial compounds "
             f"(threshold {act_col} <= {threshold:.2f})"
+            + (" [pre-computed docking scores available]" if has_score else "")
         )
         return initial_df
 
@@ -216,6 +253,7 @@ class FCGMBOracle:
 
     def score(self, smiles_list: List[str]) -> Dict[str, float]:
         """Dock a list of SMILES and return normalised scores in [0.0, 1.0]."""
+        self._generation_round += 1
         if self.budget_used >= self.max_budget:
             print("[FCGMB] Oracle budget exhausted.")
             return {smi: 0.0 for smi in smiles_list}
@@ -251,12 +289,21 @@ class FCGMBOracle:
 
         # 3. Prepare → Dock → Analyse
         with tempfile.TemporaryDirectory(prefix="fcgmb_prep_") as tmp_dir:
+            t0_prep = time.time()
             smiles_to_pdbqts = self._ligand_preparer.prepare_batch(
                 process_list, Path(tmp_dir)
             )
+            self._total_prep_time += time.time() - t0_prep
+            self._n_prepped += len(process_list)
+
+            t0_dock = time.time()
             docking_raw_results = self._docking_oracle.dock_batch(
                 smiles_to_pdbqts, chunk_idx=self.budget_used
             )
+            self._total_dock_time += time.time() - t0_dock
+            self._n_docked += len(process_list)
+
+            t0_analysis = time.time()
 
             smi_to_states: Dict[str, list] = {}
             for res in docking_raw_results:
@@ -314,10 +361,146 @@ class FCGMBOracle:
                     "n_conformers": len(states),
                 })
 
+            self._total_analysis_time += time.time() - t0_analysis
+
             self.budget_used += len(process_list)
+            print(
+                f"[FCGMB] Round {self._generation_round}: scored {len(process_list)} molecules "
+                f"(budget {self.budget_used}/{self.max_budget})"
+            )
             self._update_results_df(skipped_results + batch_results)
 
         return final_scores
+
+    def export_top_poses(
+        self,
+        n: int = 10,
+        output_path: Optional[Union[str, Path]] = None,
+    ) -> Path:
+        """
+        Export the top-N docked poses as a single SDF file.
+        Uses DockingAnalyzer (meeko) to extract real docked coordinates from DLG/PDBQT.
+
+        Args:
+            n: Number of top molecules to export.
+            output_path: Path for the SDF. Defaults to run_dir/top_{n}_poses.sdf.
+
+        Returns:
+            Path to the written SDF file.
+        """
+        if self.results_df.is_empty():
+            raise RuntimeError("No results to export.")
+        if output_path is None:
+            output_path = self._run_dir / f"top_{n}_poses.sdf"
+        else:
+            output_path = Path(output_path)
+
+        top_df = (
+            self.results_df
+            .filter(pl.col("skip_reason").is_null())
+            .sort("normalized_score", descending=True)
+            .head(n)
+        )
+        self._ensure_components()
+        self._docking_analyzer.save_best_poses_sdf(
+            output_path=output_path,
+            results_df=top_df,
+            score_col="docking_score",
+            dlg_col="dlg_path",
+        )
+        print(f"[FCGMB] Exported top {n} poses to {output_path}")
+        return output_path
+
+    def fetch_poses(self, smiles: Optional[str] = None, top_n: int = 10) -> List:
+        """
+        Return RDKit molecules with actual docked 3D coordinates.
+
+        Args:
+            smiles: If given, fetch poses only for this SMILES.
+            top_n: Otherwise, return poses for the top-N scoring molecules.
+
+        Returns:
+            List of RDKit Mol objects with docked coordinates.
+        """
+        from meeko import PDBQTMolecule, RDKitMolCreate
+        if self.results_df.is_empty():
+            return []
+
+        if smiles is not None:
+            df = self.results_df.filter(pl.col("smiles") == smiles)
+        else:
+            df = (
+                self.results_df
+                .filter(pl.col("skip_reason").is_null())
+                .sort("normalized_score", descending=True)
+                .head(top_n)
+            )
+
+        mols = []
+        for row in df.filter(pl.col("dlg_path").is_not_null()).iter_rows(named=True):
+            pose_file = Path(row["dlg_path"])
+            if not pose_file.exists():
+                continue
+            try:
+                is_dlg = pose_file.suffix.lower() == ".dlg"
+                pdbqt_mol = PDBQTMolecule.from_file(str(pose_file), is_dlg=is_dlg, skip_typing=True)
+                rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
+                if rdkit_mols:
+                    best = rdkit_mols[0]
+                    best.SetProp("SMILES", row["smiles"])
+                    best.SetProp("docking_score", str(row["docking_score"]))
+                    best.SetProp("normalized_score", str(row["normalized_score"]))
+                    mols.append(best)
+            except Exception as e:
+                print(f"[FCGMB] fetch_poses: could not read {pose_file}: {e}")
+        return mols
+
+    def save_metrics(self, extra: Optional[dict] = None) -> Path:
+        """
+        Save timing and performance metrics to metrics.json in the run directory.
+
+        Args:
+            extra: Additional key/value pairs to include (e.g. model name, seed).
+
+        Returns:
+            Path to the written metrics file.
+        """
+        n_docked = len(self.results_df.filter(pl.col("skip_reason").is_null())) \
+            if not self.results_df.is_empty() else 0
+        n_total = len(self.results_df) if not self.results_df.is_empty() else 0
+
+        metrics: dict = {
+            "benchmark": self.benchmark_name,
+            "budget_used": self.budget_used,
+            "budget_total": self.max_budget,
+            "generation_rounds": self._generation_round,
+            "timing": {
+                "total_prep_time_sec": round(self._total_prep_time, 2),
+                "total_dock_time_sec": round(self._total_dock_time, 2),
+                "total_analysis_time_sec": round(self._total_analysis_time, 2),
+                "avg_prep_time_per_mol_sec": round(
+                    self._total_prep_time / max(1, self._n_prepped), 4
+                ),
+                "avg_dock_time_per_mol_sec": round(
+                    self._total_dock_time / max(1, self._n_docked), 4
+                ),
+                "avg_analysis_time_per_mol_sec": round(
+                    self._total_analysis_time / max(1, self._n_docked), 4
+                ),
+            },
+            "results_summary": {
+                "n_total_scored": n_total,
+                "n_valid_poses": n_docked,
+            },
+        }
+        if extra:
+            metrics.update(extra)
+
+        metrics_path = self._run_dir / "metrics.json"
+        with open(metrics_path, "w") as f:
+            json.dump(metrics, f, indent=2, default=str)
+        print(f"[FCGMB] Metrics saved to {metrics_path}")
+        return metrics_path
 
     # ──────────────────────────────────────────────────────────────────
     # Private helpers
@@ -339,7 +522,7 @@ class FCGMBOracle:
         Lookup order:
         1. In-memory cache
         2. Package-bundled CSV  (fcgmb/bioactivity_data/<name>.csv)
-        3. Scratch cache        (.fcgmb/data/<name>_chembl.csv)
+        3. Scratch cache        (~/.fcgmb/bioactivity_data/<name>_chembl.csv)
         4. Live ChEMBL fetch
         """
         if self._chembl_data is not None:
@@ -362,6 +545,8 @@ class FCGMBOracle:
                 print(f"[FCGMB] Downloading bioactivity data from ChEMBL for {self._target_id}...")
                 df = fetch_chembl_data(self._target_id, self._doc_id)
                 if not df.is_empty():
+                    # Lazily create the cache dir before first write
+                    self._bioactivity_data_dir.mkdir(parents=True, exist_ok=True)
                     cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
                     df.write_csv(cache_file)
                     print(f"[FCGMB] Saved ChEMBL data to {cache_file}")
@@ -378,8 +563,16 @@ class FCGMBOracle:
 
         act_col = "pchembl_value"
         pvals = df.get_column(act_col).to_numpy()
-        min_v, max_v = np.min(pvals), np.max(pvals)
-        threshold = min_v + 0.25 * (max_v - min_v)
+
+        # Use the empirical 25th percentile as the activity threshold instead of
+        # a simple linear interpolation between min and max. This matches the
+        # intended "lowest-quartile bioactivity" description and yields a
+        # more stable initial context size across benchmarks.
+        if pvals.size == 0:
+            threshold = 0.0
+        else:
+            threshold = float(np.quantile(pvals, 0.25))
+
         return df, threshold, act_col
 
     def _resolve_backend(self) -> str:
@@ -432,6 +625,8 @@ class FCGMBOracle:
                     "Receptor preparation requires 'prody', which is an optional dependency. "
                     "Install it with: pip install fcgmb[receptor]  or  conda install -c conda-forge prody"
                 ) from e
+            # Lazily create the scratch grid dir before first write
+            self._grid_dir.mkdir(parents=True, exist_ok=True)
             preparer = ReceptorPreparer(
                 autogrid_executable="autogrid4",
                 mk_prepare_receptor_executable="mk_prepare_receptor.py",
@@ -480,8 +675,68 @@ class FCGMBOracle:
             )
 
     def _update_results_df(self, new_results: List[Dict]):
-        new_df = pl.DataFrame(new_results)
+        """
+        Append new results to the in-memory results DataFrame.
+
+        We enforce a stable schema here so that Polars does not infer mismatched
+        dtypes (e.g. `Null` for columns that are initially all None) across
+        different batches, which would otherwise cause SchemaError on concat.
+        """
+        if not new_results:
+            return
+
+        # Stable schema for all result batches
+        schema = {
+            "smiles": pl.Utf8,
+            "docking_score": pl.Float64,
+            "normalized_score": pl.Float64,
+            "valid_pose_found": pl.Boolean,
+            "dlg_path": pl.Utf8,
+            "best_any_score": pl.Float64,
+            "skip_reason": pl.Utf8,
+            "n_conformers": pl.Int64,
+        }
+
+        new_df = pl.DataFrame(new_results, schema=schema)
+
         if self.results_df.is_empty():
             self.results_df = new_df
         else:
+            # Ensure existing frame matches the same schema; cast when necessary.
+            self.results_df = self.results_df.cast(schema, strict=False)
             self.results_df = pl.concat([self.results_df, new_df])
+
+        self._flush_live_results()
+
+    def _flush_live_results(self):
+        """Write a live-updating CSV and JSON status file to the run directory."""
+        if self.results_df.is_empty():
+            return
+
+        docked_df = (
+            self.results_df
+            .filter(pl.col("skip_reason").is_null())
+            .sort("normalized_score", descending=True)
+        )
+
+        live_csv = self._run_dir / f"current_results_{self.benchmark_name}.csv"
+        docked_df.write_csv(live_csv)
+
+        n_total = len(self.results_df)
+        n_docked = len(docked_df)
+        best_score = float(docked_df["normalized_score"].max()) if n_docked > 0 else 0.0
+        best_docking = float(docked_df["docking_score"].min()) if n_docked > 0 else float("nan")
+
+        status = {
+            "benchmark": self.benchmark_name,
+            "budget_used": self.budget_used,
+            "budget_total": self.max_budget,
+            "generation_round": self._generation_round,
+            "n_molecules_docked": n_docked,
+            "n_molecules_skipped_2d": n_total - n_docked,
+            "best_normalized_score": best_score,
+            "best_docking_score_kcal": best_docking,
+        }
+        live_status = self._run_dir / f"current_status_{self.benchmark_name}.json"
+        with open(live_status, "w") as f:
+            json.dump(status, f, indent=2, default=str)

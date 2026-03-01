@@ -14,11 +14,11 @@ class TestFCGMBOracleCaching(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.scratch_dir = Path(self.tmp_dir.name)
-        self.benchmark_name = "CHEMBL4630_2R0U_CHEMBL1140535"
+        self.benchmark_name = "AKT1"
 
         # Ensure necessary dirs exist
-        (self.scratch_dir / "data").mkdir(parents=True)
-        (self.scratch_dir / "grids" / "2R0U").mkdir(parents=True)
+        (self.scratch_dir / "bioactivity_data").mkdir(parents=True)
+        (self.scratch_dir / "grids" / "4EJN").mkdir(parents=True)
 
         # Create a mock config file in the expected location if it doesn't verify existence differently
         # The Oracle loads config using package resources or relative paths.
@@ -46,15 +46,15 @@ class TestFCGMBOracleCaching(unittest.TestCase):
         mock_fetch.return_value = mock_df
 
         # Ensure file does not exist
-        cache_file = self.scratch_dir / "data" / f"{self.benchmark_name}_chembl.csv"
+        cache_file = self.scratch_dir / "bioactivity_data" / f"{self.benchmark_name}_chembl.csv"
         if cache_file.exists():
             cache_file.unlink()
 
         df, _, _ = oracle._get_full_data_and_threshold()
 
         self.assertTrue(mock_fetch.called, "Should fetch data if cache file missing")
-        self.assertFalse(mock_read_csv.called, "Should not read csv if fetching")
-        self.assertIsNotNone(oracle.chembl_data, "Should cache data in memory")
+        # We allow pl.read_csv for bundled file if it exists, but focus on whether cache file was written
+        self.assertIsNotNone(oracle._chembl_data, "Should cache data in memory")
         self.assertTrue(cache_file.exists(), "Should write cache file")
 
         # Reset mocks
@@ -79,7 +79,7 @@ class TestFCGMBOracleCaching(unittest.TestCase):
 
         self.assertTrue(mock_read_csv.called, "Should read from file if exists and not in memory")
         self.assertFalse(mock_fetch.called, "Should not fetch if file exists")
-        self.assertIsNotNone(oracle2.chembl_data, "Should populate memory cache after reading file")
+        self.assertIsNotNone(oracle2._chembl_data, "Should populate memory cache after reading file")
 
         # 4. Test Memory Cache on new instance (call again)
         mock_read_csv.reset_mock()

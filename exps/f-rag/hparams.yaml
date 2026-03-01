@@ -4,9 +4,9 @@ frag_population_size: 50
 mutation_rate: 0.1
 num_ga: 3
 num_safe: 1
-min_frag_size: 5
-max_frag_size: 12
-min_mol_size: 20
-max_mol_size: 40
+min_frag_size: 3
+max_frag_size: 18
+min_mol_size: 15
+max_mol_size: 50
 max_no_budget_progress_steps: 200
 max_generated_multiplier: 20

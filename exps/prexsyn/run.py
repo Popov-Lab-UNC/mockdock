@@ -236,7 +236,7 @@ class Task:
         out_root: pathlib.Path,
         time_limit: int | None = None,
     ) -> None:
-        task_dir = out_root / self.benchmark_name
+        task_dir = self.fcgmb.run_dir
         task_dir.mkdir(parents=True, exist_ok=True)
 
         logger = logging.getLogger(self.benchmark_name)
@@ -246,17 +246,18 @@ class Task:
         logger.addHandler(logging.FileHandler(task_dir / "log.txt"))
 
         logger.info(f"Benchmark   : {self.benchmark_name}")
-        logger.info(f"Fragment    : {self.fcgmb.fragment}")
+        logger.info(f"Fragment    : {self.fcgmb.fragment_smiles}")
         logger.info(f"PDB ID      : {self.fcgmb.pdb_id}")
         logger.info(f"Budget      : {self.budget}")
         logger.info(f"Num runs    : {self.num_runs}")
         logger.info(f"Frag. cond. : {self.use_fragment_condition}")
         logger.info(f"Init ctx    : {self.use_initial_context} (refs={self.initial_context_refs})")
+        logger.info(f"Run dir     : {self.fcgmb.run_dir}")
 
         cond_parts: list[Query] = []
         if self.use_fragment_condition:
             try:
-                frag_query = query_fragment(facade.property_set, self.fcgmb.fragment)
+                frag_query = query_fragment(facade.property_set, self.fcgmb.fragment_smiles)
                 cond_parts.append(frag_query)
                 logger.info(f"Fragment query enabled: {frag_query}")
             except Exception as e:
@@ -283,42 +284,49 @@ class Task:
         auc_top10_all: list[float] = []
         df_result_all: list[pd.DataFrame] = []
 
-        for run_id in range(1, self.num_runs + 1):
-            logger.info(f"Running task: {self.benchmark_name}, run {run_id}/{self.num_runs}")
-            result_path = task_dir / f"run_{run_id:02d}.df.pkl"
+        try:
+            for run_id in range(1, self.num_runs + 1):
+                logger.info(f"Running task: {self.benchmark_name}, run {run_id}/{self.num_runs}")
+                result_path = task_dir / f"run_{run_id:02d}.df.pkl"
 
-            if result_path.exists():
-                logger.info(f"Skipping existing run: {result_path}")
-                df_result = cast(pd.DataFrame, pd.read_pickle(result_path))
-                auc_top10 = auc_top10_from_df(df_result, self.budget)
-                df_result_all.append(df_result)
-            else:
-                optimizer = Optimizer(
-                    facade=facade,
-                    model=model,
-                    init_query=query_lipinski(facade.property_set),
-                    num_init_samples=self.num_init_samples,
-                    max_evals=self.budget,
-                    step_strategy=self.step_strategy,
-                    oracle_fn=self.oracle_fn,
-                    constraint_fn=self.constraint_fn,
-                    cond_query=cond_query,
-                    time_limit=time_limit,
+                if result_path.exists():
+                    logger.info(f"Skipping existing run: {result_path}")
+                    df_result = cast(pd.DataFrame, pd.read_pickle(result_path))
+                    auc_top10 = auc_top10_from_df(df_result, self.budget)
+                    df_result_all.append(df_result)
+                else:
+                    optimizer = Optimizer(
+                        facade=facade,
+                        model=model,
+                        init_query=query_lipinski(facade.property_set),
+                        num_init_samples=self.num_init_samples,
+                        max_evals=self.budget,
+                        step_strategy=self.step_strategy,
+                        oracle_fn=self.oracle_fn,
+                        constraint_fn=self.constraint_fn,
+                        cond_query=cond_query,
+                        time_limit=time_limit,
+                    )
+                    tracker: OptimTracker = optimizer.run()
+                    df_result = tracker.get_dataframe()
+                    auc_top10 = tracker.auc_top10(self.budget)
+                    df_result.to_pickle(result_path)
+                    df_result_all.append(df_result)
+
+                auc_top10_all.append(auc_top10)
+                logger.info(
+                    f"Run {run_id}/{self.num_runs}, "
+                    f"AUC-Top10({self.budget / 1000:.0f}k): {auc_top10:.4f}, "
+                    f"Rounds: {self.fcgmb.generation_round}"
                 )
-                tracker: OptimTracker = optimizer.run()
-                df_result = tracker.get_dataframe()
-                auc_top10 = tracker.auc_top10(self.budget)
-                df_result.to_pickle(result_path)
-                df_result_all.append(df_result)
-
-            auc_top10_all.append(auc_top10)
-            logger.info(
-                f"Run {run_id}/{self.num_runs}, "
-                f"AUC-Top10({self.budget / 1000:.0f}k): {auc_top10:.4f}"
-            )
-
-        # Save oracle results (docking details, RMSD, etc.)
-        self.fcgmb.results_df.write_csv(task_dir / "oracle_results.csv")
+        finally:
+            # Save oracle results and run artifacts even if interrupted
+            self.fcgmb.results_df.write_csv(task_dir / "oracle_results.csv")
+            try:
+                self.fcgmb.export_top_poses(n=10)
+            except Exception as exc:
+                logger.warning(f"Could not export top poses: {exc}")
+            self.fcgmb.save_metrics(extra={"model": "prexsyn"})
 
         logger.info("==== Summary ====")
         logger.info(f"Oracle: {self.benchmark_name}")
@@ -327,6 +335,7 @@ class Task:
             f"- AUC-Top10: {np.mean(auc_top10_all):.3f} ± {np.std(auc_top10_all):.3f}"
         )
         logger.info(f"- Budget used: {self.fcgmb.budget_used} / {self.budget}")
+        logger.info(f"- Rounds: {self.fcgmb.generation_round}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

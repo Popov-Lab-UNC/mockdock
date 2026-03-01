@@ -4,8 +4,8 @@ target_id: CHEMBL4630
 doc_id: CHEMBL1140535
 assay_id: CHEMBL924433
 ligand_resname: M54
-fragment_smiles: O=C1NC=CC2=C1C1=C(C=CC=C1)C=C2
-fragment_smiles_with_dummies: O=C1NC=C([*])C2=C1C3=C(C([*])=C2[*])C=CC([*])=C3
+fragment_smiles: "O=C1NC=CC2=C1C1=C(C=CC=C1)C=C2"
+fragment_smiles_with_dummies: "O=C1NC=C([*])C2=C1C3=C(C([*])=C2[*])C=CC([*])=C3"
 require_fragment_match: true
 require_pose_rmsd: true
 low_score: -8.008
