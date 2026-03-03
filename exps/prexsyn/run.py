@@ -198,7 +198,7 @@ class Task:
     def __init__(
         self,
         benchmark_name: str,
-        budget: int = 5000,
+        budget: int = 1000,
         num_runs: int = 1,
         constraint_name: str = "null",
         bottleneck_size: int = 50,
@@ -207,6 +207,7 @@ class Task:
         use_fragment_condition: bool = False,
         use_initial_context: bool = True,
         initial_context_refs: int = 8,
+        run_dir: pathlib.Path | None = None,
     ) -> None:
         super().__init__()
         self.benchmark_name = benchmark_name
@@ -218,7 +219,7 @@ class Task:
         self.initial_context_refs = initial_context_refs
 
         # FCGMBOracle — one instance shared across all runs (tracks total budget)
-        self.fcgmb = FCGMBOracle(benchmark_name, budget=budget)
+        self.fcgmb = FCGMBOracle(benchmark_name, budget=budget, run_dir=run_dir)
 
         # PrexSyn-compatible oracle wrapping FCGMBOracle
         self.oracle_fn: OracleProtocol = CachedOracle(FCGMBOracleAdapter(self.fcgmb))
@@ -377,7 +378,7 @@ BENCHMARKS = ["AKT1", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
 @click.option(
     "--budget",
     type=int,
-    default=5000,
+    default=1000,
     show_default=True,
     help="Total oracle scoring budget per benchmark (number of molecules docked).",
 )
@@ -440,6 +441,13 @@ BENCHMARKS = ["AKT1", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
     default=None,
     help="Run only these benchmarks (repeat for multiple). Defaults to all six.",
 )
+@click.option(
+    "--run-dir",
+    "run_dir",
+    type=click.Path(path_type=pathlib.Path),
+    default=None,
+    help="Parent directory for all benchmark run outputs. Defaults to <script_dir>/run_<timestamp>.",
+)
 def main(
     model_path: pathlib.Path,
     output_dir: pathlib.Path,
@@ -452,11 +460,23 @@ def main(
     initial_context: bool,
     initial_context_refs: int,
     selected_benchmarks: tuple[str, ...],
+    run_dir: pathlib.Path | None,
 ) -> None:
+    import datetime
     torch.set_grad_enabled(False)
     facade, model = load_model(model_path, train=False)
     model = model.to("cuda")
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create a single timestamped parent directory shared across all benchmarks.
+    # Layout: run_<timestamp>/<BENCHMARK>/poses/, results_full.csv, results.yaml, …
+    script_dir = pathlib.Path(__file__).resolve().parent
+    if run_dir is not None:
+        run_parent = run_dir
+    else:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_parent = script_dir / f"run_{ts}"
+    run_parent.mkdir(parents=True, exist_ok=True)
 
     benchmarks = list(selected_benchmarks) if selected_benchmarks else BENCHMARKS
 
@@ -470,6 +490,7 @@ def main(
             use_fragment_condition=fragment_condition,
             use_initial_context=initial_context,
             initial_context_refs=initial_context_refs,
+            run_dir=run_parent / name,
         )
         for name in benchmarks
     ]

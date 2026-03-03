@@ -10,7 +10,7 @@ logger_backend: null
 
 # Environment
 num_envs: 64
-total_smiles: 5000
+total_smiles: 1000
 
 # Scoring — handled externally via FCGMBTask
 molscore_mode: null

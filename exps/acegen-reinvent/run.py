@@ -153,6 +153,7 @@ def run_benchmark(
     outputs_root: pathlib.Path,
     acegen_root: pathlib.Path,
     n_warmup: int,
+    run_parent: pathlib.Path,
 ):
     log.info("=" * 60)
     log.info(" Benchmark : %s", benchmark)
@@ -165,7 +166,10 @@ def run_benchmark(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Oracle ────────────────────────────────────────────────────────────────
-    oracle = FCGMBOracle(benchmark, budget=budget)
+    # Each benchmark gets its own subdirectory inside the shared run_parent folder.
+    benchmark_run_dir = run_parent / benchmark
+    benchmark_run_dir.mkdir(parents=True, exist_ok=True)
+    oracle = FCGMBOracle(benchmark, budget=budget, run_dir=benchmark_run_dir)
     log.info("Run directory: %s", oracle.run_dir)
 
     # ── Initial compound warmup ────────────────────────────────────────────────
@@ -183,8 +187,12 @@ def run_benchmark(
     # ── Fragment conditioning via oracle.fragment_smiles_with_dummies ────────
     if oracle.fragment_smiles_with_dummies:
         log.info("Fragment SMILES with dummies: %s", oracle.fragment_smiles_with_dummies)
+        # promptsmiles recognises bare `*` and `(*)` but not `[*]`; normalise here.
+        promptsmiles_smi = oracle.fragment_smiles_with_dummies.replace('[*]', '*')
+        if promptsmiles_smi != oracle.fragment_smiles_with_dummies:
+            log.info("Normalised for PromptSMILES: %s", promptsmiles_smi)
         with open_dict(cfg):
-            cfg.promptsmiles = oracle.fragment_smiles_with_dummies
+            cfg.promptsmiles = promptsmiles_smi
     else:
         log.warning(
             "fragment_smiles_with_dummies not set for %s — running without scaffold conditioning. "
@@ -225,7 +233,7 @@ def run_benchmark(
 @click.option("--benchmark", "benchmarks", multiple=True,
               type=click.Choice(BENCHMARKS, case_sensitive=False),
               help="Benchmark(s) to run. Defaults to all six.")
-@click.option("--budget", default=5000, show_default=True,
+@click.option("--budget", default=1000, show_default=True,
               help="Maximum oracle (docking) calls per benchmark.")
 @click.option("--seed", default=0, show_default=True,
               help="Random seed.")
@@ -235,8 +243,11 @@ def run_benchmark(
               help="Path to the acegen-open repository. Auto-detected if not given.")
 @click.option("--n-warmup", default=25, show_default=True,
               help="Number of initial compounds to pre-score as oracle warmup (0 to skip).")
-def main(benchmarks, budget, seed, out, acegen_root, n_warmup):
+@click.option("--run-dir", default=None,
+              help="Parent directory for all benchmark outputs. Defaults to <script_dir>/run_<timestamp>.")
+def main(benchmarks, budget, seed, out, acegen_root, n_warmup, run_dir):
     """Run AceGen-REINVENT against FCGMB benchmarks."""
+    import datetime
     benchmarks = list(benchmarks) if benchmarks else BENCHMARKS
     outputs_root = pathlib.Path(out) if out else SCRIPT_DIR / "outputs"
     outputs_root.mkdir(parents=True, exist_ok=True)
@@ -247,6 +258,16 @@ def main(benchmarks, budget, seed, out, acegen_root, n_warmup):
             f"acegen-open not found at {acegen_path}. "
             "Pass --acegen-root or ensure it is at the expected location."
         )
+
+    # Create a single timestamped parent directory shared across all benchmarks.
+    # Layout: run_<timestamp>/<BENCHMARK>/poses/, results_full.csv, results.yaml, …
+    if run_dir is not None:
+        run_parent = pathlib.Path(run_dir)
+    else:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_parent = SCRIPT_DIR / f"run_{ts}"
+    run_parent.mkdir(parents=True, exist_ok=True)
+    log.info("Run parent       : %s", run_parent)
 
     log.info("acegen-open root : %s", acegen_path)
     log.info("Benchmarks       : %s", benchmarks)
@@ -260,6 +281,7 @@ def main(benchmarks, budget, seed, out, acegen_root, n_warmup):
             outputs_root=outputs_root,
             acegen_root=acegen_path,
             n_warmup=n_warmup,
+            run_parent=run_parent,
         )
 
     log.info("All benchmarks complete.")

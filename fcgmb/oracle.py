@@ -9,6 +9,9 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
+# Third-party imports (yaml used for results.yaml output)
+import yaml as _yaml_module
+
 # Third-party imports
 import numpy as np
 import polars as pl
@@ -78,6 +81,7 @@ class FCGMBOracle:
         self.n_cpus = n_cpus or multiprocessing.cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else _detect_gpus()
         self.results_df = pl.DataFrame()
+        self._yaml_results: List[dict] = []  # accumulates all results for YAML output
         # Timing accumulators
         self._total_prep_time = 0.0
         self._total_dock_time = 0.0
@@ -132,6 +136,10 @@ class FCGMBOracle:
         self._high_score = _raw.get("high_score")
 
         # ── Directory layout (all private) ────────────────────────────
+        # scratch_dir: persistent CACHE for pre-built receptor grids and bioactivity
+        # data downloads. Defaults to ~/.fcgmb. Only created on first actual use.
+        # run_dir: all per-run outputs (poses, CSVs, YAML, metrics, SDF). Lives in CWD
+        # (or wherever the caller sets it) so results are easy to find.
         _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".fcgmb"
         _pkg = Path(__file__).parent
         self._pkg_bioactivity_dir = _pkg / "bioactivity_data"
@@ -153,7 +161,7 @@ class FCGMBOracle:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             self._run_dir = Path.cwd() / f"run_{timestamp}"
         self._run_dir.mkdir(parents=True, exist_ok=True)
-        self._results_dir = self._run_dir / "docking_results"
+        self._results_dir = self._run_dir / "poses"
         self._results_dir.mkdir(parents=True, exist_ok=True)
         print(f"[FCGMB] Run directory: {self._run_dir}")
 
@@ -252,7 +260,13 @@ class FCGMBOracle:
         return validation_df
 
     def score(self, smiles_list: List[str]) -> Dict[str, float]:
-        """Dock a list of SMILES and return normalised scores in [0.0, 1.0]."""
+        """Dock a list of SMILES and return normalised scores.
+
+        Scores are normalised as (low_score - docking_score) / (low_score - high_score).
+        Values below 0.0 indicate weaker binding than the low_score baseline; values
+        above 1.0 are possible and expected when a molecule docks better than the
+        high_score reference ligand.
+        """
         self._generation_round += 1
         if self.budget_used >= self.max_budget:
             print("[FCGMB] Oracle budget exhausted.")
@@ -316,13 +330,14 @@ class FCGMBOracle:
                 best_norm = 0.0
                 best_any = float("nan")
                 best_dlg = None
+                best_pose_idx = -1
                 valid_pose_found = False
 
                 for state in states:
                     dlg_path = state["dlg_path"]
                     if not dlg_path:
                         continue
-                    best_v, passed, _bm, best_a, _bam = (
+                    best_v, passed, _bm, best_a, _bam, best_v_idx, best_a_idx = (
                         self._docking_analyzer.filter_poses_by_rmsd(dlg_path, smi)
                     )
                     if math.isnan(best_any) or best_a < best_any:
@@ -334,6 +349,7 @@ class FCGMBOracle:
                             if math.isnan(best_valid) or best_v < best_valid:
                                 best_valid = best_v
                                 best_dlg = str(dlg_path)
+                                best_pose_idx = best_v_idx
                     else:
                         # Relaxed mode: accept any pose; use best overall score
                         if not math.isnan(best_a):
@@ -341,6 +357,7 @@ class FCGMBOracle:
                             if math.isnan(best_valid) or best_a < best_valid:
                                 best_valid = best_a
                                 best_dlg = str(dlg_path)
+                                best_pose_idx = best_a_idx
 
                 if valid_pose_found and self._low_score is not None and self._high_score is not None:
                     denom = self._low_score - self._high_score
@@ -356,6 +373,7 @@ class FCGMBOracle:
                     "normalized_score": best_norm,
                     "valid_pose_found": valid_pose_found,
                     "dlg_path": best_dlg,
+                    "pose_index": best_pose_idx,
                     "best_any_score": best_any,
                     "skip_reason": None,
                     "n_conformers": len(states),
@@ -391,7 +409,7 @@ class FCGMBOracle:
         if self.results_df.is_empty():
             raise RuntimeError("No results to export.")
         if output_path is None:
-            output_path = self._run_dir / f"top_{n}_poses.sdf"
+            output_path = self._run_dir / f"{self.benchmark_name}_top_{n}_poses.sdf"
         else:
             output_path = Path(output_path)
 
@@ -681,9 +699,16 @@ class FCGMBOracle:
         We enforce a stable schema here so that Polars does not infer mismatched
         dtypes (e.g. `Null` for columns that are initially all None) across
         different batches, which would otherwise cause SchemaError on concat.
+
+        All SMILES are recorded — including those skipped due to 2D fragment
+        mismatch — so that post-hoc novelty/uniqueness analysis is possible.
         """
         if not new_results:
             return
+
+        # Stamp every row with the current generation round
+        for row in new_results:
+            row.setdefault("generation_round", self._generation_round)
 
         # Stable schema for all result batches
         schema = {
@@ -692,9 +717,11 @@ class FCGMBOracle:
             "normalized_score": pl.Float64,
             "valid_pose_found": pl.Boolean,
             "dlg_path": pl.Utf8,
+            "pose_index": pl.Int64,
             "best_any_score": pl.Float64,
             "skip_reason": pl.Utf8,
             "n_conformers": pl.Int64,
+            "generation_round": pl.Int64,
         }
 
         new_df = pl.DataFrame(new_results, schema=schema)
@@ -706,24 +733,60 @@ class FCGMBOracle:
             self.results_df = self.results_df.cast(schema, strict=False)
             self.results_df = pl.concat([self.results_df, new_df])
 
+        # Accumulate for YAML (kept separately so we don't re-serialize the whole DF)
+        self._yaml_results.extend(new_results)
+
         self._flush_live_results()
 
     def _flush_live_results(self):
-        """Write a live-updating CSV and JSON status file to the run directory."""
+        """Write live-updating outputs to the run directory after every scored batch.
+
+        Outputs:
+          results_full.csv  — ALL scored SMILES in generation order (including
+                              2D-mismatched/skipped), so post-hoc novelty/uniqueness
+                              analysis works without any data loss.
+          results.yaml      — Same data sorted by normalized_score DESC, human-readable.
+          status.json       — Summary counters / best scores for live monitoring.
+        """
         if self.results_df.is_empty():
             return
 
-        docked_df = (
-            self.results_df
-            .filter(pl.col("skip_reason").is_null())
-            .sort("normalized_score", descending=True)
+        # ── Full CSV (all SMILES, generation order) ─────────────────────
+        live_csv = self._run_dir / "results_full.csv"
+        self.results_df.write_csv(live_csv)
+
+        # ── YAML (all SMILES, sorted by normalized_score DESC) ──────────
+        sorted_results = sorted(
+            self._yaml_results,
+            key=lambda r: (r.get("normalized_score") or 0.0),
+            reverse=True,
         )
+        # Convert NaN / None to null-friendly values for YAML
+        def _clean(v):
+            if isinstance(v, float) and math.isnan(v):
+                return None
+            return v
 
-        live_csv = self._run_dir / f"current_results_{self.benchmark_name}.csv"
-        docked_df.write_csv(live_csv)
+        yaml_data = [
+            {
+                "smiles": r["smiles"],
+                "normalized_score": _clean(r.get("normalized_score")),
+                "docking_score": _clean(r.get("docking_score")),
+                "generation_round": r.get("generation_round"),
+                "valid_pose_found": r.get("valid_pose_found"),
+                "skip_reason": r.get("skip_reason"),
+            }
+            for r in sorted_results
+        ]
+        yaml_path = self._run_dir / "results.yaml"
+        with open(yaml_path, "w") as f:
+            _yaml_module.dump(yaml_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
+        # ── Status JSON (summary for live monitoring) ────────────────────
+        docked_df = self.results_df.filter(pl.col("skip_reason").is_null())
         n_total = len(self.results_df)
         n_docked = len(docked_df)
+        n_skipped_2d = len(self.results_df.filter(pl.col("skip_reason") == "2D fragment mismatch"))
         best_score = float(docked_df["normalized_score"].max()) if n_docked > 0 else 0.0
         best_docking = float(docked_df["docking_score"].min()) if n_docked > 0 else float("nan")
 
@@ -732,11 +795,12 @@ class FCGMBOracle:
             "budget_used": self.budget_used,
             "budget_total": self.max_budget,
             "generation_round": self._generation_round,
+            "n_molecules_total": n_total,
             "n_molecules_docked": n_docked,
-            "n_molecules_skipped_2d": n_total - n_docked,
+            "n_molecules_skipped_2d": n_skipped_2d,
             "best_normalized_score": best_score,
             "best_docking_score_kcal": best_docking,
         }
-        live_status = self._run_dir / f"current_status_{self.benchmark_name}.json"
+        live_status = self._run_dir / "status.json"
         with open(live_status, "w") as f:
             json.dump(status, f, indent=2, default=str)

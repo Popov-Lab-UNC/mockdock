@@ -198,10 +198,20 @@ class DockingAnalyzer:
 
         return math.sqrt(sq_diff / len(self.ref_coords))
 
-    def filter_poses_by_rmsd(self, pose_file: Path, smiles: str) -> Tuple[float, bool, Optional[Chem.Mol], float, Optional[Chem.Mol]]:
+    def filter_poses_by_rmsd(
+        self, pose_file: Path, smiles: str
+    ) -> Tuple[float, bool, Optional[Chem.Mol], float, Optional[Chem.Mol], int, int]:
         """
         Parse DLG or PDBQT, filter poses by RMSD if applicable.
-        Returns (best_valid_score, passed_constraint, best_mol, best_any_score, best_any_mol).
+
+        Returns:
+            (best_valid_score, passed_constraint, best_valid_mol,
+             best_any_score, best_any_mol,
+             best_valid_pose_index, best_any_pose_index)
+
+        pose_index values are 0-based indices into the list returned by
+        RDKitMolCreate.from_pdbqt_mol (after Vina multi-conformer unrolling).
+        -1 indicates no pose was found.
         """
         try:
             pose_file = Path(pose_file)
@@ -210,7 +220,7 @@ class DockingAnalyzer:
             rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
 
             if not rdkit_mols:
-                return float('nan'), False, None, float('nan'), None
+                return float('nan'), False, None, float('nan'), None, -1, -1
 
             # Unroll multi-conformer mols (typical for Vina PDBQT output)
             if len(rdkit_mols) == 1 and rdkit_mols[0].GetNumConformers() > 1:
@@ -224,9 +234,11 @@ class DockingAnalyzer:
                 rdkit_mols = unrolled
 
             best_valid_score = float('nan')
-            best_mol = None
+            best_valid_mol = None
+            best_valid_idx = -1
             best_any_score = float('nan')
             best_any_mol = None
+            best_any_idx = -1
 
             energies = getattr(pdbqt_mol, "_pose_data", {}).get("free_energies", [])
             energies_len = len(energies)
@@ -237,19 +249,29 @@ class DockingAnalyzer:
                 if math.isnan(best_any_score) or score < best_any_score:
                     best_any_score = score
                     best_any_mol = mol
+                    best_any_idx = idx
 
                 rmsd = self.calculate_rmsd(mol)
                 if rmsd < self.rmsd_threshold:
                     if math.isnan(best_valid_score) or score < best_valid_score:
                         best_valid_score = score
-                        best_mol = mol
+                        best_valid_mol = mol
+                        best_valid_idx = idx
 
             passed = not math.isnan(best_valid_score)
-            return best_valid_score if passed else float('nan'), passed, best_mol, best_any_score, best_any_mol
+            return (
+                best_valid_score if passed else float('nan'),
+                passed,
+                best_valid_mol,
+                best_any_score,
+                best_any_mol,
+                best_valid_idx,
+                best_any_idx,
+            )
 
         except Exception as e:
             print(f"Error in RMSD filtering for {pose_file}: {e}")
-            return float('nan'), False, None, float('nan'), None
+            return float('nan'), False, None, float('nan'), None, -1, -1
 
     def check_2d_fragment_match(self, smiles: str) -> bool:
         """Check if SMILES matches the 2D fragment constraint."""
@@ -270,83 +292,118 @@ class DockingAnalyzer:
         """
         Extract the best pose from each successful docking run and save to an SDF.
         Adds metadata from df_metadata if provided.
+
+        Pose selection strategy:
+          1. Parse all poses from the DLG/PDBQT file.
+          2. If RMSD checking is available, prefer the lowest-energy pose that
+             passes the fragment-RMSD threshold.
+          3. Fall back to the best-energy pose regardless of RMSD, so the SDF
+             always contains an entry for every molecule in the top-N list.
         """
         print(f"Generating best poses SDF at {output_path} (using {score_col})...")
         writer = Chem.SDWriter(str(output_path))
         count = 0
-        
+
+        # Build metadata lookup keyed by SMILES
         meta_map = {}
         if df_metadata is not None:
             if id_col not in df_metadata.columns:
-                 for potential in ["molecule_chembl_id", "Name", "NAME", "compound_id"]:
-                     if potential in df_metadata.columns:
-                         id_col = potential
-                         break
-            
+                for potential in ["molecule_chembl_id", "Name", "NAME", "compound_id"]:
+                    if potential in df_metadata.columns:
+                        id_col = potential
+                        break
             key_col = "canonical_smiles" if "canonical_smiles" in df_metadata.columns else "smiles"
             for row in df_metadata.to_dicts():
-                 if row.get(key_col):
-                     meta_map[row[key_col]] = row
+                if row.get(key_col):
+                    meta_map[row[key_col]] = row
 
-        # Filter invalid scores/poses first using Polars expressions for performance
-        # This avoids materializing the entire DataFrame to dicts and Python-loop filtering
+        # Filter to rows that have a valid score and a DLG path; sort best-first
         filtered_results = results_df.filter(
-            pl.col(score_col).is_not_null() &
-            pl.col(score_col).is_not_nan() &
-            (pl.col(score_col) < 999.0) &
-            pl.col(dlg_col).is_not_null()
+            pl.col(score_col).is_not_null()
+            & pl.col(score_col).is_not_nan()
+            & (pl.col(score_col) < 999.0)
+            & pl.col(dlg_col).is_not_null()
         ).sort(score_col, descending=False)
+
+        use_rmsd = self.ref_mol is not None and self.fragment_mol is not None
+        check_rmsd_for_row = score_col in ("score_valid", "docking_score")
 
         for row in filtered_results.iter_rows(named=True):
             try:
                 pose_file = Path(row[dlg_col])
+                if not pose_file.exists():
+                    print(f"  [skip] DLG not found: {pose_file}")
+                    continue
+
                 is_dlg = pose_file.suffix.lower() == ".dlg"
                 pdbqt_mol = PDBQTMolecule.from_file(str(pose_file), is_dlg=is_dlg, skip_typing=True)
                 rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
+
+                if not rdkit_mols:
+                    print(f"  [skip] No RDKit molecules from {pose_file.name}")
+                    continue
+
+                # Collect (energy, mol) pairs; energies come from pose_data if available
                 energies = []
                 if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
-                    energies = pdbqt_mol._pose_data["free_energies"]
+                    energies = list(pdbqt_mol._pose_data["free_energies"])
 
-                best_mol = None
-                target_score = row[score_col]
-
+                pose_pairs: List[Tuple[float, Chem.Mol]] = []
                 for idx, mol in enumerate(rdkit_mols):
-                    score = energies[idx] if idx < len(energies) else 999.9
-                    if abs(score - target_score) < 0.001:
-                        is_valid_col = (score_col == "score_valid" or (score_col == "docking_score" and row.get("valid_pose_found", False)))
-                        if is_valid_col and self.ref_mol and self.fragment_mol:
-                            rmsd = self.calculate_rmsd(mol)
-                            if rmsd < self.rmsd_threshold:
-                                best_mol = mol
-                                best_mol.SetProp("RMSD_fragment", f"{rmsd:.3f}")
-                                break
-                        else:
-                            best_mol = mol
-                            if self.ref_mol and self.fragment_mol:
-                                 rmsd = self.calculate_rmsd(mol)
-                                 best_mol.SetProp("RMSD_fragment", f"{rmsd:.3f}")
-                            break
-                
-                if best_mol:
-                    best_mol.SetProp("docking_score", str(row[score_col]))
-                    best_mol.SetProp("dlg_path", str(row[dlg_col]))
-                    best_mol.SetProp("n_conformers", str(row.get('n_conformers', 0)))
-                    best_mol.SetProp("score_type", score_col)
-                    
-                    smi = row['smiles']
-                    if smi in meta_map:
-                        meta = meta_map[smi]
-                        best_mol.SetProp("_Name", str(meta.get(id_col, smi)))
-                        for k, v in meta.items():
-                            if v is not None:
-                                best_mol.SetProp(str(k), str(v))
-                    else:
-                        best_mol.SetProp("_Name", str(smi))
+                    energy = energies[idx] if idx < len(energies) else 999.9
+                    pose_pairs.append((energy, mol))
 
-                    writer.write(best_mol)
-                    count += 1
+                # Sort by energy ascending (best = lowest free energy)
+                pose_pairs.sort(key=lambda t: t[0])
+
+                chosen_mol = None
+                chosen_rmsd: Optional[float] = None
+
+                if use_rmsd and check_rmsd_for_row:
+                    # Prefer the lowest-energy pose that satisfies the RMSD threshold
+                    for energy, mol in pose_pairs:
+                        rmsd = self.calculate_rmsd(mol)
+                        if rmsd < self.rmsd_threshold:
+                            chosen_mol = mol
+                            chosen_rmsd = rmsd
+                            break
+
+                # Fall back to best-energy pose if no RMSD-passing pose found
+                if chosen_mol is None:
+                    _, mol = pose_pairs[0]
+                    chosen_mol = mol
+                    if use_rmsd:
+                        chosen_rmsd = self.calculate_rmsd(mol)
+
+                # Annotate and write
+                smi = row["smiles"]
+                chosen_mol.SetProp("SMILES", smi)
+                chosen_mol.SetProp("docking_score", str(row[score_col]))
+                chosen_mol.SetProp("normalized_score", str(row.get("normalized_score", "")))
+                chosen_mol.SetProp("dlg_path", str(row[dlg_col]))
+                chosen_mol.SetProp("score_type", score_col)
+                if chosen_rmsd is not None:
+                    chosen_mol.SetProp("RMSD_fragment", f"{chosen_rmsd:.3f}")
+                    chosen_mol.SetProp(
+                        "rmsd_passed_threshold",
+                        "true" if chosen_rmsd < self.rmsd_threshold else "false",
+                    )
+
+                if smi in meta_map:
+                    meta = meta_map[smi]
+                    chosen_mol.SetProp("_Name", str(meta.get(id_col, smi)))
+                    for k, v in meta.items():
+                        if v is not None:
+                            chosen_mol.SetProp(str(k), str(v))
+                else:
+                    chosen_mol.SetProp("_Name", smi)
+
+                writer.write(chosen_mol)
+                count += 1
+
             except Exception as e:
-                print(f"Failed to extract pose for {row['smiles']}: {e}")
+                print(f"  [error] Failed to extract pose for {row.get('smiles', '?')}: {e}")
 
         writer.close()
         print(f"Successfully saved {count} best poses to {output_path}")
+

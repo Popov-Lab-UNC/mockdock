@@ -178,8 +178,12 @@ def run_benchmark(
     # ── Fragment conditioning via oracle.fragment_smiles_with_dummies ────────
     if oracle.fragment_smiles_with_dummies:
         log.info("Fragment SMILES with dummies: %s", oracle.fragment_smiles_with_dummies)
+        # promptsmiles recognises bare `*` and `(*)` but not `[*]`; normalise here.
+        promptsmiles_smi = oracle.fragment_smiles_with_dummies.replace('[*]', '*')
+        if promptsmiles_smi != oracle.fragment_smiles_with_dummies:
+            log.info("Normalised for PromptSMILES: %s", promptsmiles_smi)
         with open_dict(cfg):
-            cfg.promptsmiles = oracle.fragment_smiles_with_dummies
+            cfg.promptsmiles = promptsmiles_smi
     else:
         log.warning(
             "fragment_smiles_with_dummies not set for %s — running without scaffold conditioning. "
@@ -215,7 +219,7 @@ def run_benchmark(
 @click.option("--benchmark", "benchmarks", multiple=True,
               type=click.Choice(BENCHMARKS, case_sensitive=False),
               help="Benchmark(s) to run. Defaults to all six.")
-@click.option("--budget", default=5000, show_default=True,
+@click.option("--budget", default=1000, show_default=True,
               help="Maximum oracle (docking) calls per benchmark.")
 @click.option("--seed", default=0, show_default=True,
               help="Random seed.")

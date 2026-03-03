@@ -28,6 +28,7 @@ from typing import Any
 import click
 import numpy as np
 import pandas as pd
+import torch
 import yaml
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -271,8 +272,10 @@ class FRAGFCGMB:
         linker_counts: dict[str, int] = defaultdict(int)
 
         for smi, _ in cleaned_rows:
-            # Oracle scores are already normalised to [0, 1].
-            score = float(docking_scores.get(smi, 0.0))
+            # Normalised scores below 0.0 mean weaker binding than the low_score
+            # baseline; clamp to 0.0 for GA probability weights. Scores above 1.0
+            # are valid (better than the reference ligand) and are kept as-is.
+            score = max(0.0, float(docking_scores.get(smi, 0.0)))
             mol = Chem.MolFromSmiles(smi)
             if mol is None:
                 continue
@@ -403,12 +406,12 @@ class FRAGFCGMB:
         # --- Strategy 1: scaffold_decoration ---
         if core:
             try:
+                torch.manual_seed(varied_seed)
                 candidates = self.safe_fallback.scaffold_decoration(
                     scaffold=core,
                     n_samples_per_trial=10,
                     n_trials=3,
                     sanitize=True,
-                    random_seed=varied_seed,
                 )
             except KeyboardInterrupt:
                 raise
@@ -439,11 +442,11 @@ class FRAGFCGMB:
 
         # --- Strategy 2: de_novo_generation (unconstrained) ---
         try:
+            torch.manual_seed(varied_seed)
             candidates = self.safe_fallback.de_novo_generation(
                 n_samples_per_trial=10,
                 n_trials=3,
                 sanitize=True,
-                random_seed=varied_seed,
             )
         except KeyboardInterrupt:
             raise
@@ -501,7 +504,6 @@ class FRAGFCGMB:
                         frag1,
                         frag2,
                         n_samples_per_trial=1,
-                        random_seed=self.seed,
                     )[0]
                 else:  # arm + linker
                     frag1 = random.choice([frag for _, frag in self.arm_population])
@@ -511,7 +513,6 @@ class FRAGFCGMB:
                     smiles = self.designer.motif_extension(
                         frag,
                         n_samples_per_trial=1,
-                        random_seed=self.seed,
                     )[0]
                     smiles = sorted(smiles.split("."), key=len)[-1]
 
@@ -667,7 +668,7 @@ class FRAGFCGMB:
 @click.option(
     "--budget",
     type=int,
-    default=5000,
+    default=1000,
     show_default=True,
     help="Oracle scoring budget per benchmark.",
 )
