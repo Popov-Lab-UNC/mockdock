@@ -91,4 +91,5 @@ norecursedirs = [
 [dependency-groups]
 dev = [
     "ruff>=0.15.4",
+    "ty>=0.0.20",
 ]

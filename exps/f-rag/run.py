@@ -147,7 +147,7 @@ class FRAGFCGMB:
         self.SAFEFusionDesign = mods["SAFEFusionDesign"]
         self.MolSlicer = mods["MolSlicer"]
 
-        self.oracle = FCGMBOracle(benchmark_name, budget=budget)
+        self.oracle = FCGMBOracle(benchmark_name, budget=budget, run_dir=self.out_dir)
         self.designer = self.SAFEFusionDesign.load_default()
         self.designer.load_fuser(self.args.injection_model_path)
         # Fallback generator: vanilla SAFE-GPT without f-RAG fusion, used when
@@ -698,6 +698,12 @@ class FRAGFCGMB:
     multiple=True,
     type=click.Choice(BENCHMARKS),
 )
+@click.option(
+    "--run-dir",
+    type=click.Path(path_type=pathlib.Path),
+    default=None,
+    help="Parent directory for all benchmark runs. Defaults to <script_dir>/run_<timestamp>.",
+)
 def main(
     output_dir: pathlib.Path,
     f_rag_root: pathlib.Path | None,
@@ -717,8 +723,18 @@ def main(
     min_mol_size: int | None,
     max_mol_size: int | None,
     selected_benchmarks: tuple[str, ...],
+    run_dir: pathlib.Path | None,
 ) -> None:
+    import datetime
+
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if run_dir is not None:
+        run_parent = run_dir
+    else:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_parent = pathlib.Path(__file__).resolve().parent / f"run_{ts}"
+    run_parent.mkdir(parents=True, exist_ok=True)
 
     hparams = HParams.from_yaml(hparams_path)
     effective_root = f_rag_root or _resolve_default_frag_root()
@@ -751,7 +767,7 @@ def main(
     benchmarks = list(selected_benchmarks) if selected_benchmarks else BENCHMARKS
 
     for benchmark_name in benchmarks:
-        task_dir = output_dir / benchmark_name
+        task_dir = run_parent / benchmark_name
         task_dir.mkdir(parents=True, exist_ok=True)
 
         logger = logging.getLogger(f"f-rag-{benchmark_name}")

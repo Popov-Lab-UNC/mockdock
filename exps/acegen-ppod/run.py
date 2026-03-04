@@ -172,6 +172,7 @@ def run_benchmark(
     outputs_root: pathlib.Path,
     acegen_root: pathlib.Path,
     n_warmup: int,
+    run_parent: pathlib.Path,
 ):
     log.info("=" * 60)
     log.info(" Benchmark : %s", benchmark)
@@ -183,7 +184,9 @@ def run_benchmark(
     output_dir = outputs_root / benchmark
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    oracle = FCGMBOracle(benchmark, budget=budget)
+    benchmark_run_dir = run_parent / benchmark
+    benchmark_run_dir.mkdir(parents=True, exist_ok=True)
+    oracle = FCGMBOracle(benchmark, budget=budget, run_dir=benchmark_run_dir)
     log.info("Run directory: %s", oracle.run_dir)
 
     if n_warmup > 0:
@@ -275,8 +278,15 @@ def run_benchmark(
     show_default=True,
     help="Number of initial compounds to pre-score as oracle warmup (0 to skip).",
 )
-def main(benchmarks, budget, seed, out, acegen_root, n_warmup):
+@click.option(
+    "--run-dir",
+    default=None,
+    help="Parent directory for all benchmark outputs. Defaults to <script_dir>/run_<timestamp>.",
+)
+def main(benchmarks, budget, seed, out, acegen_root, n_warmup, run_dir):
     """Run AceGen-PPOD against FCGMB benchmarks."""
+    import datetime
+
     benchmarks = list(benchmarks) if benchmarks else BENCHMARKS
     outputs_root = pathlib.Path(out) if out else SCRIPT_DIR / "outputs"
     outputs_root.mkdir(parents=True, exist_ok=True)
@@ -287,6 +297,14 @@ def main(benchmarks, budget, seed, out, acegen_root, n_warmup):
             f"acegen-open not found at {acegen_path}. "
             "Pass --acegen-root or ensure it is at the expected location."
         )
+
+    if run_dir is not None:
+        run_parent = pathlib.Path(run_dir)
+    else:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_parent = SCRIPT_DIR / f"run_{ts}"
+    run_parent.mkdir(parents=True, exist_ok=True)
+    log.info("Run parent       : %s", run_parent)
 
     log.info("acegen-open root : %s", acegen_path)
     log.info("Benchmarks       : %s", benchmarks)
@@ -300,6 +318,7 @@ def main(benchmarks, budget, seed, out, acegen_root, n_warmup):
             outputs_root=outputs_root,
             acegen_root=acegen_path,
             n_warmup=n_warmup,
+            run_parent=run_parent,
         )
 
     log.info("All benchmarks complete.")
