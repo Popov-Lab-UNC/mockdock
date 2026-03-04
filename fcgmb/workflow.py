@@ -22,7 +22,12 @@ from rdkit import Chem, RDLogger
 try:
     from .data import fetch_chembl_data
     from .docking import AutoDockGPUOracle
-    from .receptor import GridPrepError, LigandNotFoundError, PDBDownloadError, ReceptorPreparer
+    from .receptor import (
+        GridPrepError,
+        LigandNotFoundError,
+        PDBDownloadError,
+        ReceptorPreparer,
+    )
     from .ligand_prep import LigandPreparer
     from .analysis import DockingAnalyzer, aggregate_results_per_id
     from .utils import (
@@ -34,7 +39,12 @@ try:
 except ImportError:
     from fcgmb.data import fetch_chembl_data
     from fcgmb.docking import AutoDockGPUOracle
-    from fcgmb.receptor import GridPrepError, LigandNotFoundError, PDBDownloadError, ReceptorPreparer
+    from fcgmb.receptor import (
+        GridPrepError,
+        LigandNotFoundError,
+        PDBDownloadError,
+        ReceptorPreparer,
+    )
     from fcgmb.ligand_prep import LigandPreparer
     from fcgmb.analysis import DockingAnalyzer, aggregate_results_per_id
     from fcgmb.utils import (
@@ -45,9 +55,10 @@ except ImportError:
     )
 
 # Silence RDKit noise
-RDLogger.DisableLog('rdApp.*')
+RDLogger.DisableLog("rdApp.*")
 # Silence general warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 
 class WorkflowStatus(Enum):
     SUCCESS = "SUCCESS"
@@ -58,6 +69,7 @@ class WorkflowStatus(Enum):
     FAILED_REF_MATCH = "FAILED_REF_MATCH"
     FAILED_DOCKING = "FAILED_DOCKING"
     FAILED_ANALYSIS = "FAILED_ANALYSIS"
+
 
 @dataclass
 class WorkflowResult:
@@ -76,9 +88,11 @@ class WorkflowResult:
     n_valid_poses: int = 0
     runtime_seconds: float = 0.0
 
+
 def load_config(config_path: Union[str, Path]) -> dict:
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
+
 
 def run_docking_workflow(
     config: dict,
@@ -90,7 +104,7 @@ def run_docking_workflow(
     quiet: bool = False,
     n_cpus: Optional[int] = None,
     n_gpus: Optional[int] = None,
-    docking_backend: str = "auto"
+    docking_backend: str = "auto",
 ) -> WorkflowResult:
     """
     Core function to run the docking workflow using refactored components.
@@ -132,11 +146,12 @@ def run_docking_workflow(
         doc_id=doc_id,
         assay_id=assay_id or "",
         fragment_smiles=fragment_smiles or "",
-        status=WorkflowStatus.SUCCESS.value
+        status=WorkflowStatus.SUCCESS.value,
     )
 
     def append_to_summary():
-        if not run_dir: return
+        if not run_dir:
+            return
         summary_path = Path(run_dir) / "benchmark_summary.csv"
         result.runtime_seconds = time.time() - start_time
         df_row = pl.DataFrame([asdict(result)])
@@ -163,7 +178,9 @@ def run_docking_workflow(
                             break
             else:
                 # Check for cache directory (config or env) and cache-only mode in config
-                cache_dir = config.get("chembl_cache_dir") or os.environ.get("CHEMBL_CACHE_DIR")
+                cache_dir = config.get("chembl_cache_dir") or os.environ.get(
+                    "CHEMBL_CACHE_DIR"
+                )
                 cache_only = config.get("chembl_cache_only", False)
                 df, stats = fetch_chembl_data(
                     target_id,
@@ -172,7 +189,7 @@ def run_docking_workflow(
                     return_stats=True,
                     cache_dir=cache_dir,
                     use_cache=True,
-                    cache_only=cache_only
+                    cache_only=cache_only,
                 )
                 result.n_compounds_total = stats.get("n_total", 0)
                 result.n_compounds_standardized = stats.get("n_standardized", 0)
@@ -181,7 +198,7 @@ def run_docking_workflow(
                 result.status = WorkflowStatus.FAILED_RETRIEVAL.value
                 append_to_summary()
                 return result
-            
+
             df.write_csv(work_dir / f"{data_prefix}_cleaned_data.csv")
         except Exception as e:
             result.status = WorkflowStatus.FAILED_RETRIEVAL.value
@@ -190,14 +207,17 @@ def run_docking_workflow(
             return result
 
     # STAGE 2: Grid Preparation
-    fld_path = None 
+    fld_path = None
     if stage in ["all", "grid"]:
         preparer = ReceptorPreparer()
         try:
             fld_path = preparer.prepare_receptor_and_grid(
-                pdb_id, ligand_resname=ligand_resname, output_dir=grid_base_dir, 
-                allow_bad_res=True, protein_pdb_path=protein_pdb_path,
-                ligand_pdb_path=ligand_pdb_path
+                pdb_id,
+                ligand_resname=ligand_resname,
+                output_dir=grid_base_dir,
+                allow_bad_res=True,
+                protein_pdb_path=protein_pdb_path,
+                ligand_pdb_path=ligand_pdb_path,
             )
         except Exception as e:
             result.status = WorkflowStatus.FAILED_GRID_PREP.value
@@ -213,7 +233,7 @@ def run_docking_workflow(
             result.status = WorkflowStatus.FAILED_DOCKING.value
             append_to_summary()
             return result
-            
+
         df = pl.read_csv(df_path)
         if "pchembl_value" not in df.columns:
             raise RuntimeError("Missing pchembl_value in cleaned data; cannot proceed.")
@@ -225,53 +245,61 @@ def run_docking_workflow(
 
         if not fld_path:
             fld_path = next(iter(grid_base_dir.glob("*.maps.fld")), None)
-        
+
         ref_corr = grid_base_dir / f"{pdb_id}_ligand_corrected.sdf"
-        reference_ligand_path = ref_corr if ref_corr.exists() else grid_base_dir / f"{pdb_id}_ligand.pdb"
+        reference_ligand_path = (
+            ref_corr if ref_corr.exists() else grid_base_dir / f"{pdb_id}_ligand.pdb"
+        )
 
         try:
             # 1. Hardware and Backend Resolution
             import shutil
             from .oracle import _detect_gpus
             from .docking import AutoDockVinaOracle
-            
+
             detected_cpus = os.cpu_count()
             detected_gpus = _detect_gpus()
-            
+
             actual_n_cpus = n_cpus or detected_cpus
             actual_n_gpus = n_gpus if n_gpus is not None else detected_gpus
-            
+
             # Simple resolution logic consistent with FCGMBOracle
             adgpu_exe = config.get("adgpu_executable", "adgpu")
             adgpu_available = shutil.which(adgpu_exe) is not None
-            
+
             requested = docking_backend.lower()
             resolved = "vina"
             if requested == "autodock_gpu":
                 if adgpu_available:
                     resolved = "autodock_gpu"
                 else:
-                    print(f"   Warning: ADGPU requested but '{adgpu_exe}' not found. Falling back to VINA.")
+                    print(
+                        f"   Warning: ADGPU requested but '{adgpu_exe}' not found. Falling back to VINA."
+                    )
             elif requested == "vina":
                 resolved = "vina"
-            else: # "auto"
+            else:  # "auto"
                 if adgpu_available and actual_n_gpus > 0:
                     resolved = "autodock_gpu"
                 else:
                     resolved = "vina"
 
-            print(f"   Docking Backend: {resolved.upper()} ({actual_n_cpus} CPUs, {actual_n_gpus} GPUs)")
+            print(
+                f"   Docking Backend: {resolved.upper()} ({actual_n_cpus} CPUs, {actual_n_gpus} GPUs)"
+            )
 
             # 2. Setup Components
-            preparer = LigandPreparer(n_cpus=actual_n_cpus, generate_isomers=not no_isomers)
-            
+            preparer = LigandPreparer(
+                n_cpus=actual_n_cpus, generate_isomers=not no_isomers
+            )
+
             if resolved == "autodock_gpu":
                 oracle = AutoDockGPUOracle(
-                    receptor_file=fld_path, 
+                    receptor_file=fld_path,
                     adgpu_executable=adgpu_exe,
-                    save_dir=work_dir / "results", 
-                    n_cpus=actual_n_cpus, 
-                    n_gpus=actual_n_gpus
+                    save_dir=work_dir / "results",
+                    n_cpus=actual_n_cpus,
+                    n_gpus=actual_n_gpus,
                 )
             else:
                 extra_vina = config.get("vina_config", {})
@@ -280,26 +308,32 @@ def run_docking_workflow(
                     save_dir=work_dir / "results",
                     exhaustiveness=extra_vina.get("exhaustiveness", 32),
                     n_poses=extra_vina.get("n_poses", 10),
-                    n_cpus=actual_n_cpus
+                    n_cpus=actual_n_cpus,
                 )
 
             analyzer = DockingAnalyzer(
-                reference_ligand_path=reference_ligand_path, 
-                fragment_smiles=fragment_smiles, 
-                rmsd_threshold=rmsd_threshold
+                reference_ligand_path=reference_ligand_path,
+                fragment_smiles=fragment_smiles,
+                rmsd_threshold=rmsd_threshold,
             )
 
             all_smiles = df.get_column("canonical_smiles").unique().to_list()
             print(f"   Total unique compounds: {len(all_smiles)}")
-            
+
             # 3. 2D filtering
-            valid_smiles = [s for s in all_smiles if analyzer.check_2d_fragment_match(s)]
-            print(f"   Compounds matching 2D fragment '{fragment_smiles}': {len(valid_smiles)}")
+            valid_smiles = [
+                s for s in all_smiles if analyzer.check_2d_fragment_match(s)
+            ]
+            print(
+                f"   Compounds matching 2D fragment '{fragment_smiles}': {len(valid_smiles)}"
+            )
             result.n_compounds_matched_2d = len(valid_smiles)
-            
+
             if not valid_smiles:
                 print("   Warning: No compounds matched 2D fragment. Skipping docking.")
-                result.status = WorkflowStatus.SUCCESS.value # Or FAILED_REF_MATCH? Let's stay SUCCESS if it's just no matches
+                result.status = (
+                    WorkflowStatus.SUCCESS.value
+                )  # Or FAILED_REF_MATCH? Let's stay SUCCESS if it's just no matches
                 append_to_summary()
                 return result
 
@@ -308,23 +342,27 @@ def run_docking_workflow(
             with tempfile.TemporaryDirectory(prefix="workflow_prep_") as tmp_dir:
                 smiles_to_pdbqts = preparer.prepare_batch(valid_smiles, Path(tmp_dir))
                 docking_results = oracle.dock_batch(smiles_to_pdbqts, chunk_idx=0)
-                
+
                 # Analyze
                 final_rows = []
                 for res in docking_results:
                     smi = res["smiles"]
                     pose_path = res["dlg_path"]
                     if pose_path:
-                        best_score, passed, best_mol, best_any_score, best_any_mol = analyzer.filter_poses_by_rmsd(pose_path, smi)
-                        final_rows.append({
-                            "canonical_smiles": smi,
-                            "docking_score": best_score if passed else float('nan'),
-                            "score_valid": best_score if passed else float('nan'),
-                            "score_best_any": best_any_score,
-                            "valid_pose_found": passed,
-                            "dlg_path": str(pose_path)
-                        })
-                
+                        best_score, passed, best_mol, best_any_score, best_any_mol = (
+                            analyzer.filter_poses_by_rmsd(pose_path, smi)
+                        )
+                        final_rows.append(
+                            {
+                                "canonical_smiles": smi,
+                                "docking_score": best_score if passed else float("nan"),
+                                "score_valid": best_score if passed else float("nan"),
+                                "score_best_any": best_any_score,
+                                "valid_pose_found": passed,
+                                "dlg_path": str(pose_path),
+                            }
+                        )
+
                 res_df = pl.DataFrame(final_rows)
                 if not res_df.is_empty():
                     df = df.join(res_df, on="canonical_smiles", how="left")
@@ -338,8 +376,12 @@ def run_docking_workflow(
                     df.write_csv(work_dir / f"{data_prefix}_results.csv")
 
                     result.n_compounds_docked = len(res_df)
-                    result.n_valid_poses = len(res_df.filter(pl.col("valid_pose_found") == True))
-                    print(f"   Docking complete. Docked {result.n_compounds_docked} conformers, {result.n_valid_poses} passed RMSD.")
+                    result.n_valid_poses = len(
+                        res_df.filter(pl.col("valid_pose_found") == True)
+                    )
+                    print(
+                        f"   Docking complete. Docked {result.n_compounds_docked} conformers, {result.n_valid_poses} passed RMSD."
+                    )
                 else:
                     print("   Warning: No docking results obtained from oracle.")
                     result.status = WorkflowStatus.FAILED_DOCKING.value
@@ -360,23 +402,53 @@ def run_docking_workflow(
             df = pl.read_csv(results_file)
             if "pchembl_value" not in df.columns:
                 raise RuntimeError("Missing pchembl_value in results; cannot plot.")
-            plot_docking_results(df, score_col="docking_score", activity_col=activity_col, output_path=str(work_dir / f"{data_prefix}_results.png"))
+            plot_docking_results(
+                df,
+                score_col="docking_score",
+                activity_col=activity_col,
+                output_path=str(work_dir / f"{data_prefix}_results.png"),
+            )
 
     append_to_summary()
     return result
 
+
 def main():
     parser = ArgumentParser(description="Run Docking Workflow from YAML configuration")
-    parser.add_argument("--config", type=str, required=True, help="Path to YAML configuration file")
-    parser.add_argument("--stage", type=str, default="all", choices=["all", "retrieve", "grid", "docking", "analysis"])
-    parser.add_argument("--smarts", type=str, help="Override SMARTS string for fragment filtering.")
-    parser.add_argument("--no_isomers", action="store_true", help="Disable stereoisomer generation.")
-    parser.add_argument("--run-dir", type=str, help="Base directory for the benchmark run.")
+    parser.add_argument(
+        "--config", type=str, required=True, help="Path to YAML configuration file"
+    )
+    parser.add_argument(
+        "--stage",
+        type=str,
+        default="all",
+        choices=["all", "retrieve", "grid", "docking", "analysis"],
+    )
+    parser.add_argument(
+        "--smarts", type=str, help="Override SMARTS string for fragment filtering."
+    )
+    parser.add_argument(
+        "--no_isomers", action="store_true", help="Disable stereoisomer generation."
+    )
+    parser.add_argument(
+        "--run-dir", type=str, help="Base directory for the benchmark run."
+    )
     parser.add_argument("--quiet", action="store_true", help="Minimal output.")
     parser.add_argument("--cpus", type=int, help="Number of CPUs to use.")
     parser.add_argument("--gpus", type=int, help="Number of GPUs to use.")
-    parser.add_argument("--backend", type=str, default="auto", choices=["auto", "autodock_gpu", "vina"], help="Docking software backend.")
-    parser.add_argument("--cache-dir", type=str, default="data/chembl_cache", help="ChEMBL data cache directory (used if data not in cache; downloads cached here)")
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="auto",
+        choices=["auto", "autodock_gpu", "vina"],
+        help="Docking software backend.",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default="data/chembl_cache",
+        help="ChEMBL data cache directory (used if data not in cache; downloads cached here)",
+    )
 
     args = parser.parse_args()
     config = load_config(args.config)
@@ -384,13 +456,21 @@ def main():
         config["chembl_cache_dir"] = args.cache_dir
 
     result = run_docking_workflow(
-        config=config, stage=args.stage, smarts=args.smarts, no_isomers=args.no_isomers,
-        run_dir=args.run_dir, config_file_path=args.config, quiet=args.quiet,
-        n_cpus=args.cpus, n_gpus=args.gpus, docking_backend=args.backend
+        config=config,
+        stage=args.stage,
+        smarts=args.smarts,
+        no_isomers=args.no_isomers,
+        run_dir=args.run_dir,
+        config_file_path=args.config,
+        quiet=args.quiet,
+        n_cpus=args.cpus,
+        n_gpus=args.gpus,
+        docking_backend=args.backend,
     )
-    
+
     if result.status != WorkflowStatus.SUCCESS.value:
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

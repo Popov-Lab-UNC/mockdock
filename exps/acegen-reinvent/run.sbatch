@@ -26,7 +26,7 @@ OUT_DIR=${SCRIPT_DIR}/outputs
 # budget    : max oracle (docking) calls per benchmark
 # seed      : random seed for reproducibility
 # n_warmup  : initial compounds pre-scored as oracle warmup (0 to disable)
-BUDGET=5000
+BUDGET=1000
 SEED=0
 N_WARMUP=25
 

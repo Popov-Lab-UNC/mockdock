@@ -39,6 +39,7 @@ CONFIGS_DIR = BENCHMARK_ROOT / "fcgmb" / "configs"
 
 N_RUNS = 5  # variance_runs/run_1 … run_5
 
+
 # Map each canonical benchmark name to its (target_id, pdb_id, doc_id, assay_id)
 # so we can reconstruct the path to each variant run results CSV.
 def _load_benchmark_config(benchmark_name: str) -> dict:
@@ -49,7 +50,9 @@ def _load_benchmark_config(benchmark_name: str) -> dict:
         return yaml.safe_load(f)
 
 
-def _find_results_csv(run_dir: Path, target_id: str, pdb_id: str, doc_id: str) -> Path | None:
+def _find_results_csv(
+    run_dir: Path, target_id: str, pdb_id: str, doc_id: str
+) -> Path | None:
     """Locate the per-compound results CSV inside a single variance run folder.
 
     Expected layout::
@@ -83,8 +86,10 @@ def process_benchmark(benchmark_name: str) -> None:
     high_score: float | None = cfg.get("high_score")
 
     if low_score is None or high_score is None:
-        print(f"  [WARN] {benchmark_name}: low_score/high_score not in config; "
-              "will add mean_docking_score but not normalised score.")
+        print(
+            f"  [WARN] {benchmark_name}: low_score/high_score not in config; "
+            "will add mean_docking_score but not normalised score."
+        )
 
     # ── Collect per-compound docking scores from all variance runs ──────────
     all_run_frames: list[pl.DataFrame] = []
@@ -92,13 +97,20 @@ def process_benchmark(benchmark_name: str) -> None:
         run_dir = VARIANCE_RUNS_DIR / f"run_{run_idx}"
         results_csv = _find_results_csv(run_dir, target_id, pdb_id, doc_id)
         if results_csv is None:
-            print(f"  [WARN] {benchmark_name}: no results CSV in run_{run_idx}, skipping.")
+            print(
+                f"  [WARN] {benchmark_name}: no results CSV in run_{run_idx}, skipping."
+            )
             continue
 
         run_df = pl.read_csv(results_csv)
         # Keep only chembl ID and docking score; tag the run number
-        if "molecule_chembl_id" not in run_df.columns or "docking_score" not in run_df.columns:
-            print(f"  [WARN] {benchmark_name}: run_{run_idx} CSV missing expected columns, skipping.")
+        if (
+            "molecule_chembl_id" not in run_df.columns
+            or "docking_score" not in run_df.columns
+        ):
+            print(
+                f"  [WARN] {benchmark_name}: run_{run_idx} CSV missing expected columns, skipping."
+            )
             continue
         run_df = run_df.select(["molecule_chembl_id", "docking_score"]).with_columns(
             pl.lit(run_idx).alias("run_idx")
@@ -110,10 +122,8 @@ def process_benchmark(benchmark_name: str) -> None:
         return
 
     stacked = pl.concat(all_run_frames)
-    mean_scores = (
-        stacked
-        .group_by("molecule_chembl_id")
-        .agg(pl.col("docking_score").mean().alias("mean_docking_score"))
+    mean_scores = stacked.group_by("molecule_chembl_id").agg(
+        pl.col("docking_score").mean().alias("mean_docking_score")
     )
 
     # ── Read bioactivity CSV and join ────────────────────────────────────────
@@ -131,8 +141,9 @@ def process_benchmark(benchmark_name: str) -> None:
         denom = low_score - high_score
         if abs(denom) > 1e-6:
             merged = merged.with_columns(
-                ((pl.lit(low_score) - pl.col("mean_docking_score")) / denom)
-                .alias("score")
+                ((pl.lit(low_score) - pl.col("mean_docking_score")) / denom).alias(
+                    "score"
+                )
             )
         else:
             merged = merged.with_columns(pl.lit(None, dtype=pl.Float64).alias("score"))
@@ -144,8 +155,10 @@ def process_benchmark(benchmark_name: str) -> None:
 
     n_matched = merged.filter(pl.col("mean_docking_score").is_not_null()).height
     n_total = merged.height
-    print(f"  [OK]  {benchmark_name}: matched {n_matched}/{n_total} compounds with "
-          f"variance run docking data.")
+    print(
+        f"  [OK]  {benchmark_name}: matched {n_matched}/{n_total} compounds with "
+        f"variance run docking data."
+    )
 
 
 def main() -> None:
@@ -157,7 +170,10 @@ def main() -> None:
     print()
 
     if not VARIANCE_RUNS_DIR.exists():
-        print(f"ERROR: variance_runs/ directory not found at {VARIANCE_RUNS_DIR}.", file=sys.stderr)
+        print(
+            f"ERROR: variance_runs/ directory not found at {VARIANCE_RUNS_DIR}.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     for bm in benchmarks:

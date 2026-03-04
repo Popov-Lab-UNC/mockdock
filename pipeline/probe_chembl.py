@@ -2,9 +2,10 @@
 import sys
 import requests
 
+
 def check_chembl_api():
     print("Probing ChEMBL API...")
-    
+
     # 1. Check web status code for the API root
     try:
         r = requests.get("https://www.ebi.ac.uk/chembl/api/data/status", timeout=10)
@@ -19,8 +20,13 @@ def check_chembl_api():
     # 2. Try a simple client request
     try:
         from chembl_webresource_client.new_client import new_client
-        print("Testing chembl_webresource_client with a simple query (Target: CHEMBL240)...")
-        target = new_client.target.filter(target_chembl_id='CHEMBL240').only('target_chembl_id', 'pref_name')
+
+        print(
+            "Testing chembl_webresource_client with a simple query (Target: CHEMBL240)..."
+        )
+        target = new_client.target.filter(target_chembl_id="CHEMBL240").only(
+            "target_chembl_id", "pref_name"
+        )
         res = list(target)
         if res:
             print(f"Success! Found target: {res[0].get('pref_name')}")
@@ -31,6 +37,7 @@ def check_chembl_api():
     except Exception as e:
         print(f"Client request failed: {e}")
         return False
+
 
 if __name__ == "__main__":
     if check_chembl_api():

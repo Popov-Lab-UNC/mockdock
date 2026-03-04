@@ -3,6 +3,7 @@
 Thin wrapper for the FCGMB docking workflow.
 All core logic is in fcgmb.workflow.
 """
+
 import sys
 from fcgmb.workflow import main
 

@@ -19,7 +19,7 @@ source /work/users/s/h/shuhang/f-RAG/.venv/bin/activate
 SCRIPT_DIR=/work/users/s/h/shuhang/benchmark/exps/f-rag
 FRAG_ROOT=/work/users/s/h/shuhang/f-RAG
 OUT_DIR=${SCRIPT_DIR}/outputs
-BUDGET=5000
+BUDGET=1000
 SEED=0
 
 cd "${SCRIPT_DIR}"

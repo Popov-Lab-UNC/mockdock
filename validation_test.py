@@ -45,6 +45,7 @@ from fcgmb.oracle import FCGMBOracle
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _stats(scores: list) -> dict:
     """Compute basic stats from a list of floats (NaN-safe)."""
     valid = [s for s in scores if s == s]  # NaN check
@@ -59,6 +60,7 @@ def _stats(scores: list) -> dict:
 # ---------------------------------------------------------------------------
 # Main validation logic
 # ---------------------------------------------------------------------------
+
 
 def run_validation(
     benchmarks: list | None = None,
@@ -99,7 +101,9 @@ def run_validation(
         to_run = all_available
 
     if not to_run:
-        print("[ERROR] No benchmark configs found. Check fcgmb/configs/ or local configs/.")
+        print(
+            "[ERROR] No benchmark configs found. Check fcgmb/configs/ or local configs/."
+        )
         sys.exit(1)
 
     invalid = [b for b in to_run if b not in all_available]
@@ -129,9 +133,14 @@ def run_validation(
                 initial_df = oracle.get_initial_compounds()
                 if not initial_df.is_empty():
                     # Keep only the relevant columns for display
-                    display_cols = [c for c in ["canonical_smiles", "pchembl_value"]
-                                    if c in initial_df.columns]
-                    print(f"\n--- Lower 25% compounds for {bm_name} ({len(initial_df)}) ---")
+                    display_cols = [
+                        c
+                        for c in ["canonical_smiles", "pchembl_value"]
+                        if c in initial_df.columns
+                    ]
+                    print(
+                        f"\n--- Lower 25% compounds for {bm_name} ({len(initial_df)}) ---"
+                    )
                     print(initial_df.select(display_cols))
                     out_initial = output_dir / f"initial_compounds_{bm_name}.csv"
                     initial_df.write_csv(out_initial)
@@ -152,8 +161,11 @@ def run_validation(
             scores = [results.get(smi, float("nan")) for smi in smiles_list]
 
             st = _stats(scores)
-            n_success = int(oracle.results_df.get_column("valid_pose_found").sum()) \
-                if not oracle.results_df.is_empty() else 0
+            n_success = (
+                int(oracle.results_df.get_column("valid_pose_found").sum())
+                if not oracle.results_df.is_empty()
+                else 0
+            )
 
             print(f"\n  Results for {bm_name}:")
             print(f"    Scored:          {len(scores)}")
@@ -166,25 +178,32 @@ def run_validation(
             oracle.results_df.write_csv(out_file)
             print(f"    Saved results -> {out_file}")
 
-            summary_rows.append({
-                "benchmark":   bm_name,
-                "n_scored":    len(scores),
-                "n_valid_pose": n_success,
-                "min_score":   st["min_score"],
-                "max_score":   st["max_score"],
-                "mean_score":  st["mean_score"],
-            })
+            summary_rows.append(
+                {
+                    "benchmark": bm_name,
+                    "n_scored": len(scores),
+                    "n_valid_pose": n_success,
+                    "min_score": st["min_score"],
+                    "max_score": st["max_score"],
+                    "mean_score": st["mean_score"],
+                }
+            )
 
         except Exception as exc:
             import traceback
+
             print(f"[ERROR] {bm_name}: {exc}")
             traceback.print_exc()
-            summary_rows.append({
-                "benchmark": bm_name,
-                "n_scored": 0, "n_valid_pose": 0,
-                "min_score": float("nan"), "max_score": float("nan"),
-                "mean_score": float("nan"),
-            })
+            summary_rows.append(
+                {
+                    "benchmark": bm_name,
+                    "n_scored": 0,
+                    "n_valid_pose": 0,
+                    "min_score": float("nan"),
+                    "max_score": float("nan"),
+                    "mean_score": float("nan"),
+                }
+            )
 
     # ------------------------------------------------------------------
     # Final summary
@@ -210,6 +229,7 @@ def run_validation(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="FCGMB validation: dock upper-75%% activity compounds for each benchmark."
@@ -220,7 +240,8 @@ def _parse_args() -> argparse.Namespace:
         help="Also run user-added benchmarks from a local 'configs/' directory.",
     )
     parser.add_argument(
-        "--benchmarks", "-b",
+        "--benchmarks",
+        "-b",
         nargs="+",
         metavar="NAME",
         help="Benchmark name(s) to run (default: 6 bundled benchmarks). E.g. --benchmarks AKT1 CHK1",

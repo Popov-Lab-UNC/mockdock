@@ -23,7 +23,7 @@ ACEGEN_ROOT=/work/users/s/h/shuhang/acegen-open
 OUT_DIR=${SCRIPT_DIR}/outputs
 
 # ── Parameters ────────────────────────────────────────────────────────────────
-BUDGET=5000
+BUDGET=1000
 SEED=0
 N_WARMUP=25
 

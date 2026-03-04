@@ -4,19 +4,23 @@ Step 1: Fetch all human single-protein targets from ChEMBL with UniProt IDs.
 
 Output: data/chembl_targets.csv
 """
+
 import argparse
 import os
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 
+
 def main():
     parser = argparse.ArgumentParser(description="Fetch ChEMBL human protein targets")
-    parser.add_argument("--output", default="data/chembl_targets.csv", help="Output CSV path")
+    parser.add_argument(
+        "--output", default="data/chembl_targets.csv", help="Output CSV path"
+    )
     parser.add_argument(
         "--chembl-sqlite",
         default=None,
-        help="Optional path to local ChEMBL SQLite DB (e.g., /path/to/chembl_36.db)"
+        help="Optional path to local ChEMBL SQLite DB (e.g., /path/to/chembl_36.db)",
     )
     args = parser.parse_args()
 
@@ -33,7 +37,9 @@ def main():
         raise FileNotFoundError(f"ChEMBL SQLite DB not found: {sqlite_path}")
 
     if sqlite_path:
-        print(f"Fetching Human Single Protein Targets from local ChEMBL SQLite: {sqlite_path}")
+        print(
+            f"Fetching Human Single Protein Targets from local ChEMBL SQLite: {sqlite_path}"
+        )
         import sqlite3
 
         query = """
@@ -58,20 +64,21 @@ def main():
         print("Fetching Human Single Protein Targets from ChEMBL API...")
         target_api = new_client.target
         targets = target_api.filter(
-            organism='Homo sapiens',
-            target_type='SINGLE PROTEIN'
-        ).only('target_chembl_id', 'pref_name', 'target_components')
+            organism="Homo sapiens", target_type="SINGLE PROTEIN"
+        ).only("target_chembl_id", "pref_name", "target_components")
 
         target_list = []
         for t in tqdm(targets, desc="Processing Targets"):
             try:
                 # Get UniProt ID (some targets might not have one)
-                uniprot_id = t['target_components'][0]['accession']
-                target_list.append({
-                    'target_chembl_id': t.get('target_chembl_id'),
-                    'target_name': t['pref_name'],
-                    'uniprot_id': uniprot_id
-                })
+                uniprot_id = t["target_components"][0]["accession"]
+                target_list.append(
+                    {
+                        "target_chembl_id": t.get("target_chembl_id"),
+                        "target_name": t["pref_name"],
+                        "uniprot_id": uniprot_id,
+                    }
+                )
             except (IndexError, KeyError, TypeError):
                 continue
 
@@ -79,6 +86,7 @@ def main():
 
     df.to_csv(args.output, index=False)
     print(f"Saved {len(df)} targets to {args.output}")
+
 
 if __name__ == "__main__":
     main()

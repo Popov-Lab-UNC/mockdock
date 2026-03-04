@@ -67,7 +67,10 @@ def _iter_results(run_dir: Path) -> List[Tuple[str, Path]]:
 
 
 def _valid_score_mask(df: pl.DataFrame, score_cols: List[str]) -> pl.Expr:
-    exprs = [(pl.col(c).is_not_null()) & (pl.col(c).is_finite()) & (pl.col(c) < 900) for c in score_cols]
+    exprs = [
+        (pl.col(c).is_not_null()) & (pl.col(c).is_finite()) & (pl.col(c) < 900)
+        for c in score_cols
+    ]
     return pl.fold(pl.lit(True), lambda acc, x: acc & x, exprs)
 
 
@@ -79,7 +82,9 @@ def _short_system_label(system_key: str) -> str:
     return system_key
 
 
-def _compute_system_correlations(df: pl.DataFrame, config_path: Path) -> Tuple[float, float]:
+def _compute_system_correlations(
+    df: pl.DataFrame, config_path: Path
+) -> Tuple[float, float]:
     if df.is_empty() or "docking_score" not in df.columns:
         return float("nan"), float("nan")
     p_activities, _ = get_pactivity(df, config_path)
@@ -92,11 +97,7 @@ def _compute_system_correlations(df: pl.DataFrame, config_path: Path) -> Tuple[f
     return pearson, spearman
 
 
-def plot_run_barplot(
-    runs_dir: Path,
-    config_dir: Path,
-    output_dir: Path
-) -> Path:
+def plot_run_barplot(runs_dir: Path, config_dir: Path, output_dir: Path) -> Path:
     run_dirs = _iter_run_dirs(runs_dir)
     if not run_dirs:
         raise FileNotFoundError(f"No run_* directories found in {runs_dir}")
@@ -155,13 +156,24 @@ def plot_run_barplot(
     set_publication_style()
     plt.figure(figsize=(12, 6))
     if system_stats:
-        sorted_stats = sorted(system_stats, key=lambda r: r["spearman_mean"], reverse=True)
+        sorted_stats = sorted(
+            system_stats, key=lambda r: r["spearman_mean"], reverse=True
+        )
         x = np.arange(len(sorted_stats))
         means = [r["spearman_mean"] for r in sorted_stats]
         stds = [r["spearman_std"] for r in sorted_stats]
         labels = [_short_system_label(r["system"]) for r in sorted_stats]
-        
-        plt.bar(x, means, yerr=stds, capsize=4, color=PALETTE["light_blue"], alpha=0.9, edgecolor="black", linewidth=1)
+
+        plt.bar(
+            x,
+            means,
+            yerr=stds,
+            capsize=4,
+            color=PALETTE["light_blue"],
+            alpha=0.9,
+            edgecolor="black",
+            linewidth=1,
+        )
         plt.xticks(x, labels, rotation=45, ha="right")
         plt.ylabel("Mean Spearman Correlation")
         plt.title("System Performance Stability Across Runs")
@@ -189,7 +201,7 @@ def plot_system_variance(
     runs_dir: Path,
     config_dir: Path,
     output_dir: Path,
-    mapping: Dict[str, Dict[str, str]] = None
+    mapping: Dict[str, Dict[str, str]] = None,
 ) -> List[Path]:
     mapping = mapping or {}
     run_dirs = _iter_run_dirs(runs_dir)
@@ -227,7 +239,9 @@ def plot_system_variance(
             if merged is None:
                 merged = subset
             else:
-                merged = merged.join(subset.drop("pchembl_value"), on=id_col, how="inner")
+                merged = merged.join(
+                    subset.drop("pchembl_value"), on=id_col, how="inner"
+                )
 
         if merged is None or merged.is_empty():
             continue
@@ -250,11 +264,11 @@ def plot_system_variance(
         # Implementation for true quantile shading and crystal labeling
         set_publication_style()
         plt.figure(figsize=(12, 8))
-        
+
         # Calculate true 25th percentile quantile
         q25_threshold = np.percentile(p_activities, 25)
         is_lower_quartile = p_activities <= q25_threshold
-        
+
         # Draw error bars for both groups with legend support
         plt.errorbar(
             means[~is_lower_quartile],
@@ -267,9 +281,9 @@ def plot_system_variance(
             markersize=9,
             label="Analogs",
             markeredgecolor="black",
-            markeredgewidth=0.5
+            markeredgewidth=0.5,
         )
-        
+
         plt.errorbar(
             means[is_lower_quartile],
             p_activities[is_lower_quartile],
@@ -281,7 +295,7 @@ def plot_system_variance(
             markersize=9,
             label="Model visible (Lower 25%)",
             markeredgecolor="black",
-            markeredgewidth=0.5
+            markeredgewidth=0.5,
         )
 
         # Highlight crystal ligand if in mapping
@@ -301,7 +315,7 @@ def plot_system_variance(
                     edgecolor="black",
                     zorder=10,
                     label=crystal_info["label"],
-                    marker="D"
+                    marker="D",
                 )
                 # Crystal ligand appears in legend only (no on-plot text).
 
@@ -330,20 +344,42 @@ def plot_system_variance(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze variance runs across multiple run_* directories")
-    parser.add_argument("--runs-dir", type=str, default="variance_runs", help="Base variance runs directory")
-    parser.add_argument("--config-dir", type=str, default="configs", help="Directory with system YAML configs")
-    parser.add_argument("--output-dir", type=str, default="variance_runs", help="Output directory for plots")
-    parser.add_argument("--mapping", type=str, default="variance_runs/crystal_ligand_mapping.csv", help="CSV mapping crystal ligands")
+    parser = argparse.ArgumentParser(
+        description="Analyze variance runs across multiple run_* directories"
+    )
+    parser.add_argument(
+        "--runs-dir",
+        type=str,
+        default="variance_runs",
+        help="Base variance runs directory",
+    )
+    parser.add_argument(
+        "--config-dir",
+        type=str,
+        default="configs",
+        help="Directory with system YAML configs",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="variance_runs",
+        help="Output directory for plots",
+    )
+    parser.add_argument(
+        "--mapping",
+        type=str,
+        default="variance_runs/crystal_ligand_mapping.csv",
+        help="CSV mapping crystal ligands",
+    )
     args = parser.parse_args()
 
     runs_dir = Path(args.runs_dir)
     config_dir = Path(args.config_dir)
     output_dir = Path(args.output_dir)
     mapping_path = Path(args.mapping)
-    
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     mapping = _load_crystal_mapping(mapping_path)
     if not mapping:
         print(f"Warning: No crystal ligand mapping found at {mapping_path}")

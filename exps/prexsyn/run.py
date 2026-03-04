@@ -40,6 +40,7 @@ from fcgmb import FCGMBOracle
 # Queries  (identical to prexsyn/scripts/benchmarks/optim.py)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def query_lipinski(ps: PropertySet, pn: str = "rdkit_descriptor_upper_bound") -> Query:
     p = ps[pn]
     return (
@@ -144,8 +145,10 @@ def _extract_initial_context_mols(
 # AUC-Top10  (identical to prexsyn/scripts/benchmarks/optim.py)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def auc_top10_from_df(df: pd.DataFrame, max_evals: int) -> float:
     import heapq
+
     scores: list[float] = df["score"].tolist()
     top10: list[float] = []
     moving_top10_avg: list[float] = []
@@ -162,6 +165,7 @@ def auc_top10_from_df(df: pd.DataFrame, max_evals: int) -> float:
 # ──────────────────────────────────────────────────────────────────────────────
 # FCGMBOracle adapter
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class FCGMBOracleAdapter:
     """
@@ -193,6 +197,7 @@ class FCGMBOracleAdapter:
 # ──────────────────────────────────────────────────────────────────────────────
 # Task  (mirrors prexsyn/scripts/benchmarks/optim.py Task)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class Task:
     def __init__(
@@ -252,13 +257,17 @@ class Task:
         logger.info(f"Budget      : {self.budget}")
         logger.info(f"Num runs    : {self.num_runs}")
         logger.info(f"Frag. cond. : {self.use_fragment_condition}")
-        logger.info(f"Init ctx    : {self.use_initial_context} (refs={self.initial_context_refs})")
+        logger.info(
+            f"Init ctx    : {self.use_initial_context} (refs={self.initial_context_refs})"
+        )
         logger.info(f"Run dir     : {self.fcgmb.run_dir}")
 
         cond_parts: list[Query] = []
         if self.use_fragment_condition:
             try:
-                frag_query = query_fragment(facade.property_set, self.fcgmb.fragment_smiles)
+                frag_query = query_fragment(
+                    facade.property_set, self.fcgmb.fragment_smiles
+                )
                 cond_parts.append(frag_query)
                 logger.info(f"Fragment query enabled: {frag_query}")
             except Exception as e:
@@ -266,15 +275,23 @@ class Task:
 
         if self.use_initial_context:
             try:
-                ref_mols = _extract_initial_context_mols(self.fcgmb, self.initial_context_refs)
+                ref_mols = _extract_initial_context_mols(
+                    self.fcgmb, self.initial_context_refs
+                )
                 ctx_query = query_initial_context(facade.property_set, ref_mols)
                 if ctx_query is not None:
                     cond_parts.append(ctx_query)
-                    logger.info(f"Initial-compound context enabled with {len(ref_mols)} refs.")
+                    logger.info(
+                        f"Initial-compound context enabled with {len(ref_mols)} refs."
+                    )
                 else:
-                    logger.warning("No valid initial-compound references found for context.")
+                    logger.warning(
+                        "No valid initial-compound references found for context."
+                    )
             except Exception as e:
-                logger.warning(f"Could not build initial-compound context ({e}). Skipping.")
+                logger.warning(
+                    f"Could not build initial-compound context ({e}). Skipping."
+                )
 
         cond_query: Query | None = None
         if cond_parts:
@@ -287,7 +304,9 @@ class Task:
 
         try:
             for run_id in range(1, self.num_runs + 1):
-                logger.info(f"Running task: {self.benchmark_name}, run {run_id}/{self.num_runs}")
+                logger.info(
+                    f"Running task: {self.benchmark_name}, run {run_id}/{self.num_runs}"
+                )
                 result_path = task_dir / f"run_{run_id:02d}.df.pkl"
 
                 if result_path.exists():
@@ -343,12 +362,15 @@ class Task:
 # Null oracle helper
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _get_null_oracle() -> OracleProtocol:
     """Returns 0.0 for every molecule (no constraint)."""
+
     def _null(mol: Chem.Mol | list[Chem.Mol]) -> float | list[float]:
         if isinstance(mol, list):
             return [0.0] * len(mol)
         return 0.0
+
     return _null  # type: ignore[return-value]
 
 
@@ -463,6 +485,7 @@ def main(
     run_dir: pathlib.Path | None,
 ) -> None:
     import datetime
+
     torch.set_grad_enabled(False)
     facade, model = load_model(model_path, train=False)
     model = model.to("cuda")

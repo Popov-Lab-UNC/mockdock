@@ -87,3 +87,8 @@ norecursedirs = [
     "data",
     "logs",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.4",
+]

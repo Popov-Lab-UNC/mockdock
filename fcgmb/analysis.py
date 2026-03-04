@@ -7,6 +7,7 @@ from rdkit import Chem
 from meeko import PDBQTMolecule, RDKitMolCreate
 import polars as pl
 
+
 def aggregate_results_per_id(
     df: pl.DataFrame,
     score_col: str = "docking_score",
@@ -17,6 +18,7 @@ def aggregate_results_per_id(
     Aggregate results to one row per compound ID.
     Enforces RMSD first, then takes best score (fallback to best_any).
     """
+
     def _select_id_column() -> str:
         for col in ["molecule_chembl_id", "canonical_smiles", "smiles"]:
             if col in df.columns:
@@ -24,41 +26,38 @@ def aggregate_results_per_id(
         return "canonical_smiles"
 
     id_col = _select_id_column()
-    
+
     has_best_any = "score_best_any" in df.columns
     best_any_expr = pl.col("score_best_any") if has_best_any else pl.col(score_col)
-    
+
     base_df = df.with_columns(pl.col(valid_col).fill_null(False))
 
     agg_exprs = [
         # Only aggregate activity_col if it is NOT the ID column to avoid collision
         *(
             [pl.col(activity_col).drop_nulls().first().alias(activity_col)]
-            if activity_col != id_col else []
+            if activity_col != id_col
+            else []
         ),
         pl.col(valid_col).any().alias("passed_rmsd"),
-        
         pl.when(pl.col(valid_col))
         .then(pl.col(score_col))
         .min()
         .alias("best_valid_score"),
-        
         best_any_expr.min().alias("best_any_score"),
     ]
 
     if "dlg_path" in base_df.columns:
-        agg_exprs.extend([
-            pl.col("dlg_path")
-            .sort_by(score_col)
-            .filter(pl.col(valid_col))
-            .first()
-            .alias("best_valid_dlg"),
-
-            pl.col("dlg_path")
-            .sort_by(best_any_expr)
-            .first()
-            .alias("best_any_dlg"),
-        ])
+        agg_exprs.extend(
+            [
+                pl.col("dlg_path")
+                .sort_by(score_col)
+                .filter(pl.col(valid_col))
+                .first()
+                .alias("best_valid_dlg"),
+                pl.col("dlg_path").sort_by(best_any_expr).first().alias("best_any_dlg"),
+            ]
+        )
 
     grouped = base_df.group_by(id_col).agg(agg_exprs)
 
@@ -67,7 +66,6 @@ def aggregate_results_per_id(
         .then(pl.col("best_valid_score"))
         .otherwise(pl.col("best_any_score"))
         .alias(score_col),
-        
         pl.col("passed_rmsd").alias(valid_col),
         pl.col("best_valid_score").alias("score_valid"),
         pl.col("best_any_score").alias("score_best_any"),
@@ -105,19 +103,22 @@ def aggregate_results_per_id(
 
     return aggregated.select(unique_cols)
 
+
 class DockingAnalyzer:
     """Post-docking analysis: RMSD filtering, pose extraction, etc."""
-    
+
     def __init__(
-        self, 
-        reference_ligand_path: Optional[Union[str, Path]] = None, 
-        fragment_smiles: Optional[str] = None, 
-        rmsd_threshold: float = 2.0
+        self,
+        reference_ligand_path: Optional[Union[str, Path]] = None,
+        fragment_smiles: Optional[str] = None,
+        rmsd_threshold: float = 2.0,
     ):
-        self.reference_ligand_path = Path(reference_ligand_path) if reference_ligand_path else None
+        self.reference_ligand_path = (
+            Path(reference_ligand_path) if reference_ligand_path else None
+        )
         self.fragment_smiles = fragment_smiles
         self.rmsd_threshold = rmsd_threshold
-        
+
         self.ref_mol = None
         self.fragment_mol = None
         self.ref_match = None
@@ -132,20 +133,28 @@ class DockingAnalyzer:
             suppl = Chem.SDMolSupplier(str(self.reference_ligand_path), removeHs=False)
             self.ref_mol = next(iter(suppl), None)
         else:
-            self.ref_mol = Chem.MolFromPDBFile(str(self.reference_ligand_path), removeHs=False)
+            self.ref_mol = Chem.MolFromPDBFile(
+                str(self.reference_ligand_path), removeHs=False
+            )
 
         if self.ref_mol is None:
-            raise ValueError(f"Could not load reference ligand from {self.reference_ligand_path}")
+            raise ValueError(
+                f"Could not load reference ligand from {self.reference_ligand_path}"
+            )
 
         self.fragment_mol = Chem.MolFromSmiles(self.fragment_smiles)
         if self.fragment_mol is None:
             self.fragment_mol = Chem.MolFromSmarts(self.fragment_smiles)
             if self.fragment_mol is None:
-                raise ValueError(f"Invalid fragment SMILES/SMARTS string: {self.fragment_smiles}")
+                raise ValueError(
+                    f"Invalid fragment SMILES/SMARTS string: {self.fragment_smiles}"
+                )
 
         self.ref_match = self._get_robust_match(self.ref_mol, self.fragment_mol)
         if not self.ref_match:
-            print(f"WARNING: Reference ligand ({self.reference_ligand_path.name}) does not match fragment SMILES!")
+            print(
+                f"WARNING: Reference ligand ({self.reference_ligand_path.name}) does not match fragment SMILES!"
+            )
         else:
             ref_conf = self.ref_mol.GetConformer()
             self.ref_coords = []
@@ -153,7 +162,9 @@ class DockingAnalyzer:
                 pos = ref_conf.GetAtomPosition(idx)
                 self.ref_coords.append((pos.x, pos.y, pos.z))
 
-    def _get_robust_match(self, target_mol: Chem.Mol, query_mol: Chem.Mol) -> Tuple[int, ...]:
+    def _get_robust_match(
+        self, target_mol: Chem.Mol, query_mol: Chem.Mol
+    ) -> Tuple[int, ...]:
         """Attempt to find substructure match robust to tautomers/bond orders."""
         match = target_mol.GetSubstructMatch(query_mol)
         if match:
@@ -186,7 +197,7 @@ class DockingAnalyzer:
             probe_conf = probe_mol.GetConformer(conf_id)
         except ValueError:
             return 999.9
-            
+
         probe_coords = []
         for idx in probe_match:
             pos = probe_conf.GetAtomPosition(idx)
@@ -194,7 +205,7 @@ class DockingAnalyzer:
 
         sq_diff = 0
         for (rx, ry, rz), (px, py, pz) in zip(self.ref_coords, probe_coords):
-            sq_diff += (rx - px)**2 + (ry - py)**2 + (rz - pz)**2
+            sq_diff += (rx - px) ** 2 + (ry - py) ** 2 + (rz - pz) ** 2
 
         return math.sqrt(sq_diff / len(self.ref_coords))
 
@@ -216,11 +227,13 @@ class DockingAnalyzer:
         try:
             pose_file = Path(pose_file)
             is_dlg = pose_file.suffix.lower() == ".dlg"
-            pdbqt_mol = PDBQTMolecule.from_file(str(pose_file), is_dlg=is_dlg, skip_typing=True)
+            pdbqt_mol = PDBQTMolecule.from_file(
+                str(pose_file), is_dlg=is_dlg, skip_typing=True
+            )
             rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
 
             if not rdkit_mols:
-                return float('nan'), False, None, float('nan'), None, -1, -1
+                return float("nan"), False, None, float("nan"), None, -1, -1
 
             # Unroll multi-conformer mols (typical for Vina PDBQT output)
             if len(rdkit_mols) == 1 and rdkit_mols[0].GetNumConformers() > 1:
@@ -233,10 +246,10 @@ class DockingAnalyzer:
                     unrolled.append(new_mol)
                 rdkit_mols = unrolled
 
-            best_valid_score = float('nan')
+            best_valid_score = float("nan")
             best_valid_mol = None
             best_valid_idx = -1
-            best_any_score = float('nan')
+            best_any_score = float("nan")
             best_any_mol = None
             best_any_idx = -1
 
@@ -260,7 +273,7 @@ class DockingAnalyzer:
 
             passed = not math.isnan(best_valid_score)
             return (
-                best_valid_score if passed else float('nan'),
+                best_valid_score if passed else float("nan"),
                 passed,
                 best_valid_mol,
                 best_any_score,
@@ -271,7 +284,7 @@ class DockingAnalyzer:
 
         except Exception as e:
             print(f"Error in RMSD filtering for {pose_file}: {e}")
-            return float('nan'), False, None, float('nan'), None, -1, -1
+            return float("nan"), False, None, float("nan"), None, -1, -1
 
     def check_2d_fragment_match(self, smiles: str) -> bool:
         """Check if SMILES matches the 2D fragment constraint."""
@@ -281,13 +294,13 @@ class DockingAnalyzer:
         return mol is not None and mol.HasSubstructMatch(self.fragment_mol)
 
     def save_best_poses_sdf(
-        self, 
-        output_path: Union[str, Path], 
+        self,
+        output_path: Union[str, Path],
         results_df: pl.DataFrame,
-        df_metadata: Optional[pl.DataFrame] = None, 
-        id_col: str = "id", 
-        score_col: str = "docking_score", 
-        dlg_col: str = "dlg_path"
+        df_metadata: Optional[pl.DataFrame] = None,
+        id_col: str = "id",
+        score_col: str = "docking_score",
+        dlg_col: str = "dlg_path",
     ):
         """
         Extract the best pose from each successful docking run and save to an SDF.
@@ -312,7 +325,11 @@ class DockingAnalyzer:
                     if potential in df_metadata.columns:
                         id_col = potential
                         break
-            key_col = "canonical_smiles" if "canonical_smiles" in df_metadata.columns else "smiles"
+            key_col = (
+                "canonical_smiles"
+                if "canonical_smiles" in df_metadata.columns
+                else "smiles"
+            )
             for row in df_metadata.to_dicts():
                 if row.get(key_col):
                     meta_map[row[key_col]] = row
@@ -336,7 +353,9 @@ class DockingAnalyzer:
                     continue
 
                 is_dlg = pose_file.suffix.lower() == ".dlg"
-                pdbqt_mol = PDBQTMolecule.from_file(str(pose_file), is_dlg=is_dlg, skip_typing=True)
+                pdbqt_mol = PDBQTMolecule.from_file(
+                    str(pose_file), is_dlg=is_dlg, skip_typing=True
+                )
                 rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
 
                 if not rdkit_mols:
@@ -345,7 +364,10 @@ class DockingAnalyzer:
 
                 # Collect (energy, mol) pairs; energies come from pose_data if available
                 energies = []
-                if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
+                if (
+                    hasattr(pdbqt_mol, "_pose_data")
+                    and "free_energies" in pdbqt_mol._pose_data
+                ):
                     energies = list(pdbqt_mol._pose_data["free_energies"])
 
                 pose_pairs: List[Tuple[float, Chem.Mol]] = []
@@ -379,7 +401,9 @@ class DockingAnalyzer:
                 smi = row["smiles"]
                 chosen_mol.SetProp("SMILES", smi)
                 chosen_mol.SetProp("docking_score", str(row[score_col]))
-                chosen_mol.SetProp("normalized_score", str(row.get("normalized_score", "")))
+                chosen_mol.SetProp(
+                    "normalized_score", str(row.get("normalized_score", ""))
+                )
                 chosen_mol.SetProp("dlg_path", str(row[dlg_col]))
                 chosen_mol.SetProp("score_type", score_col)
                 if chosen_rmsd is not None:
@@ -402,8 +426,9 @@ class DockingAnalyzer:
                 count += 1
 
             except Exception as e:
-                print(f"  [error] Failed to extract pose for {row.get('smiles', '?')}: {e}")
+                print(
+                    f"  [error] Failed to extract pose for {row.get('smiles', '?')}: {e}"
+                )
 
         writer.close()
         print(f"Successfully saved {count} best poses to {output_path}")
-

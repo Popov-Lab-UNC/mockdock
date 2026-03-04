@@ -11,6 +11,7 @@ This script:
 Usage:
     python cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache
 """
+
 import argparse
 import time
 import yaml
@@ -58,11 +59,11 @@ def cache_all_chembl_data(
     cache_dir: Path,
     rate_limit_seconds: float = 1.0,
     retry_on_failure: bool = True,
-    max_retries: int = 3
+    max_retries: int = 3,
 ):
     """
     Fetch all ChEMBL data for all configs and cache it.
-    
+
     Args:
         config_dir: Directory containing YAML config files
         cache_dir: Directory to store cached CSV files
@@ -71,16 +72,18 @@ def cache_all_chembl_data(
         max_retries: Maximum number of retries for failed requests
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Get all unique (target_id, doc_id, assay_id) triplets
     triplets = get_unique_config_triplets(config_dir)
     print(f"Found {len(triplets)} unique (target, doc, assay) combinations to fetch")
-    
+
     # Track success/failure
     successful = []
     failed = []
-    
-    for idx, (target_id, doc_id, assay_id) in enumerate(sorted(triplets, key=lambda x: (x[0], x[1], x[2] or "")), 1):
+
+    for idx, (target_id, doc_id, assay_id) in enumerate(
+        sorted(triplets, key=lambda x: (x[0], x[1], x[2] or "")), 1
+    ):
         if assay_id:
             # New granular structure
             target_dir = cache_dir / target_id
@@ -89,43 +92,49 @@ def cache_all_chembl_data(
         else:
             # Legacy flat structure
             cache_file = cache_dir / f"{target_id}_{doc_id}.csv"
-        
+
         # Skip if already cached
         if cache_file.exists():
-            print(f"[{idx}/{len(triplets)}] Skipping {target_id}_{doc_id}{'_' + assay_id if assay_id else ''} (already cached)")
+            print(
+                f"[{idx}/{len(triplets)}] Skipping {target_id}_{doc_id}{'_' + assay_id if assay_id else ''} (already cached)"
+            )
             successful.append((target_id, doc_id, assay_id))
             continue
-        
+
         # Fetch with rate limiting and retries
-        print(f"[{idx}/{len(triplets)}] Fetching {target_id}_{doc_id}{'_' + assay_id if assay_id else ''}...")
+        print(
+            f"[{idx}/{len(triplets)}] Fetching {target_id}_{doc_id}{'_' + assay_id if assay_id else ''}..."
+        )
         retries = 0
         success = False
-        
+
         while retries <= max_retries:
             try:
                 # Rate limiting: wait before each request (except the first)
                 if idx > 1 or retries > 0:
                     time.sleep(rate_limit_seconds)
-                
-                df, stats = fetch_chembl_data(target_id, doc_id, assay_chembl_id=assay_id, return_stats=True)
-                
+
+                df, stats = fetch_chembl_data(
+                    target_id, doc_id, assay_chembl_id=assay_id, return_stats=True
+                )
+
                 if df.is_empty():
                     print(f"   Warning: No data returned")
                     failed.append((target_id, doc_id, assay_id, "No data"))
                     break
-                
+
                 # Save to cache
                 df.write_csv(cache_file)
                 print(f"   Saved {len(df)} compounds to {cache_file}")
                 successful.append((target_id, doc_id, assay_id))
                 success = True
                 break
-                
+
             except Exception as e:
                 retries += 1
                 error_msg = str(e)
                 print(f"   Error (attempt {retries}/{max_retries + 1}): {error_msg}")
-                
+
                 if retries > max_retries:
                     print(f"   Failed after {max_retries + 1} attempts")
                     failed.append((target_id, doc_id, error_msg))
@@ -133,21 +142,23 @@ def cache_all_chembl_data(
                         break
                 else:
                     # Exponential backoff for retries
-                    wait_time = rate_limit_seconds * (2 ** retries)
+                    wait_time = rate_limit_seconds * (2**retries)
                     print(f"   Waiting {wait_time:.1f}s before retry...")
                     time.sleep(wait_time)
-    
+
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Summary:")
     print(f"  Successful: {len(successful)}")
     print(f"  Failed: {len(failed)}")
-    
+
     if failed:
         print(f"\nFailed combinations:")
         for target_id, doc_id, assay_id, error in failed:
-            print(f"  {target_id}_{doc_id}{'_' + assay_id if assay_id else ''}: {error}")
-    
+            print(
+                f"  {target_id}_{doc_id}{'_' + assay_id if assay_id else ''}: {error}"
+            )
+
     # Create an index file for quick lookup
     index_file = cache_dir / "index.csv"
     index_data = [
@@ -167,40 +178,38 @@ def main():
         "--config-dir",
         type=Path,
         default=Path("configs"),
-        help="Directory containing YAML config files"
+        help="Directory containing YAML config files",
     )
     parser.add_argument(
         "--cache-dir",
         type=Path,
         default=Path("data/chembl_cache"),
-        help="Directory to store cached CSV files"
+        help="Directory to store cached CSV files",
     )
     parser.add_argument(
         "--rate-limit",
         type=float,
         default=1.0,
-        help="Seconds to wait between API requests (default: 1.0 for 1 req/sec)"
+        help="Seconds to wait between API requests (default: 1.0 for 1 req/sec)",
     )
     parser.add_argument(
-        "--no-retry",
-        action="store_true",
-        help="Don't retry failed requests"
+        "--no-retry", action="store_true", help="Don't retry failed requests"
     )
     parser.add_argument(
         "--max-retries",
         type=int,
         default=3,
-        help="Maximum number of retries for failed requests (default: 3)"
+        help="Maximum number of retries for failed requests (default: 3)",
     )
-    
+
     args = parser.parse_args()
-    
+
     cache_all_chembl_data(
         config_dir=args.config_dir,
         cache_dir=args.cache_dir,
         rate_limit_seconds=args.rate_limit,
         retry_on_failure=not args.no_retry,
-        max_retries=args.max_retries
+        max_retries=args.max_retries,
     )
 
 

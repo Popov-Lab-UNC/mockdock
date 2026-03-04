@@ -33,7 +33,7 @@ OUT_DIR=${SCRIPT_DIR}/outputs
 # num_init      : molecules sampled during initialisation
 # bottleneck    : elite population size fed to FingerprintGenetic each step
 # time_limit    : per-run wall-clock cap in seconds (empty = no limit)
-BUDGET=5000
+BUDGET=1000
 NUM_RUNS=1
 NUM_INIT=500
 BOTTLENECK=50

@@ -16,9 +16,9 @@ FCGMB-specific adaptations:
 from __future__ import annotations
 
 # ── Algorithm identity (only these three lines change between algorithm folders) ──
-ALGORITHM = "ppo"           # identifies this experiment in outputs/logs
-SCRIPT_NAME = "ppo"         # subfolder name under acegen-open/scripts/
-FUNCTION_NAME = "run_ppo"   # callable inside that script
+ALGORITHM = "ppo"  # identifies this experiment in outputs/logs
+SCRIPT_NAME = "ppo"  # subfolder name under acegen-open/scripts/
+FUNCTION_NAME = "run_ppo"  # callable inside that script
 
 import importlib.util
 import logging
@@ -46,6 +46,7 @@ BENCHMARKS = ["AKT1", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
 
 # ── Interface bridge ──────────────────────────────────────────────────────────
 
+
 class FCGMBTask:
     """Adapts FCGMBOracle to the (smiles: list) -> list[float] interface
     that AceGen algorithm functions expect, with a .finished property."""
@@ -65,6 +66,7 @@ class FCGMBTask:
 
 # ── Initial compound warmup ───────────────────────────────────────────────────
 
+
 def warmup_oracle(oracle: FCGMBOracle, output_dir: pathlib.Path, n: int = 25) -> None:
     """Pre-score a small set of initial compounds to warm up docking and
     establish baseline data.  Uses at most *n* oracle calls."""
@@ -78,8 +80,14 @@ def warmup_oracle(oracle: FCGMBOracle, output_dir: pathlib.Path, n: int = 25) ->
     smiles_list = subset[smiles_col].to_list()
 
     if "score" in subset.columns:
-        log.info("Using pre-computed docking scores for %d warmup compounds.", len(smiles_list))
-        scores = {row["canonical_smiles"]: row["score"] for row in subset.iter_rows(named=True)}
+        log.info(
+            "Using pre-computed docking scores for %d warmup compounds.",
+            len(smiles_list),
+        )
+        scores = {
+            row["canonical_smiles"]: row["score"]
+            for row in subset.iter_rows(named=True)
+        }
     else:
         log.info("Warming up oracle with %d initial compounds …", len(smiles_list))
         scores = oracle.score(smiles_list)
@@ -96,6 +104,7 @@ def warmup_oracle(oracle: FCGMBOracle, output_dir: pathlib.Path, n: int = 25) ->
 
 
 # ── Algorithm import ──────────────────────────────────────────────────────────
+
 
 def _import_algorithm_fn(acegen_root: pathlib.Path):
     """Import the algorithm function from the acegen-open scripts directory."""
@@ -117,9 +126,13 @@ def _import_algorithm_fn(acegen_root: pathlib.Path):
 
 # ── Config builder ────────────────────────────────────────────────────────────
 
-def _build_cfg(base_cfg, benchmark: str, seed: int, budget: int, output_dir: pathlib.Path):
+
+def _build_cfg(
+    base_cfg, benchmark: str, seed: int, budget: int, output_dir: pathlib.Path
+):
     """Merge base config with per-run dynamic values."""
     import datetime
+
     ts = datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S")
     save_dir = str(output_dir / f"{ALGORITHM}_{benchmark}_{ts}")
     os.makedirs(save_dir, exist_ok=True)
@@ -134,12 +147,15 @@ def _build_cfg(base_cfg, benchmark: str, seed: int, budget: int, output_dir: pat
         base_cfg.logger_backend = None
 
     with open(pathlib.Path(save_dir) / "config.yaml", "w") as fh:
-        yaml.dump(OmegaConf.to_container(base_cfg, resolve=True), fh, default_flow_style=False)
+        yaml.dump(
+            OmegaConf.to_container(base_cfg, resolve=True), fh, default_flow_style=False
+        )
 
     return base_cfg
 
 
 # ── Single benchmark run ──────────────────────────────────────────────────────
+
 
 def run_benchmark(
     benchmark: str,
@@ -174,9 +190,11 @@ def run_benchmark(
 
     # ── Fragment conditioning via oracle.fragment_smiles_with_dummies ────────
     if oracle.fragment_smiles_with_dummies:
-        log.info("Fragment SMILES with dummies: %s", oracle.fragment_smiles_with_dummies)
+        log.info(
+            "Fragment SMILES with dummies: %s", oracle.fragment_smiles_with_dummies
+        )
         # promptsmiles recognises bare `*` and `(*)` but not `[*]`; normalise here.
-        promptsmiles_smi = oracle.fragment_smiles_with_dummies.replace('[*]', '*')
+        promptsmiles_smi = oracle.fragment_smiles_with_dummies.replace("[*]", "*")
         if promptsmiles_smi != oracle.fragment_smiles_with_dummies:
             log.info("Normalised for PromptSMILES: %s", promptsmiles_smi)
         with open_dict(cfg):
@@ -185,12 +203,14 @@ def run_benchmark(
         log.warning(
             "fragment_smiles_with_dummies not set for %s — running without scaffold conditioning. "
             "Add it to fcgmb/configs/%s.yaml to enable PromptSMILES.",
-            benchmark, benchmark,
+            benchmark,
+            benchmark,
         )
 
     run_fn = _import_algorithm_fn(acegen_root)
 
     from acegen.script_helpers import set_seed
+
     set_seed(seed)
 
     task = FCGMBTask(oracle)
@@ -205,27 +225,48 @@ def run_benchmark(
         oracle.save_metrics(extra={"model": f"acegen-{ALGORITHM}", "seed": seed})
         log.info(
             "Benchmark %s complete. Budget used: %d/%d, rounds: %d",
-            benchmark, oracle.budget_used, oracle.max_budget, oracle.generation_round,
+            benchmark,
+            oracle.budget_used,
+            oracle.max_budget,
+            oracle.generation_round,
         )
     torch.cuda.empty_cache()
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
+
 @click.command()
-@click.option("--benchmark", "benchmarks", multiple=True,
-              type=click.Choice(BENCHMARKS, case_sensitive=False),
-              help="Benchmark(s) to run. Defaults to all six.")
-@click.option("--budget", default=1000, show_default=True,
-              help="Maximum oracle (docking) calls per benchmark.")
-@click.option("--seed", default=0, show_default=True,
-              help="Random seed.")
-@click.option("--out", default=None,
-              help="Output directory root. Defaults to <script_dir>/outputs.")
-@click.option("--acegen-root", default=None,
-              help="Path to the acegen-open repository. Auto-detected if not given.")
-@click.option("--n-warmup", default=25, show_default=True,
-              help="Number of initial compounds to pre-score as oracle warmup (0 to skip).")
+@click.option(
+    "--benchmark",
+    "benchmarks",
+    multiple=True,
+    type=click.Choice(BENCHMARKS, case_sensitive=False),
+    help="Benchmark(s) to run. Defaults to all six.",
+)
+@click.option(
+    "--budget",
+    default=1000,
+    show_default=True,
+    help="Maximum oracle (docking) calls per benchmark.",
+)
+@click.option("--seed", default=0, show_default=True, help="Random seed.")
+@click.option(
+    "--out",
+    default=None,
+    help="Output directory root. Defaults to <script_dir>/outputs.",
+)
+@click.option(
+    "--acegen-root",
+    default=None,
+    help="Path to the acegen-open repository. Auto-detected if not given.",
+)
+@click.option(
+    "--n-warmup",
+    default=25,
+    show_default=True,
+    help="Number of initial compounds to pre-score as oracle warmup (0 to skip).",
+)
 def main(benchmarks, budget, seed, out, acegen_root, n_warmup):
     """Run AceGen-PPO against FCGMB benchmarks."""
     benchmarks = list(benchmarks) if benchmarks else BENCHMARKS

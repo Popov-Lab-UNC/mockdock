@@ -5,17 +5,37 @@ import tempfile
 import os
 import sys
 
+
 class TestAutoDockGPUOracleOptimized(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Patch sys.modules to avoid missing dependency errors during import
         modules_to_mock = [
-            "polars", "rdkit", "rdkit.Chem", "rdkit.Chem.MolStandardize",
-            "rdkit.RDLogger", "vina", "chembl_webresource_client",
-            "meeko", "matplotlib", "matplotlib.pyplot", "seaborn",
-            "scipy", "scipy.stats", "gemmi", "prody", "molscrub",
-            "pyyaml", "tqdm", "aiohttp", "asttokens", "comm",
-            "requests", "numpy", "pandas", "yaml"
+            "polars",
+            "rdkit",
+            "rdkit.Chem",
+            "rdkit.Chem.MolStandardize",
+            "rdkit.RDLogger",
+            "vina",
+            "chembl_webresource_client",
+            "meeko",
+            "matplotlib",
+            "matplotlib.pyplot",
+            "seaborn",
+            "scipy",
+            "scipy.stats",
+            "gemmi",
+            "prody",
+            "molscrub",
+            "pyyaml",
+            "tqdm",
+            "aiohttp",
+            "asttokens",
+            "comm",
+            "requests",
+            "numpy",
+            "pandas",
+            "yaml",
         ]
 
         cls.mocked_modules = {name: MagicMock() for name in modules_to_mock}
@@ -23,11 +43,14 @@ class TestAutoDockGPUOracleOptimized(unittest.TestCase):
         cls.modules_patcher.start()
 
         # Ensure 'fcgmb' is in path
-        sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+        sys.path.insert(
+            0, os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        )
 
         # Now we can safely import
         try:
             from fcgmb.docking import AutoDockGPUOracle
+
             cls.AutoDockGPUOracle = AutoDockGPUOracle
         except ImportError as e:
             print(f"Import error in test setup: {e}")
@@ -88,6 +111,7 @@ class TestAutoDockGPUOracleOptimized(unittest.TestCase):
             with open(filelist_path, "r") as f:
                 lines = f.read().splitlines()
                 self.assertEqual(lines[0], "rec.maps.fld")
+
 
 if __name__ == "__main__":
     unittest.main()

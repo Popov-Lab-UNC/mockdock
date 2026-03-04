@@ -30,9 +30,17 @@ from .ligand_prep import LigandPreparer
 def _detect_gpus() -> int:
     """Detect available NVIDIA GPUs via nvidia-smi."""
     try:
-        result = subprocess.run(['nvidia-smi', '-L'], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(
+            ["nvidia-smi", "-L"], capture_output=True, text=True, timeout=5
+        )
         if result.returncode == 0:
-            return len([line for line in result.stdout.splitlines() if line.strip().startswith('GPU')])
+            return len(
+                [
+                    line
+                    for line in result.stdout.splitlines()
+                    if line.strip().startswith("GPU")
+                ]
+            )
     except (subprocess.SubprocessError, FileNotFoundError):
         pass
     return 0
@@ -77,7 +85,7 @@ class FCGMBOracle:
         self.max_budget = budget
         self.budget_used = 0
         self._generation_round = 0
-        self.pdb_id: Optional[str] = None   # set after config load below
+        self.pdb_id: Optional[str] = None  # set after config load below
         self.n_cpus = n_cpus or multiprocessing.cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else _detect_gpus()
         self.results_df = pl.DataFrame()
@@ -140,7 +148,9 @@ class FCGMBOracle:
         # data downloads. Defaults to ~/.fcgmb. Only created on first actual use.
         # run_dir: all per-run outputs (poses, CSVs, YAML, metrics, SDF). Lives in CWD
         # (or wherever the caller sets it) so results are easy to find.
-        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".fcgmb"
+        _scratch = (
+            Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".fcgmb"
+        )
         _pkg = Path(__file__).parent
         self._pkg_bioactivity_dir = _pkg / "bioactivity_data"
         self._pkg_grids_dir = _pkg / "grids"
@@ -280,17 +290,22 @@ class FCGMBOracle:
         skipped_results = []
 
         for smi in smiles_list:
-            if self._require_fragment_match and not self._docking_analyzer.check_2d_fragment_match(smi):
-                skipped_results.append({
-                    "smiles": smi,
-                    "docking_score": float("nan"),
-                    "normalized_score": 0.0,
-                    "valid_pose_found": False,
-                    "dlg_path": None,
-                    "best_any_score": float("nan"),
-                    "skip_reason": "2D fragment mismatch",
-                    "n_conformers": 0,
-                })
+            if (
+                self._require_fragment_match
+                and not self._docking_analyzer.check_2d_fragment_match(smi)
+            ):
+                skipped_results.append(
+                    {
+                        "smiles": smi,
+                        "docking_score": float("nan"),
+                        "normalized_score": 0.0,
+                        "valid_pose_found": False,
+                        "dlg_path": None,
+                        "best_any_score": float("nan"),
+                        "skip_reason": "2D fragment mismatch",
+                        "n_conformers": 0,
+                    }
+                )
             else:
                 valid_compounds.append(smi)
 
@@ -359,7 +374,11 @@ class FCGMBOracle:
                                 best_dlg = str(dlg_path)
                                 best_pose_idx = best_a_idx
 
-                if valid_pose_found and self._low_score is not None and self._high_score is not None:
+                if (
+                    valid_pose_found
+                    and self._low_score is not None
+                    and self._high_score is not None
+                ):
                     denom = self._low_score - self._high_score
                     if abs(denom) > 1e-6:
                         best_norm = (self._low_score - best_valid) / denom
@@ -367,17 +386,19 @@ class FCGMBOracle:
                         best_norm = 1.0 if best_valid <= self._high_score else 0.0
 
                 final_scores[smi] = best_norm
-                batch_results.append({
-                    "smiles": smi,
-                    "docking_score": best_valid,
-                    "normalized_score": best_norm,
-                    "valid_pose_found": valid_pose_found,
-                    "dlg_path": best_dlg,
-                    "pose_index": best_pose_idx,
-                    "best_any_score": best_any,
-                    "skip_reason": None,
-                    "n_conformers": len(states),
-                })
+                batch_results.append(
+                    {
+                        "smiles": smi,
+                        "docking_score": best_valid,
+                        "normalized_score": best_norm,
+                        "valid_pose_found": valid_pose_found,
+                        "dlg_path": best_dlg,
+                        "pose_index": best_pose_idx,
+                        "best_any_score": best_any,
+                        "skip_reason": None,
+                        "n_conformers": len(states),
+                    }
+                )
 
             self._total_analysis_time += time.time() - t0_analysis
 
@@ -414,8 +435,7 @@ class FCGMBOracle:
             output_path = Path(output_path)
 
         top_df = (
-            self.results_df
-            .filter(pl.col("skip_reason").is_null())
+            self.results_df.filter(pl.col("skip_reason").is_null())
             .sort("normalized_score", descending=True)
             .head(n)
         )
@@ -441,6 +461,7 @@ class FCGMBOracle:
             List of RDKit Mol objects with docked coordinates.
         """
         from meeko import PDBQTMolecule, RDKitMolCreate
+
         if self.results_df.is_empty():
             return []
 
@@ -448,8 +469,7 @@ class FCGMBOracle:
             df = self.results_df.filter(pl.col("smiles") == smiles)
         else:
             df = (
-                self.results_df
-                .filter(pl.col("skip_reason").is_null())
+                self.results_df.filter(pl.col("skip_reason").is_null())
                 .sort("normalized_score", descending=True)
                 .head(top_n)
             )
@@ -461,7 +481,9 @@ class FCGMBOracle:
                 continue
             try:
                 is_dlg = pose_file.suffix.lower() == ".dlg"
-                pdbqt_mol = PDBQTMolecule.from_file(str(pose_file), is_dlg=is_dlg, skip_typing=True)
+                pdbqt_mol = PDBQTMolecule.from_file(
+                    str(pose_file), is_dlg=is_dlg, skip_typing=True
+                )
                 rdkit_mols = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
                 if rdkit_mols:
                     best = rdkit_mols[0]
@@ -483,8 +505,11 @@ class FCGMBOracle:
         Returns:
             Path to the written metrics file.
         """
-        n_docked = len(self.results_df.filter(pl.col("skip_reason").is_null())) \
-            if not self.results_df.is_empty() else 0
+        n_docked = (
+            len(self.results_df.filter(pl.col("skip_reason").is_null()))
+            if not self.results_df.is_empty()
+            else 0
+        )
         n_total = len(self.results_df) if not self.results_df.is_empty() else 0
 
         metrics: dict = {
@@ -531,7 +556,9 @@ class FCGMBOracle:
         print(f"[FCGMB] Backend:   {self._resolved_backend.upper()}")
         print(f"[FCGMB] Hardware:  {self.n_cpus} CPUs, {self.n_gpus} GPUs")
         if self._resolved_backend == "vina":
-            print(f"[FCGMB] Vina exhaustiveness: {self._backend_config['vina_exhaustiveness']}")
+            print(
+                f"[FCGMB] Vina exhaustiveness: {self._backend_config['vina_exhaustiveness']}"
+            )
         print(f"[FCGMB] {sep}")
 
     def _get_full_data_and_threshold(self) -> Tuple[pl.DataFrame, float, str]:
@@ -554,18 +581,24 @@ class FCGMBOracle:
                 df = pl.read_csv(pkg_file)
 
             if df.is_empty():
-                cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
+                cache_file = (
+                    self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
+                )
                 if cache_file.exists():
                     print(f"[FCGMB] Loading cached ChEMBL data from {cache_file.name}")
                     df = pl.read_csv(cache_file)
 
             if df.is_empty():
-                print(f"[FCGMB] Downloading bioactivity data from ChEMBL for {self._target_id}...")
+                print(
+                    f"[FCGMB] Downloading bioactivity data from ChEMBL for {self._target_id}..."
+                )
                 df = fetch_chembl_data(self._target_id, self._doc_id)
                 if not df.is_empty():
                     # Lazily create the cache dir before first write
                     self._bioactivity_data_dir.mkdir(parents=True, exist_ok=True)
-                    cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
+                    cache_file = (
+                        self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
+                    )
                     df.write_csv(cache_file)
                     print(f"[FCGMB] Saved ChEMBL data to {cache_file}")
 
@@ -605,7 +638,9 @@ class FCGMBOracle:
         if requested == "autodock_gpu":
             if adgpu_ok:
                 return "autodock_gpu"
-            print(f"[FCGMB] Warning: AutoDock-GPU not found ('{adgpu_exe}'). Falling back to Vina.")
+            print(
+                f"[FCGMB] Warning: AutoDock-GPU not found ('{adgpu_exe}'). Falling back to Vina."
+            )
             return "vina"
         if requested == "vina":
             return "vina"
@@ -635,7 +670,9 @@ class FCGMBOracle:
                 print(f"[FCGMB] Using scratch grids for {self.pdb_id}")
 
         if not fld_files:
-            print(f"[FCGMB] No pre-built grid found — preparing receptor for {self.pdb_id}...")
+            print(
+                f"[FCGMB] No pre-built grid found — preparing receptor for {self.pdb_id}..."
+            )
             try:
                 from .receptor import ReceptorPreparer
             except ImportError as e:
@@ -758,9 +795,10 @@ class FCGMBOracle:
         # ── YAML (all SMILES, sorted by normalized_score DESC) ──────────
         sorted_results = sorted(
             self._yaml_results,
-            key=lambda r: (r.get("normalized_score") or 0.0),
+            key=lambda r: r.get("normalized_score") or 0.0,
             reverse=True,
         )
+
         # Convert NaN / None to null-friendly values for YAML
         def _clean(v):
             if isinstance(v, float) and math.isnan(v):
@@ -780,15 +818,25 @@ class FCGMBOracle:
         ]
         yaml_path = self._run_dir / "results.yaml"
         with open(yaml_path, "w") as f:
-            _yaml_module.dump(yaml_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            _yaml_module.dump(
+                yaml_data,
+                f,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            )
 
         # ── Status JSON (summary for live monitoring) ────────────────────
         docked_df = self.results_df.filter(pl.col("skip_reason").is_null())
         n_total = len(self.results_df)
         n_docked = len(docked_df)
-        n_skipped_2d = len(self.results_df.filter(pl.col("skip_reason") == "2D fragment mismatch"))
+        n_skipped_2d = len(
+            self.results_df.filter(pl.col("skip_reason") == "2D fragment mismatch")
+        )
         best_score = float(docked_df["normalized_score"].max()) if n_docked > 0 else 0.0
-        best_docking = float(docked_df["docking_score"].min()) if n_docked > 0 else float("nan")
+        best_docking = (
+            float(docked_df["docking_score"].min()) if n_docked > 0 else float("nan")
+        )
 
         status = {
             "benchmark": self.benchmark_name,
