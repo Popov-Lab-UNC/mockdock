@@ -9,6 +9,7 @@ from fcgmb.receptor import ReceptorPreparer
 from fcgmb.ligand_prep import LigandPreparer
 from fcgmb.analysis import DockingAnalyzer
 from fcgmb.oracle import FCGMBOracle
+from fcgmb.utils import check_2d_match
 
 
 def test_preparation_pipeline():
@@ -92,7 +93,7 @@ def test_preparation_pipeline():
         # 5. Verify 2D Filtering
         print(f"\n[5] Verifying 2D filtering")
         for smi in test_smiles:
-            mol = check_validity(smi)
+            mol = Chem.MolFromSmiles(smi)
             is_valid = mol is not None
             has_match = check_2d_match(mol, analyzer.fragment_mol) if is_valid else False
             print(f"SMILES: {smi} valid={is_valid} matches fragment: {has_match}")

@@ -14,6 +14,7 @@ import yaml
 
 # Third-party imports (yaml used for results.yaml output)
 import yaml as _yaml_module
+from rdkit import Chem
 
 # Local imports
 from .analysis import DockingAnalyzer
@@ -22,7 +23,6 @@ from .docking import AutoDockGPUOracle, AutoDockVinaOracle
 from .ligand_prep import LigandPreparer
 from .utils import (
     check_2d_match,
-    check_validity,
     detect_gpus,
     resolve_backend,
     standardize_smiles,
@@ -43,7 +43,7 @@ class FCGMBOracle:
     def __init__(
         self,
         benchmark_name: str,
-        budget: int = 5000,
+        budget: int = 1000,
         docking_backend: str = "auto",
         scratch_dir: Optional[Union[str, Path]] = None,
         run_dir: Optional[Union[str, Path]] = None,
@@ -321,7 +321,7 @@ class FCGMBOracle:
                 skipped_results.append(self._create_skipped_result(smi, "invalid molecule"))
                 continue
 
-            mol = check_validity(canonical)
+            mol = Chem.MolFromSmiles(canonical)
             if self._require_fragment_match and not check_2d_match(
                 mol, self._docking_analyzer.fragment_mol
             ):

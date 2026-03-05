@@ -76,13 +76,6 @@ def resolve_backend(
 # ── RDKit chemistry utilities ─────────────────────────────────────────────────
 
 
-def check_validity(smiles: str) -> Optional[Chem.Mol]:
-    """Parse a SMILES string and return the RDKit Mol, or None if invalid.
-
-    This is the single source of truth for molecule validity in the pipeline.
-    All sanitization (including kekulization) is performed by RDKit here.
-    """
-    return Chem.MolFromSmiles(smiles)
 
 
 def standardize_smiles(smiles: str) -> Optional[str]:

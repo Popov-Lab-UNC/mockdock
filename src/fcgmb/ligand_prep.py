@@ -27,10 +27,6 @@ class LigandPreparer:
         self.generate_isomers = generate_isomers
 
     def _prepare_single_ligand(self, args: tuple[str, int, Path, str]) -> list[Path]:
-        """
-        Prepare multiple ligand PDBQTs (states/conformers) for a single SMILES using Scrub and Meeko.
-        Returns a list of written file paths.
-        """
         smiles, idx, pdbqt_dir, batch_prefix = args
         results = []
 
@@ -40,27 +36,11 @@ class LigandPreparer:
             if mol is None:
                 return []
 
-            # 2. Analyze Stereo
-            input_iso_smiles = Chem.MolToSmiles(mol, isomericSmiles=True, canonical=True)
-            centers = Chem.FindMolChiralCenters(mol, includeUnassigned=False)
-            has_stereo = bool(centers)
-
-            # 3. Generate States (Scrub)
+            # 2. Generate States (Scrub)
             scrubber = Scrub(ph_low=self.ph_low, ph_high=self.ph_high)
-            mol_states = []
-
+            
             try:
-                scrub_results = list(scrubber(mol))
-                if (not self.generate_isomers) and has_stereo:
-                    filtered_states = []
-                    for s_mol in scrub_results:
-                        s_iso = Chem.MolToSmiles(s_mol, isomericSmiles=True, canonical=True)
-                        if input_iso_smiles == s_iso:
-                            filtered_states.append(s_mol)
-
-                    mol_states = filtered_states if filtered_states else [mol]
-                else:
-                    mol_states = scrub_results
+                mol_states = list(scrubber(mol))
             except Exception as e:
                 print(f"Scrub failed for {smiles}: {e}")
                 mol_states = [mol]
@@ -68,17 +48,20 @@ class LigandPreparer:
             if len(mol_states) > 16:
                 mol_states = mol_states[:16]
 
-            # 4. 3D Embedding and Meeko Prep
+            # 3. 3D Embedding, Minimization, and Meeko Prep
             state_counter = 0
             preparator = MoleculePreparation()
 
             for mol_state in mol_states:
                 try:
+                    # Add hydrogens appropriate for the specific tautomer/protonation state
                     mol_state = Chem.AddHs(mol_state)
+                    
                     params = rdDistGeom.ETKDGv3()
                     params.randomSeed = 42
                     params.useSmallRingTorsions = True
 
+                    # Embed 3D coordinates
                     res = rdDistGeom.EmbedMultipleConfs(mol_state, numConfs=1, params=params)
                     if not res:
                         params.useRandomCoords = True
@@ -87,6 +70,16 @@ class LigandPreparer:
                     if not res:
                         continue
 
+                    # Energy Minimization using MMFF94 force field
+                    try:
+                        if AllChem.MMFFHasAllMoleculeParams(mol_state):
+                            AllChem.MMFFOptimizeMolecule(mol_state, maxIters=500, nonBondedThresh=100.0)
+                        else:
+                            AllChem.UFFOptimizeMolecule(mol_state, maxIters=500)
+                    except Exception as e:
+                        print(f"Minimization failed for {smiles} state {state_counter}: {e}")
+
+                    # Prepare for Docking
                     mol_setups = preparator.prepare(mol_state)
                     for setup in mol_setups:
                         pdbqt_string, is_ok, error_message = PDBQTWriterLegacy().write_string(setup)
@@ -96,14 +89,19 @@ class LigandPreparer:
                             fpath.write_text(pdbqt_string)
                             results.append(fpath)
                             state_counter += 1
+                        else:
+                            print(f"Meeko failed to write PDBQT for {smiles}: {error_message}")
 
                     if state_counter >= 32:
                         break
-                except Exception:
+                        
+                except Exception as e:
+                    print(f"Processing failed for a state of {smiles}: {e}")
                     continue
 
             return results
-        except Exception:
+        except Exception as e:
+            print(f"Fatal error preparing {smiles}: {e}")
             return []
 
     def prepare_batch(

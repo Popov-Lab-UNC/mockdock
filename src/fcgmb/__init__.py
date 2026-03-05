@@ -6,7 +6,6 @@ from .oracle import FCGMBOracle
 from .utils import (
     assign_bond_orders_from_template,
     check_2d_match,
-    check_validity,
     detect_gpus,
     fetch_ligand_expo_sdf,
     plot_activity_distribution,
@@ -42,7 +41,6 @@ __all__ = [
     "FCGMBOracle",
     "detect_gpus",
     "resolve_backend",
-    "check_validity",
     "standardize_smiles",
     "check_2d_match",
 ]

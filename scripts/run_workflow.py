@@ -21,13 +21,14 @@ from typing import Optional, Union
 # Third-party imports
 import polars as pl
 import yaml
-from rdkit import RDLogger
+from rdkit import Chem, RDLogger
 
 # Allow importing from src/
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Local imports (using absolute imports since this is a script)
 from typing import cast
+
 from fcgmb.analysis import DockingAnalyzer, aggregate_results_per_id
 from fcgmb.data import fetch_chembl_data
 from fcgmb.docking import AutoDockGPUOracle, AutoDockVinaOracle
@@ -35,7 +36,6 @@ from fcgmb.ligand_prep import LigandPreparer
 from fcgmb.receptor import ReceptorPreparer
 from fcgmb.utils import (
     check_2d_match,
-    check_validity,
     detect_gpus,
     plot_docking_results,
     resolve_backend,
@@ -293,7 +293,7 @@ def run_docking_workflow(
             valid_smiles = [
                 s
                 for s in all_smiles
-                if (m := check_validity(s)) is not None and check_2d_match(m, analyzer.fragment_mol)
+                if (m := Chem.MolFromSmiles(s)) is not None and check_2d_match(m, analyzer.fragment_mol)
             ]
             print(f"   Compounds matching 2D fragment '{fragment_smiles}': {len(valid_smiles)}")
             result.n_compounds_matched_2d = len(valid_smiles)

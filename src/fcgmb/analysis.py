@@ -6,7 +6,7 @@ import polars as pl
 from meeko import PDBQTMolecule, RDKitMolCreate
 from rdkit import Chem
 
-from .utils import check_2d_match, check_validity, get_robust_match
+from .utils import get_robust_match
 
 
 def aggregate_results_per_id(
