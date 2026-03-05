@@ -38,7 +38,7 @@ def is_valid_mcs(smiles: str) -> bool:
             return False
 
         return True
-    except:
+    except Exception:
         return False
 
 

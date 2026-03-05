@@ -1,14 +1,12 @@
-import os
-import shutil
 import tempfile
 from pathlib import Path
-import polars as pl
+
 from rdkit import Chem
 
-from fcgmb.receptor import ReceptorPreparer
-from fcgmb.ligand_prep import LigandPreparer
 from fcgmb.analysis import DockingAnalyzer
+from fcgmb.ligand_prep import LigandPreparer
 from fcgmb.oracle import FCGMBOracle
+from fcgmb.receptor import ReceptorPreparer
 from fcgmb.utils import check_2d_match
 
 
@@ -28,7 +26,7 @@ def test_preparation_pipeline():
         oracle = FCGMBOracle(benchmark_name, scratch_dir=tmp_path)
 
         # 2. Test Receptor Preparation
-        print(f"\n[2] Testing ReceptorPreparer")
+        print("\n[2] Testing ReceptorPreparer")
         # We need to make sure the executables are in the path or mock them if they are not.
         # For a real integration test, we assume they are present.
         try:
@@ -49,7 +47,7 @@ def test_preparation_pipeline():
         print(f"Successfully created grid file: {fld_path}")
 
         # 3. Test Ligand Preparation
-        print(f"\n[3] Testing LigandPreparer")
+        print("\n[3] Testing LigandPreparer")
         ligand_preparer = LigandPreparer(n_cpus=2)
         test_smiles = [
             "CN1C(=O)CN=C(c2ccccc2)c2cc(Cl)ccc21",
@@ -71,7 +69,7 @@ def test_preparation_pipeline():
         print(f"Successfully prepared {len(test_smiles)} ligands.")
 
         # 4. Test Docking Analysis Initialization
-        print(f"\n[4] Testing DockingAnalyzer")
+        print("\n[4] Testing DockingAnalyzer")
         grid_dir = tmp_path / "grids" / oracle.pdb_id
         ref_path = grid_dir / f"{oracle.pdb_id}_ligand.pdb"
 
@@ -92,7 +90,7 @@ def test_preparation_pipeline():
             )
 
         # 5. Verify 2D Filtering
-        print(f"\n[5] Verifying 2D filtering")
+        print("\n[5] Verifying 2D filtering")
         for smi in test_smiles:
             mol = Chem.MolFromSmiles(smi)
             is_valid = mol is not None

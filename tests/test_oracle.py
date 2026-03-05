@@ -1,13 +1,12 @@
-import unittest
-from unittest.mock import MagicMock, patch
-import polars as pl
-from pathlib import Path
 import tempfile
-import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import polars as pl
 
 # Mock imports before fcgmb.oracle is imported if needed,
 # but here we can patch 'fcgmb.oracle.fetch_chembl_data'
-
 from fcgmb.oracle import FCGMBOracle
 
 

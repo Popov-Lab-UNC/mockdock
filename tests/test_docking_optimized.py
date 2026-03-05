@@ -1,9 +1,9 @@
-import unittest
-from unittest.mock import MagicMock, patch
-from pathlib import Path
-import tempfile
 import os
 import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 
 class TestAutoDockGPUOracleOptimized(unittest.TestCase):
@@ -108,7 +108,7 @@ class TestAutoDockGPUOracleOptimized(unittest.TestCase):
             # Check filelist.txt
             filelist_path = adgpu_tmp / "filelist.txt"
             self.assertTrue(filelist_path.exists())
-            with open(filelist_path, "r") as f:
+            with open(filelist_path) as f:
                 lines = f.read().splitlines()
                 self.assertEqual(lines[0], "rec.maps.fld")
 

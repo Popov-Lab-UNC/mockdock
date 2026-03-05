@@ -54,7 +54,7 @@ def is_druglike(smiles: str) -> bool:
             return False
 
         return True
-    except:
+    except Exception:
         return False
 
 

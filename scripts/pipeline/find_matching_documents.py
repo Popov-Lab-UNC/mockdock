@@ -51,7 +51,7 @@ def check_api_status():
     try:
         r = requests.get("https://www.ebi.ac.uk/chembl/api/data/status", timeout=5)
         return r.status_code == 200
-    except:
+    except Exception:
         return False
 
 
@@ -62,7 +62,7 @@ def get_fingerprint(smiles: str, fpgen):
         if mol is None:
             return None
         return fpgen.GetFingerprint(mol)
-    except:
+    except Exception:
         return None
 
 

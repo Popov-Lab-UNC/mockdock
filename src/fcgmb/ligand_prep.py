@@ -5,7 +5,7 @@ from typing import Optional
 from meeko import MoleculePreparation, PDBQTWriterLegacy
 from molscrub import Scrub
 from rdkit import Chem, RDLogger
-from rdkit.Chem import rdDistGeom
+from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 
 # Silence RDKit noise
 RDLogger.DisableLog("rdApp.*")
@@ -72,10 +72,10 @@ class LigandPreparer:
 
                     # Energy Minimization using MMFF94 force field
                     try:
-                        if AllChem.MMFFHasAllMoleculeParams(mol_state):
-                            AllChem.MMFFOptimizeMolecule(mol_state, maxIters=500, nonBondedThresh=100.0)
+                        if rdForceFieldHelpers.MMFFHasAllMoleculeParams(mol_state):
+                            rdForceFieldHelpers.MMFFOptimizeMolecule(mol_state, mmffVariant='MMFF94s', maxIters=200, nonBondedThresh=100.0)
                         else:
-                            AllChem.UFFOptimizeMolecule(mol_state, maxIters=500)
+                            rdForceFieldHelpers.UFFOptimizeMolecule(mol_state, maxIters=200)
                     except Exception as e:
                         print(f"Minimization failed for {smiles} state {state_counter}: {e}")
 
