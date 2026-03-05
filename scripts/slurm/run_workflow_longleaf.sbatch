@@ -3,9 +3,9 @@
 #SBATCH --partition=volta-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=40
 #SBATCH --mem=32G
-#SBATCH --time=3-00:00:00
+#SBATCH --time=11-00:00:00
 #SBATCH --output=benchmark_%j.log
 #SBATCH --error=benchmark_%j.err
 #SBATCH --mail-type=ALL
@@ -89,7 +89,7 @@ for config_file in generated_configs/*.yaml; do
 
         echo "Running: $config_file"
         echo "===================="
-        python -u run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" --cpus "${SLURM_CPUS_PER_TASK:-32}" --gpus "${SLURM_GPUS:-1}" --backend autodock_gpu --cache-dir "data/chembl_cache"
+        python -u scripts/run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" --cpus "${SLURM_CPUS_PER_TASK:-32}" --gpus "${SLURM_GPUS:-1}" --backend autodock_gpu --cache-dir "data/chembl_cache"
         echo ""
 done
 
