@@ -11,7 +11,11 @@
 # Step 4: Find ChEMBL documents matching crystal ligands (slow, ~2-4 hours per chunk)
 # Uses SLURM array jobs to parallelize
 
-cd /work/users/s/h/shuhang/benchmark
+# Ensure we are in the project root
+if [[ -z "${PROJECT_ROOT}" ]]; then
+    PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
+fi
+cd "$PROJECT_ROOT"
 source .venv/bin/activate
 
 mkdir -p data logs
@@ -27,7 +31,7 @@ echo "Processing targets $START to $END (of $TOTAL_TARGETS unique)"
 
 # Configure: Include both patents and publications by default
 # Add --no-patents or --no-publications to exclude
-python pipeline/find_matching_documents.py \
+python scripts/pipeline/find_matching_documents.py \
     --input data/chembl_pdb_druglike.csv \
     --output data/chembl_docking_benchmark.csv \
     --min-compounds 20 \

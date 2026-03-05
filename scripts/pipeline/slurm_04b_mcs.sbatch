@@ -11,9 +11,13 @@
 # Step 4b: Compute Maximum Common Substructure (MCS) for documents
 # Uses SLURM array jobs to parallelize
 # After all array jobs complete, run merge:
-#   python pipeline/compute_mcs.py --merge --input data/mcs_results.csv --output data/mcs_results.csv
+#   python scripts/pipeline/compute_mcs.py --merge --input data/mcs_results.csv --output data/mcs_results.csv
 
-cd /work/users/s/h/shuhang/benchmark
+# Ensure we are in the project root
+if [[ -z "${PROJECT_ROOT}" ]]; then
+    PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
+fi
+cd "$PROJECT_ROOT"
 source .venv/bin/activate
 
 mkdir -p data logs
@@ -22,7 +26,7 @@ mkdir -p data logs
 # Ensure the merged input exists for step 4b.
 if [ ! -f data/chembl_docking_benchmark.csv ] || [ ! -s data/chembl_docking_benchmark.csv ]; then
     echo "Merged benchmark file missing; merging step 4 chunks..."
-    python pipeline/merge_results.py \
+    python scripts/pipeline/merge_results.py \
         --pattern "data/intermediate/chembl_docking_benchmark/chunk_*.csv" \
         --output data/chembl_docking_benchmark.csv \
         --dedup-cols target_chembl_id pdb_id document_chembl_id
@@ -62,7 +66,7 @@ END=$((START + CHUNK_SIZE))
 
 echo "Processing documents $START to $END (of $TOTAL_DOCS unique)"
 
-python pipeline/compute_mcs.py \
+python scripts/pipeline/compute_mcs.py \
     --input data/chembl_docking_benchmark.csv \
     --output data/mcs_results.csv \
     --max-compounds 100 \

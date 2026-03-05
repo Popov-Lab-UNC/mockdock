@@ -11,7 +11,11 @@
 # Step 2: Map UniProt to PDB (slow, ~1-2 hours per 500 targets)
 # Uses SLURM array jobs to parallelize
 
-cd /work/users/s/h/shuhang/benchmark
+# Ensure we are in the project root
+if [[ -z "${PROJECT_ROOT}" ]]; then
+    PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
+fi
+cd "$PROJECT_ROOT"
 source .venv/bin/activate
 
 mkdir -p data logs
@@ -26,7 +30,7 @@ END=$((START + CHUNK_SIZE))
 
 echo "Processing targets $START to $END (of $TOTAL_TARGETS)"
 
-python pipeline/map_pdb_ligands.py \
+python scripts/pipeline/map_pdb_ligands.py \
     --input data/chembl_targets.csv \
     --output data/chembl_pdb_map.csv \
     --start $START \

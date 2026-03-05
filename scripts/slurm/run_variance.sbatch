@@ -16,4 +16,4 @@ source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate cctbx
 source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
 
-python run_variance.py
+python /work/users/s/h/shuhang/benchmark/scripts/run_variance.py --config-dir /work/users/s/h/shuhang/benchmark/src/fcgmb/configs --iterations 5 --output-dir variance_runs

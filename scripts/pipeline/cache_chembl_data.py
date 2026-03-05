@@ -116,14 +116,14 @@ def cache_all_chembl_data(
                     target_id, doc_id, assay_chembl_id=assay_id, return_stats=True
                 )
 
-                if df.is_empty():
+                if stats.get("n_retrieved", 0) == 0:
                     print("   Warning: No data returned")
                     failed.append((target_id, doc_id, assay_id, "No data"))
                     break
 
-                # Save to cache
-                df.write_csv(cache_file)
-                print(f"   Saved {len(df)} compounds to {cache_file}")
+                # fetch_chembl_data already handles caching of raw data if cache_dir is provided
+                # or found. We don't want to overwrite that raw data with processed data here.
+                print(f"   Collected data for {target_id}_{doc_id} ({stats.get('n_retrieved', 0)} raw compounds)")
                 successful.append((target_id, doc_id, assay_id))
                 break
 

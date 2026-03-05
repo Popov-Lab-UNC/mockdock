@@ -30,6 +30,21 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
 from utils import get_chunk_output_path
 
+# Add project root and src directory for fcgmb imports
+project_root = Path(__file__).parent.parent.parent
+src_dir = project_root / "src"
+
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+try:
+    from fcgmb.utils import standardize_smiles
+except ImportError:
+    # Fallback to no-op if import fails
+    def standardize_smiles(s): return s
+
 
 def check_api_status():
     """Check if the ChEMBL API is responding."""
@@ -76,11 +91,11 @@ def fetch_assays_for_target(
             "molecule_chembl_id",
         )
 
-        # Group by (doc, assay)
-        assay_groups = defaultdict(list)
+        # Group by document, then by assay
+        doc_groups = defaultdict(lambda: defaultdict(list))
         doc_types = {}
 
-        for act in activities:
+        for act in tqdm(activities, desc="Grouping activities", leave=False):
             doc_id = act.get("document_chembl_id")
             assay_id = act.get("assay_chembl_id")
             src_id = act.get("src_id")
@@ -88,65 +103,69 @@ def fetch_assays_for_target(
             if not doc_id or not assay_id:
                 continue
 
-            # Identify source for your 'type' key
-            if src_id == 1:
-                doc_type = "literature"
-            else:
-                doc_type = "other"
-
-            assay_groups[(doc_id, assay_id)].append(act)
+            doc_type = "literature" if src_id == 1 else "other"
+            doc_groups[doc_id][assay_id].append(act)
             doc_types[doc_id] = doc_type
 
         results = {}
 
-        for (doc_id, assay_id), acts in assay_groups.items():
-            # Extract smiles and pchembl
-            smiles_list = []
-            pchembl_by_smiles = defaultdict(list)
+        for doc_id, doc_assays in doc_groups.items():
+            # Check min compounds threshold (at document level after standardization and deduplication)
+            doc_smiles = set()
+            for acts in doc_assays.values():
+                for act in acts:
+                    smiles = act.get("canonical_smiles")
+                    if smiles:
+                        std_s = standardize_smiles(smiles)
+                        if std_s:
+                            doc_smiles.add(std_s)
 
-            # Prepare rows for cache
-            cache_rows = []
-
-            for act in acts:
-                smiles = act.get("canonical_smiles")
-                pchembl = act.get("pchembl_value")
-                mol_id = act.get("molecule_chembl_id")
-
-                if not smiles:
-                    continue
-
-                smiles_list.append(smiles)
-                if pchembl:
-                    pchembl_by_smiles[smiles].append(float(pchembl))
-
-                cache_rows.append(
-                    {
-                        "molecule_chembl_id": mol_id,
-                        "canonical_smiles": smiles,
-                        "pchembl_value": pchembl,
-                        "assay_chembl_id": assay_id,
-                        "document_chembl_id": doc_id,
-                        "target_chembl_id": target_chembl_id,
-                    }
-                )
-
-            # Check min compounds threshold (at assay level)
-            unique_smiles = set(smiles_list)
-            if len(unique_smiles) < min_compounds:
+            if len(doc_smiles) < min_compounds:
                 continue
 
-            # Save to cache
-            if cache_rows:
-                df_cache = pl.DataFrame(cache_rows)
-                write_assay_cache(
-                    cache_dir, target_chembl_id, doc_id, assay_id, df_cache
-                )
+            # Process assays in this document
+            for assay_id, acts in doc_assays.items():
+                smiles_list = []
+                pchembl_by_smiles = defaultdict(list)
+                cache_rows = []
 
-            results[(doc_id, assay_id)] = {
-                "type": doc_types.get(doc_id, "unknown"),
-                "smiles_list": list(unique_smiles),
-                "pchembl_by_smiles": pchembl_by_smiles,
-            }
+                for act in acts:
+                    smiles = act.get("canonical_smiles")
+                    pchembl = act.get("pchembl_value")
+                    mol_id = act.get("molecule_chembl_id")
+
+                    if not smiles:
+                        continue
+
+                    smiles_list.append(smiles)
+                    if pchembl:
+                        pchembl_by_smiles[smiles].append(float(pchembl))
+
+                    cache_rows.append(
+                        {
+                            "molecule_chembl_id": mol_id,
+                            "canonical_smiles": smiles,
+                            "pchembl_value": pchembl,
+                            "assay_chembl_id": assay_id,
+                            "document_chembl_id": doc_id,
+                            "target_chembl_id": target_chembl_id,
+                        }
+                    )
+
+                # Save to cache
+                if cache_rows:
+                    df_cache = pl.DataFrame(cache_rows)
+                    write_assay_cache(
+                        cache_dir, target_chembl_id, doc_id, assay_id, df_cache
+                    )
+
+                unique_smiles = set(smiles_list)
+                results[(doc_id, assay_id)] = {
+                    "type": doc_types.get(doc_id, "unknown"),
+                    "smiles_list": list(unique_smiles),
+                    "pchembl_by_smiles": pchembl_by_smiles,
+                    "n_compounds_in_doc": len(doc_smiles),
+                }
 
         return results
 
@@ -212,64 +231,79 @@ def fetch_assays_for_targets_sqlite(
     results_by_target = defaultdict(dict)
 
     for target_id, tdf in df.groupby("target_chembl_id"):
-        for (doc_id, assay_id), group in tdf.groupby(
-            ["document_chembl_id", "assay_chembl_id"]
-        ):
-            if pd.isna(doc_id) or pd.isna(assay_id):
+        # Group by document, then assay
+        doc_groups = tdf.groupby("document_chembl_id")
+
+        for doc_id, doc_df in doc_groups:
+            if pd.isna(doc_id):
                 continue
 
-            smiles_list = []
-            pchembl_by_smiles = defaultdict(list)
-            cache_rows = []
+            # Check min compounds threshold (at document level after standardization and deduplication)
+            doc_smiles = set()
+            for s in doc_df["canonical_smiles"].dropna():
+                std_s = standardize_smiles(s)
+                if std_s:
+                    doc_smiles.add(std_s)
 
-            src_id = (
-                group["src_id"].iloc[0]
-                if "src_id" in group.columns and not group["src_id"].isna().all()
-                else None
-            )
-            if src_id == 1:
-                doc_type = "literature"
-            elif src_id is None or pd.isna(src_id):
-                doc_type = "unknown"
-            else:
-                doc_type = "other"
+            if len(doc_smiles) < min_compounds:
+                continue
 
-            for _, row in group.iterrows():
-                smiles = row.get("canonical_smiles")
-                pchembl = row.get("pchembl_value")
-                mol_id = row.get("molecule_chembl_id")
-
-                if not smiles or pd.isna(smiles):
+            # Process assays in this document
+            for assay_id, assay_df in doc_df.groupby("assay_chembl_id"):
+                if pd.isna(assay_id):
                     continue
 
-                smiles_list.append(smiles)
-                if pchembl is not None and not pd.isna(pchembl):
-                    pchembl_by_smiles[smiles].append(float(pchembl))
+                smiles_list = []
+                pchembl_by_smiles = defaultdict(list)
+                cache_rows = []
 
-                cache_rows.append(
-                    {
-                        "molecule_chembl_id": mol_id,
-                        "canonical_smiles": smiles,
-                        "pchembl_value": pchembl,
-                        "assay_chembl_id": assay_id,
-                        "document_chembl_id": doc_id,
-                        "target_chembl_id": target_id,
-                    }
+                src_id = (
+                    assay_df["src_id"].iloc[0]
+                    if "src_id" in assay_df.columns
+                    and not assay_df["src_id"].isna().all()
+                    else None
                 )
+                if src_id == 1:
+                    doc_type = "literature"
+                elif src_id is None or pd.isna(src_id):
+                    doc_type = "unknown"
+                else:
+                    doc_type = "other"
 
-            unique_smiles = set(smiles_list)
-            if len(unique_smiles) < min_compounds:
-                continue
+                for _, row in assay_df.iterrows():
+                    smiles = row.get("canonical_smiles")
+                    pchembl = row.get("pchembl_value")
+                    mol_id = row.get("molecule_chembl_id")
 
-            if cache_rows:
-                df_cache = pl.DataFrame(cache_rows)
-                write_assay_cache(cache_dir, target_id, doc_id, assay_id, df_cache)
+                    if not smiles or pd.isna(smiles):
+                        continue
 
-            results_by_target[target_id][(doc_id, assay_id)] = {
-                "type": doc_type,
-                "smiles_list": list(unique_smiles),
-                "pchembl_by_smiles": pchembl_by_smiles,
-            }
+                    smiles_list.append(smiles)
+                    if pchembl is not None and not pd.isna(pchembl):
+                        pchembl_by_smiles[smiles].append(float(pchembl))
+
+                    cache_rows.append(
+                        {
+                            "molecule_chembl_id": mol_id,
+                            "canonical_smiles": smiles,
+                            "pchembl_value": pchembl,
+                            "assay_chembl_id": assay_id,
+                            "document_chembl_id": doc_id,
+                            "target_chembl_id": target_id,
+                        }
+                    )
+
+                if cache_rows:
+                    df_cache = pl.DataFrame(cache_rows)
+                    write_assay_cache(cache_dir, target_id, doc_id, assay_id, df_cache)
+
+                unique_smiles = set(smiles_list)
+                results_by_target[target_id][(doc_id, assay_id)] = {
+                    "type": doc_type,
+                    "smiles_list": list(unique_smiles),
+                    "pchembl_by_smiles": pchembl_by_smiles,
+                    "n_compounds_in_doc": len(doc_smiles),
+                }
 
     return results_by_target
 
@@ -477,6 +511,7 @@ def main():
                             "assay_chembl_id": assay_id,
                             "document_type": doc_type,
                             "n_compounds_in_assay": n_compounds,
+                            "n_compounds_in_doc": assay_data.get("n_compounds_in_doc"),
                             "n_matches": len(matches),
                             "best_match_smiles": best_match_smiles,
                             "best_similarity": best_similarity,

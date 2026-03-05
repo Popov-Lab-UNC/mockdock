@@ -60,6 +60,9 @@ def fetch_chembl_data(
     """
 
     def process_data(temp_df):
+        # 0. Initial raw count
+        n_retrieved = len(temp_df)
+
         # 1. Require pchembl_value (unit-agnostic)
         if "pchembl_value" not in temp_df.columns:
             # If it's cached data, it should have it, but just in case
@@ -94,7 +97,7 @@ def fetch_chembl_data(
         if n_after < n_before:
             print(f"   Deduplicated by canonical_smiles using median: {n_before} -> {n_after}")
 
-        return temp_df, n_orig, n_clean, n_after
+        return temp_df, n_retrieved, n_orig, n_clean, n_after
 
     # Check cache first if enabled - this avoids API calls entirely
     if use_cache:
@@ -113,9 +116,10 @@ def fetch_chembl_data(
                     try:
                         df = pl.read_csv(assay_cache_file)
                         print(f"   Loaded {len(df)} compounds from assay cache: {assay_cache_file}")
-                        df, n_orig, n_clean, n_after = process_data(df)
+                        df, n_ret, n_orig, n_clean, n_after = process_data(df)
                         if return_stats:
                             stats = {
+                                "n_retrieved": n_ret,
                                 "n_total": n_orig,
                                 "n_standardized": n_clean,
                                 "n_deduplicated": n_after,
@@ -142,9 +146,10 @@ def fetch_chembl_data(
                         )
 
                     print(f"   Loaded {len(df)} compounds from document cache: {doc_cache_file}")
-                    df, n_orig, n_clean, n_after = process_data(df)
+                    df, n_ret, n_orig, n_clean, n_after = process_data(df)
                     if return_stats:
                         stats = {
+                            "n_retrieved": n_ret,
                             "n_total": n_orig,
                             "n_standardized": n_clean,
                             "n_deduplicated": n_after,
@@ -229,9 +234,12 @@ def fetch_chembl_data(
     activity = new_client.activity
 
     # Filter by target and document (and assay if provided)
+    # Align with find_matching_documents.py: Binding assays (assay_type='B') and non-null pChEMBL
     filter_params = {
         "target_chembl_id": target_chembl_id,
         "document_chembl_id": document_chembl_id,
+        "assay_type": "B",
+        "pchembl_value__isnull": False,
     }
     if assay_chembl_id:
         filter_params["assay_chembl_id"] = assay_chembl_id
@@ -241,7 +249,7 @@ def fetch_chembl_data(
     data = list(res)
 
     if not data:
-        stats = {"n_total": 0, "n_standardized": 0, "n_deduplicated": 0}
+        stats = {"n_retrieved": 0, "n_total": 0, "n_standardized": 0, "n_deduplicated": 0}
         return (pl.DataFrame(), stats) if return_stats else pl.DataFrame()
 
     df = pl.from_dicts(data, infer_schema_length=None)
@@ -269,8 +277,9 @@ def fetch_chembl_data(
         except Exception as e:
             print(f"   Warning: Could not write cache to {cache_file}: {e}")
 
-    df, n_orig, n_clean, n_after = process_data(df)
+    df, n_ret, n_orig, n_clean, n_after = process_data(df)
     stats = {
+        "n_retrieved": n_ret,
         "n_total": n_orig,
         "n_standardized": n_clean,
         "n_deduplicated": n_after,

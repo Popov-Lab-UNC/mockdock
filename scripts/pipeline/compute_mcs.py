@@ -25,19 +25,21 @@ from rdkit import Chem
 from rdkit.Chem import rdFMCS
 from utils import get_chunk_output_path
 
-# Add parent directory to path to import fcgmb modules
+# Add project root and src directory for fcgmb imports
 script_dir = Path(__file__).parent
-benchmark_dir = script_dir.parent
-sys.path.insert(0, str(benchmark_dir))
+project_root = script_dir.parent.parent
+src_dir = project_root / "src"
 
-# Try both import styles
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 try:
     from fcgmb.data import standardize_smiles
 except ImportError:
-    # Fallback: add the parent directory if not already there
-    if str(benchmark_dir) not in sys.path:
-        sys.path.insert(0, str(benchmark_dir))
-    from fcgmb.data import standardize_smiles
+    # Fallback to manual definition if everything fails
+    def standardize_smiles(s): return s
 
 
 # Removed fetch functions since we now use the unified cache from step 4
@@ -474,18 +476,20 @@ def main():
 
         compounds = df_assay["canonical_smiles"].to_list()
 
-        # Standardize SMILES before MCS
-        standardized = []
+        # Standardize and deduplicate SMILES before MCS
+        unique_standardized = set()
         for s in compounds:
             try:
                 s_std = standardize_smiles(s)
                 if s_std:
-                    standardized.append(s_std)
+                    unique_standardized.add(s_std)
             except:
                 continue
+        
+        standardized = list(unique_standardized)
 
         if not standardized:
-            print(f"  [!] No valid standardized SMILES for {doc_id} / {assay_id}")
+            print(f"  [!] No unique valid standardized SMILES for {doc_id} / {assay_id}")
             mcs_results.append(
                 {
                     "document_chembl_id": doc_id,

@@ -67,8 +67,9 @@ class WorkflowResult:
     assay_id: str
     fragment_smiles: str
     status: str
-    n_compounds_total: int = 0
+    n_compounds_retrieved: int = 0
     n_compounds_standardized: int = 0
+    n_compounds_deduplicated: int = 0
     n_compounds_matched_2d: int = 0
     n_compounds_docked: int = 0
     n_conformers_docked: int = 0
@@ -164,7 +165,9 @@ def run_docking_workflow(
                         if col in df.columns:
                             df = df.rename({col: "canonical_smiles"})
                             break
-                result.n_compounds_total = len(df)
+                result.n_compounds_retrieved = len(df)
+                result.n_compounds_standardized = len(df)
+                result.n_compounds_deduplicated = len(df)
             else:
                 cache_dir = cast(Optional[str], config.get("chembl_cache_dir")) or os.environ.get("CHEMBL_CACHE_DIR")
                 cache_only = bool(config.get("chembl_cache_only", False))
@@ -179,8 +182,9 @@ def run_docking_workflow(
                 )
                 # Use deduplicated count for total, as that's our real search space
                 stats_dict = cast(dict, stats)
-                result.n_compounds_total = stats_dict.get("n_deduplicated", 0)
+                result.n_compounds_retrieved = stats_dict.get("n_retrieved", 0)
                 result.n_compounds_standardized = stats_dict.get("n_standardized", 0)
+                result.n_compounds_deduplicated = stats_dict.get("n_deduplicated", 0)
 
             if df is None or df.is_empty():
                 result.status = WorkflowStatus.FAILED_RETRIEVAL.value

@@ -12,7 +12,7 @@ This pipeline generates the **FCGMB (Fragment-Constrained Generative Molecular B
 
 ## 📂 Directory Structure
 
-*   `pipeline/`: Contains all scripts for **generating** the benchmark dataset.
+*   `scripts/pipeline/`: Contains all scripts for **generating** the benchmark dataset.
 *   `fcgmb/`: The core python package for **running** the benchmarks (imports generated data).
 *   `data/`: Working directory for intermediate and final outputs.
 
@@ -23,22 +23,22 @@ The recommended way to run the full pipeline on a cluster. Includes dependency m
 
 ```bash
 export CHEMBL_SQLITE_PATH=/path/to/chembl_36.db
-bash pipeline/run_pipeline.sh slurm
+bash scripts/pipeline/run_pipeline.sh slurm
 ```
 
 ### Sequential Run
 For small tests or local machines (warning: full run is very slow).
 ```bash
 export CHEMBL_SQLITE_PATH=/path/to/chembl_36.db
-bash pipeline/run_pipeline.sh sequential
+bash scripts/pipeline/run_pipeline.sh sequential
 ```
 
 ### Manual Steps
 You can run individual steps manually:
 ```bash
-python pipeline/probe_chembl.py  # Check if ChEMBL is up
-python pipeline/fetch_chembl_targets.py --chembl-sqlite /path/to/chembl_36.db
-python pipeline/map_pdb_ligands.py
+python scripts/pipeline/probe_chembl.py  # Check if ChEMBL is up
+python scripts/pipeline/fetch_chembl_targets.py --chembl-sqlite /path/to/chembl_36.db
+python scripts/pipeline/map_pdb_ligands.py
 # ... etc
 ```
 
@@ -79,7 +79,7 @@ python pipeline/map_pdb_ligands.py
     **Example: Relaxing the constraint**
     ```bash
     # Allow close analogs (0.8 similarity) and smaller assays (10 compounds)
-    python pipeline/find_matching_documents.py \
+    python scripts/pipeline/find_matching_documents.py \
         --similarity-threshold 0.8 \
         --min-compounds 10 \
         --chembl-sqlite /path/to/chembl_36.db
@@ -102,7 +102,7 @@ python pipeline/map_pdb_ligands.py
 
     **Example: Generating all possible benchmarks**
     ```bash
-    python pipeline/generate_benchmark_configs.py --top-n 0 --min-compounds 10
+    python scripts/pipeline/generate_benchmark_configs.py --top-n 0 --min-compounds 10
     ```
 
 ## 📊 Outputs

@@ -9,12 +9,16 @@
 
 # Step 1: Fetch ChEMBL targets (quick, ~5 min)
 
-cd /work/users/s/h/shuhang/benchmark
+# Ensure we are in the project root
+if [[ -z "${PROJECT_ROOT}" ]]; then
+    PROJECT_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
+fi
+cd "$PROJECT_ROOT"
 source .venv/bin/activate
 
 mkdir -p data logs
 
-python pipeline/fetch_chembl_targets.py \
+python scripts/pipeline/fetch_chembl_targets.py \
     --output data/chembl_targets.csv \
     --chembl-sqlite /work/users/s/h/shuhang/chembl_36/chembl_36_sqlite/chembl_36.db
 
