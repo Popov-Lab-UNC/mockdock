@@ -311,13 +311,14 @@ def run_docking_workflow(
             # 4. Prepare and Dock
             print(f"   Preparing and docking {len(valid_smiles)} compounds...")
             with tempfile.TemporaryDirectory(prefix="workflow_prep_") as tmp_dir:
-                smiles_to_pdbqts = preparer.prepare_batch(valid_smiles, Path(tmp_dir))
-                docking_results = oracle.dock_batch(smiles_to_pdbqts, chunk_idx=0)
+                docking_tasks = preparer.prepare_batch(valid_smiles, Path(tmp_dir))
+                docking_results = oracle.dock_batch(docking_tasks, chunk_idx=0)
 
-                # Analyze
+                # Analyze (handle nested list of results per task)
                 final_rows = []
-                for res in docking_results:
-                    smi = res["smiles"]
+                for task_results in docking_results:
+                    for res in task_results:
+                        smi = res["smiles"]
                     pose_path = res["dlg_path"]
                     if pose_path:
                         # Returns: (best_v, passed, best_v_mol, best_a, best_a_mol, best_v_idx, best_a_idx)

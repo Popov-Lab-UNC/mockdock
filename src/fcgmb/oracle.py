@@ -278,47 +278,64 @@ class FCGMBOracle:
 
         self._ensure_components()
 
-        # 1. Pre-filter and standardize
-        valid_compounds, canonical_to_original, skipped_results = self._filter_smiles(smiles_list)
+        # 1. Pre-filter and standardize while preserving original SMILES
+        # valid_tasks: list of (canonical, original)
+        valid_tasks, skipped_results = self._filter_smiles(smiles_list)
 
-        if not valid_compounds:
+        if not valid_tasks:
             self._update_results_df(skipped_results)
             return {smi: 0.0 for smi in smiles_list}
 
-        # 2. Budget cap
-        process_list = valid_compounds[: self.max_budget - self.budget_used]
-
-        # 3. Preparation and Docking
-        with tempfile.TemporaryDirectory(prefix="fcgmb_prep_") as tmp_dir:
-            temp_path = Path(tmp_dir)
-            smiles_to_pdbqts = self._prepare_ligands(process_list, temp_path)
-            docking_raw_results = self._run_docking(smiles_to_pdbqts)
-
-            # 4. Analysis
-            final_scores, batch_results = self._analyze_results(
-                process_list, docking_raw_results, canonical_to_original
+        # 2. Budget cap (maintain original order)
+        process_tasks = valid_tasks[: self.max_budget - self.budget_used]
+        process_canonicals = [t[0] for t in process_tasks]
+        
+        out_of_budget_tasks = valid_tasks[self.max_budget - self.budget_used :]
+        for canonical, original in out_of_budget_tasks:
+            skipped_results.append(
+                self._create_skipped_result(canonical, "budget_exhausted", original)
             )
 
-            # 5. Finalize round
-            self.budget_used += len(process_list)
-            print(
-                f"[FCGMB] Round {self._generation_round}: scored {len(process_list)} molecules "
-                f"(budget {self.budget_used}/{self.max_budget})"
-            )
-            self._update_results_df(skipped_results + batch_results)
+        final_scores = {smi: 0.0 for smi in smiles_list}
+
+        if process_tasks:
+            # 3. Preparation and Docking
+            with tempfile.TemporaryDirectory(prefix="fcgmb_prep_") as tmp_dir:
+                temp_path = Path(tmp_dir)
+                # prepare_batch now returns list of {'smiles': str, 'pdbqt_paths': [Path]}
+                # preserving order of process_canonicals
+                docking_tasks = self._prepare_ligands(process_canonicals, temp_path)
+                
+                # Run docking (accepts list[dict], returns list[dict])
+                docking_raw_results = self._run_docking(docking_tasks)
+
+                # 4. Analysis
+                scores_dict, batch_results = self._analyze_results(
+                    process_tasks, docking_raw_results
+                )
+                final_scores.update(scores_dict)
+
+                # 5. Finalize round
+                self.budget_used += len(process_tasks)
+                print(
+                    f"[FCGMB] Round {self._generation_round}: scored {len(process_tasks)} molecules "
+                    f"(budget {self.budget_used}/{self.max_budget})"
+                )
+                self._update_results_df(skipped_results + batch_results)
+        else:
+            self._update_results_df(skipped_results)
 
         return final_scores
 
     def _filter_smiles(self, smiles_list: list[str]):
         """Standardize and filter SMILES based on validity and 2D constraint."""
-        valid_compounds = []
-        canonical_to_original = {}
+        valid_tasks = []  # list of (canonical, original)
         skipped_results = []
 
         for smi in smiles_list:
             canonical = standardize_smiles(smi)
             if canonical is None:
-                skipped_results.append(self._create_skipped_result(smi, "invalid molecule"))
+                skipped_results.append(self._create_skipped_result(smi, "invalid_molecule", smi))
                 continue
 
             mol = Chem.MolFromSmiles(canonical)
@@ -326,17 +343,17 @@ class FCGMBOracle:
                 mol, self._docking_analyzer.fragment_mol
             ):
                 skipped_results.append(
-                    self._create_skipped_result(canonical, "2D fragment mismatch")
+                    self._create_skipped_result(canonical, "failed_2d_match", smi)
                 )
             else:
-                valid_compounds.append(canonical)
-                canonical_to_original[canonical] = smi
+                valid_tasks.append((canonical, smi))
 
-        return valid_compounds, canonical_to_original, skipped_results
+        return valid_tasks, skipped_results
 
-    def _create_skipped_result(self, smiles: str, reason: str) -> dict:
+    def _create_skipped_result(self, smiles: str, reason: str, original_smiles: Optional[str] = None) -> dict:
         return {
             "smiles": smiles,
+            "original_smiles": original_smiles or smiles,
             "docking_score": float("nan"),
             "normalized_score": 0.0,
             "valid_pose_found": False,
@@ -346,34 +363,40 @@ class FCGMBOracle:
             "n_conformers": 0,
         }
 
-    def _prepare_ligands(self, smiles_list: list[str], tmp_dir: Path) -> dict[str, list[Path]]:
+    def _prepare_ligands(self, smiles_list: list[str], tmp_dir: Path) -> list[dict]:
         t0 = time.time()
-        smiles_to_pdbqts = self._ligand_preparer.prepare_batch(smiles_list, tmp_dir)
+        # Returns list of {'smiles': str, 'pdbqt_paths': [Path]}
+        tasks = self._ligand_preparer.prepare_batch(smiles_list, tmp_dir)
         self._total_prep_time += time.time() - t0
         self._n_prepped += len(smiles_list)
-        return smiles_to_pdbqts
+        return tasks
 
-    def _run_docking(self, smiles_to_pdbqts: dict[str, list[Path]]) -> list[dict]:
+    def _run_docking(self, docking_tasks: list[dict]) -> list[dict]:
         t0 = time.time()
-        results = self._docking_oracle.dock_batch(smiles_to_pdbqts, chunk_idx=self.budget_used)
+        results = self._docking_oracle.dock_batch(docking_tasks, chunk_idx=self.budget_used)
         self._total_dock_time += time.time() - t0
-        self._n_docked += len(smiles_to_pdbqts)
+        self._n_docked += len(docking_tasks)
         return results
 
-    def _analyze_results(self, process_list, raw_results, canonical_to_original):
+    def _analyze_results(self, process_tasks, raw_results):
         t0 = time.time()
-        smi_to_states: dict[str, list] = {}
-        for res in raw_results:
-            smi_to_states.setdefault(res["smiles"], []).append(res)
-
         batch_results = []
-        final_scores = {canonical_to_original.get(s, s): 0.0 for s in process_list}
-
-        for smi in process_list:
-            states = smi_to_states.get(smi, [])
+        final_scores_list = []
+        
+        for task_idx, (canonical, original) in enumerate(process_tasks):
+            task_results = raw_results[task_idx]
+            
             best_valid, valid_pose_found, best_any, best_dlg, best_pose_idx = (
-                self._filter_poses_for_molecule(smi, states)
+                self._filter_poses_for_molecule(canonical, task_results)
             )
+
+            skip_reason = None
+            if len(task_results) == 0:
+                skip_reason = "failed_ligand_prep"
+            elif math.isnan(best_any):
+                skip_reason = "failed_docking"
+            elif math.isnan(best_valid) and self._require_pose_rmsd:
+                skip_reason = "failed_rmsd"
 
             best_norm = 0.0
             if (
@@ -387,24 +410,27 @@ class FCGMBOracle:
                 else:
                     best_norm = 1.0 if best_valid <= self._high_score else 0.0
 
-            original_smi = canonical_to_original.get(smi, smi)
-            final_scores[original_smi] = best_norm
+            final_scores_list.append((original, best_norm))
             batch_results.append(
                 {
-                    "smiles": smi,
+                    "smiles": canonical,
+                    "original_smiles": original,
                     "docking_score": best_valid,
                     "normalized_score": best_norm,
                     "valid_pose_found": valid_pose_found,
                     "dlg_path": best_dlg,
                     "pose_index": best_pose_idx,
                     "best_any_score": best_any,
-                    "skip_reason": None,
-                    "n_conformers": len(states),
+                    "skip_reason": skip_reason,
+                    "n_conformers": len(task_results),
                 }
             )
 
         self._total_analysis_time += time.time() - t0
-        return final_scores, batch_results
+        # Return dict of original -> score. 
+        # Note: if input had duplicates, the last score for that SMILES will be in the dict.
+        # This is usually what models expect.
+        return dict(final_scores_list), batch_results
 
     def _filter_poses_for_molecule(self, smiles: str, states: list[dict]):
         best_valid = float("nan")
@@ -754,6 +780,7 @@ class FCGMBOracle:
         # Stable schema for all result batches
         schema = {
             "smiles": pl.Utf8,
+            "original_smiles": pl.Utf8,
             "docking_score": pl.Float64,
             "normalized_score": pl.Float64,
             "valid_pose_found": pl.Boolean,
@@ -777,13 +804,13 @@ class FCGMBOracle:
         # Accumulate for YAML (kept separately so we don't re-serialize the whole DF)
         self._yaml_results.extend(new_results)
 
-        self._flush_live_results()
+        self._flush_results()
 
-    def _flush_live_results(self):
+    def _flush_results(self):
         """Write live-updating outputs to the run directory after every scored batch.
 
         Outputs:
-          results_full.csv  — ALL scored SMILES in generation order (including
+          results.csv  — ALL scored SMILES in generation order (including
                               2D-mismatched/skipped), so post-hoc novelty/uniqueness
                               analysis works without any data loss.
           results.yaml      — Same data sorted by normalized_score DESC, human-readable.
@@ -792,8 +819,8 @@ class FCGMBOracle:
         if self.results_df.is_empty():
             return
 
-        # ── Full CSV (all SMILES, generation order) ─────────────────────
-        live_csv = self._run_dir / "results_full.csv"
+        # ── CSV (all SMILES, generation order) ─────────────────────
+        live_csv = self._run_dir / "results.csv"
         self.results_df.write_csv(live_csv)
 
         # ── YAML (all SMILES, sorted by normalized_score DESC) ──────────
@@ -812,6 +839,7 @@ class FCGMBOracle:
         yaml_data = [
             {
                 "smiles": r["smiles"],
+                "original_smiles": r.get("original_smiles"),
                 "normalized_score": _clean(r.get("normalized_score")),
                 "docking_score": _clean(r.get("docking_score")),
                 "generation_round": r.get("generation_round"),

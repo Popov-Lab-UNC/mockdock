@@ -57,14 +57,15 @@ def test_preparation_pipeline():
         ]
 
         ligand_dir = tmp_path / "ligands"
-        smiles_to_pdbqts = ligand_preparer.prepare_batch(test_smiles, ligand_dir)
+        docking_tasks = ligand_preparer.prepare_batch(test_smiles, ligand_dir)
+        assert len(docking_tasks) == len(test_smiles)
 
-        for smi in test_smiles:
-            assert smi in smiles_to_pdbqts, (
-                f"SMILES {smi} missing from preparation results"
-            )
-            assert len(smiles_to_pdbqts[smi]) > 0, f"No PDBQTs generated for {smi}"
-            for pdbqt_path in smiles_to_pdbqts[smi]:
+        for i, task in enumerate(docking_tasks):
+            smi = task["smiles"]
+            pdbqts = task["pdbqt_paths"]
+            assert smi == test_smiles[i], f"Order mismatch or SMILES mismatch at index {i}"
+            assert len(pdbqts) > 0, f"No PDBQTs generated for {smi}"
+            for pdbqt_path in pdbqts:
                 assert pdbqt_path.exists(), f"PDBQT file {pdbqt_path} does not exist"
 
         print(f"Successfully prepared {len(test_smiles)} ligands.")

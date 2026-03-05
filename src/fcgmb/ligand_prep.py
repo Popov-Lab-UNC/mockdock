@@ -106,10 +106,11 @@ class LigandPreparer:
 
     def prepare_batch(
         self, smiles_list: list[str], output_dir: Path, batch_prefix: str = ""
-    ) -> dict[str, list[Path]]:
+    ) -> list[dict]:
         """
         Prepare PDBQT files for a batch of SMILES.
-        Returns {smiles: [pdbqt_paths]}
+        Returns a list of dictionaries: [{'smiles': str, 'pdbqt_paths': [Path]}]
+        Preserves input order and duplicates.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
         prep_args = [(smi, idx, output_dir, batch_prefix) for idx, smi in enumerate(smiles_list)]
@@ -119,9 +120,8 @@ class LigandPreparer:
         with ctx.Pool(processes=self.n_cpus) as pool:
             pdbqt_data = pool.map(self._prepare_single_ligand, prep_args)
 
-        smiles_to_paths = {}
+        results = []
         for i, written_files in enumerate(pdbqt_data):
-            smi = smiles_list[i]
-            smiles_to_paths[smi] = written_files
+            results.append({"smiles": smiles_list[i], "pdbqt_paths": written_files})
 
-        return smiles_to_paths
+        return results
