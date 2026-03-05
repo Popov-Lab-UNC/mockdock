@@ -205,3 +205,34 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# FCGMB: Runtime outputs and experimental data (not for version control)
+benchmark_runs/
+results/
+generated_configs/
+generated_configs_v1/
+variance_runs/
+variance_analysis/
+legacy_runs/
+exps/
+logs/
+*.log
+*.err
+
+# FCGMB: User-specific experiment configs / data (keep examples in examples/ instead)
+custom_configs/
+custom_data/
+
+# FCGMB: Local data cache (large binary files)
+data/
+data_v1/
+
+# FCGMB: Validation result CSVs (outputs, not source)
+validation_results_*.csv
+validation_summary.csv
+
+# direnv — .envrc is committed, but not the compiled version
+.direnv/
+
+# .env files with secrets
+.env

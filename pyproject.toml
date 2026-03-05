@@ -32,22 +32,8 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-# This repo has many top-level output folders (data/, logs/, benchmark_runs/, etc.).
-# Restrict package discovery to the actual Python package(s) only.
-where = ["."]
-include = ["fcgmb*"]
-exclude = [
-    "data*",
-    "logs*",
-    "benchmark_runs*",
-    "generated_configs*",
-    "custom_data*",
-    "custom_configs*",
-    "configs*",
-    "*_workflow*",
-    "variance_runs*",
-    "variance_analysis*",
-]
+# src/ layout: only look inside src/ for packages
+where = ["src"]
 
 [tool.setuptools.package-data]
 fcgmb = ["configs/*.yaml", "grids/**/*", "bioactivity_data/*.csv"]
@@ -60,36 +46,41 @@ extend-exclude = [
     "generated_configs",
     "data",
     "logs",
+    "results",
 ]
 
-[tool.black]
-# Keep formatting focused on source code only.
-extend-exclude = """
-(
-  \\.venv
-| benchmark_runs
-| generated_configs
-| data
-| logs
-)
-"""
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
-# Type-check source only (ignore run outputs / generated files).
-exclude = "(^\\.venv/|^benchmark_runs/|^generated_configs/|^data/|^logs/)"
+# Type-check source only (ignore run outputs / generated files)
+exclude = "(\\.venv/|benchmark_runs/|generated_configs/|data/|logs/|results/)"
 
 [tool.pytest.ini_options]
 # Prevent pytest from recursing into large output directories.
+testpaths = ["tests"]
 norecursedirs = [
     ".venv",
     "benchmark_runs",
     "generated_configs",
     "data",
     "logs",
+    "results",
+    "scripts",
 ]
+addopts = "--tb=short"
+
+[tool.coverage.run]
+source = ["src/fcgmb"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
 
 [dependency-groups]
 dev = [
     "ruff>=0.15.4",
     "ty>=0.0.20",
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
 ]

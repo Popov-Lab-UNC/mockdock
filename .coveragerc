@@ -1,0 +1,14 @@
+[run]
+source = src/fcgmb
+omit =
+    tests/*
+    scripts/*
+
+[report]
+show_missing = true
+skip_empty = true
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if TYPE_CHECKING:

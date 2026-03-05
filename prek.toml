@@ -1,0 +1,16 @@
+# prek.toml — Git hooks configuration (used by prek: https://github.com/jevandezande/prek)
+# Alternatively, this project also provides .pre-commit-config.yaml for the
+# standard pre-commit framework (https://pre-commit.com).
+
+[pre-commit]
+commands = [
+    "ruff format --check .",
+    "ruff check .",
+]
+
+[pre-push]
+commands = [
+    "ruff format --check .",
+    "ruff check .",
+    "pytest --tb=short -q",
+]

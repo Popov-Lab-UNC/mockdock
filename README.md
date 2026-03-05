@@ -149,13 +149,67 @@ Bundled assets (pre-built grids and curated bioactivity CSVs) are shipped inside
 
 ```
 fcgmb/
-├── configs/           # Bundled YAML benchmark configs
-├── bioactivity_data/  # Curated ChEMBL CSVs (ground truth)
-├── grids/             # Pre-built AutoGrid maps
-├── oracle.py          # FCGMBOracle — main user-facing class
-├── docking.py         # AutoDock-GPU and Vina backends
-├── receptor.py        # Receptor preparation pipeline
-├── ligand_prep.py     # Ligand preparation (PDBQT conversion)
-├── analysis.py        # RMSD filtering and pose analysis
-└── data.py            # ChEMBL data fetching
+├── .github/workflows/     # CI (ci.yml) and publishing (publish.yml) workflows
+├── docs/                  # Documentation and drafts
+├── notebooks/             # Jupyter/marimo notebooks
+├── scripts/
+│   ├── experiments/       # Analysis and variance scripts
+│   ├── pipeline/          # Data mining scripts (ChEMBL, MCS, etc.)
+│   └── slurm/             # SLURM batch job scripts
+├── src/
+│   └── fcgmb/             # The Python package
+│       ├── configs/       # Bundled YAML benchmark configs
+│       ├── bioactivity_data/  # Curated ChEMBL CSVs (ground truth)
+│       ├── grids/         # Pre-built AutoGrid maps
+│       ├── oracle.py      # FCGMBOracle — main user-facing class
+│       ├── docking.py     # AutoDock-GPU and Vina backends
+│       ├── receptor.py    # Receptor preparation pipeline
+│       ├── ligand_prep.py # Ligand preparation (PDBQT conversion)
+│       ├── analysis.py    # RMSD filtering and pose analysis
+│       └── data.py        # ChEMBL data fetching
+└── tests/                 # Unit tests (pytest)
+```
+
+## Development
+
+### Setup
+
+Clone the repository and install in editable mode with dev dependencies:
+
+```bash
+git clone https://github.com/Popov-Lab-UNC/fcgmb.git
+cd fcgmb
+uv sync --dev
+```
+
+Optionally, install [direnv](https://direnv.net/) and run `direnv allow` to automatically activate the environment whenever you `cd` into the project directory.
+
+### Running Tests
+
+```bash
+uv run pytest                          # run all tests
+uv run pytest --cov=src/fcgmb         # with coverage report
+```
+
+### Formatting & Linting
+
+This project uses [Ruff](https://docs.astral.sh/ruff/) for both formatting and linting (Black is not used):
+
+```bash
+uv run ruff format .                   # auto-format
+uv run ruff check . --fix             # lint and auto-fix
+```
+
+### Type Checking
+
+```bash
+uv run ty check src/fcgmb
+```
+
+### Pre-commit Hooks
+
+To install pre-commit hooks that run ruff on every commit:
+
+```bash
+uv run pre-commit install
 ```
