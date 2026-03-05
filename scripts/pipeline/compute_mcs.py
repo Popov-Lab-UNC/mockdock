@@ -10,24 +10,20 @@ Input: data/chembl_docking_benchmark.csv
 Output: data/mcs_results.csv (separate document with document_chembl_id and mcs_smiles)
 """
 
-import pandas as pd
 import argparse
-from tqdm import tqdm
-import time
-from collections import defaultdict
-from datetime import datetime
-import multiprocessing
 import sys
+from datetime import datetime
 from pathlib import Path
+
+import pandas as pd
+from tqdm import tqdm
 
 # Add script directory to path to import utils
 sys.path.append(str(Path(__file__).parent))
-from utils import get_chunk_output_path, run_with_timeout
-
+from chembl_cache import read_assay_cache
 from rdkit import Chem
 from rdkit.Chem import rdFMCS
-
-from chembl_cache import read_assay_cache
+from utils import get_chunk_output_path
 
 # Add parent directory to path to import fcgmb modules
 script_dir = Path(__file__).parent
@@ -354,7 +350,7 @@ def main():
         merge_mcs_results(args.input, args.mapping_pattern, args.output)
         return
 
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  Max Compounds per Document: {args.max_compounds}")
     print(f"  MCS Timeout: {args.timeout}s")
     print(f"  API Delay: {args.delay}s")
@@ -392,7 +388,7 @@ def main():
     # Check for required columns
     if "document_chembl_id" not in df.columns or "assay_chembl_id" not in df.columns:
         print(
-            f"\nERROR: Required columns 'document_chembl_id' or 'assay_chembl_id' not found in input file."
+            "\nERROR: Required columns 'document_chembl_id' or 'assay_chembl_id' not found in input file."
         )
         print(f"Available columns: {', '.join(df.columns)}")
         return

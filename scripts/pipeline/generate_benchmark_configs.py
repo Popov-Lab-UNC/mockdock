@@ -6,10 +6,11 @@ Input: data/chembl_docking_benchmark.csv (must have mcs_smiles column from step 
 Output: generated_configs/*.yaml
 """
 
-import pandas as pd
-import yaml
 import argparse
 from pathlib import Path
+
+import pandas as pd
+import yaml
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 
@@ -82,11 +83,11 @@ def main():
     # Apply filters
     if args.require_crystal_in_assay:
         if "crystal_in_assay" in df.columns:
-            df = df[df["crystal_in_assay"] == True]
+            df = df[df["crystal_in_assay"]]
             print(f"After crystal-in-assay filter: {len(df)}")
         else:
             # Fallback for old CSVs
-            df = df[df["crystal_in_document"] == True]
+            df = df[df["crystal_in_document"]]
             print(f"After crystal-in-doc fallback filter: {len(df)}")
 
     if args.max_resolution:
@@ -130,7 +131,7 @@ def main():
 
     # Filter by MCS quality BEFORE selecting top N
     df["mcs_is_valid"] = df["mcs_smiles"].apply(is_valid_mcs)
-    df = df[df["mcs_is_valid"] == True]
+    df = df[df["mcs_is_valid"]]
     print(f"After MCS quality filter: {len(df)}")
 
     # Sort by resolution and select top N

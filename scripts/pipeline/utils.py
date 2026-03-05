@@ -1,9 +1,9 @@
-import pandas as pd
-from pathlib import Path
 import glob
 import multiprocessing
-import time
-from typing import List, Optional
+from pathlib import Path
+from typing import Optional
+
+import pandas as pd
 
 
 def get_chunk_output_path(base_output_path: str, start: int, end: int) -> Path:
@@ -25,7 +25,7 @@ def get_chunk_output_path(base_output_path: str, start: int, end: int) -> Path:
 
 
 def merge_csv_files(
-    pattern: str, output_path: str, dedup_cols: Optional[List[str]] = None
+    pattern: str, output_path: str, dedup_cols: Optional[list[str]] = None
 ) -> None:
     """
     Merge CSV files matching a pattern into a single output file.

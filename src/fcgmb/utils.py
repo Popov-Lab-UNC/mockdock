@@ -1,5 +1,8 @@
 # Standard library imports
 import asyncio
+import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +14,154 @@ import polars as pl
 import seaborn as sns
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from rdkit.Chem.MolStandardize import rdMolStandardize
 from scipy.stats import pearsonr, spearmanr
+
+# Instantiate once at module level — these are expensive to construct
+_FRAGMENT_CHOOSER = rdMolStandardize.LargestFragmentChooser()
+_UNCHARGER = rdMolStandardize.Uncharger()
+
+
+# ── System / Hardware utilities ───────────────────────────────────────────────
+
+
+def detect_gpus() -> int:
+    """Detect available NVIDIA GPUs via nvidia-smi."""
+    try:
+        result = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            return len(
+                [line for line in result.stdout.splitlines() if line.strip().startswith("GPU")]
+            )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return 0
+
+
+def resolve_backend(
+    requested_backend: str,
+    n_gpus: int,
+    adgpu_executable: str = "adgpu",
+) -> str:
+    """
+    Resolve which docking backend to use based on request and availability.
+
+    Args:
+        requested_backend: 'autodock_gpu', 'vina', or 'auto'.
+        n_gpus: Number of GPUs available (used for 'auto').
+        adgpu_executable: Name or path of the AutoDock-GPU executable.
+
+    Returns:
+        The resolved backend string ('autodock_gpu' or 'vina').
+    """
+    adgpu_ok = shutil.which(adgpu_executable) is not None or (
+        Path(adgpu_executable).exists() and os.access(adgpu_executable, os.X_OK)
+    )
+    requested = requested_backend.lower()
+
+    if requested == "autodock_gpu":
+        if adgpu_ok:
+            return "autodock_gpu"
+        print(
+            f"[FCGMB] Warning: AutoDock-GPU not found ('{adgpu_executable}'). Falling back to Vina."
+        )
+        return "vina"
+    if requested == "vina":
+        return "vina"
+
+    # "auto"
+    return "autodock_gpu" if (adgpu_ok and n_gpus > 0) else "vina"
+
+
+# ── RDKit chemistry utilities ─────────────────────────────────────────────────
+
+
+def check_validity(smiles: str) -> Optional[Chem.Mol]:
+    """Parse a SMILES string and return the RDKit Mol, or None if invalid.
+
+    This is the single source of truth for molecule validity in the pipeline.
+    All sanitization (including kekulization) is performed by RDKit here.
+    """
+    return Chem.MolFromSmiles(smiles)
+
+
+def standardize_smiles(smiles: str) -> Optional[str]:
+    """Strip salts, neutralize, and return a canonical SMILES string.
+
+    Steps applied in order:
+    1. Parse the SMILES — returns ``None`` if invalid.
+    2. Keep the largest fragment (removes counter-ions like ``[Na+]``, ``[Cl-]``).
+    3. Neutralize charges where chemically sensible.
+    4. Return RDKit canonical SMILES.
+
+    Args:
+        smiles: Input SMILES string.
+
+    Returns:
+        Canonical SMILES, or ``None`` if the input is invalid or standardization fails.
+    """
+    if not smiles or not isinstance(smiles, str):
+        return None
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return None
+        mol = _FRAGMENT_CHOOSER.choose(mol)
+        mol = _UNCHARGER.uncharge(mol)
+        return Chem.MolToSmiles(mol, canonical=True)
+    except Exception:
+        return None
+
+
+def get_robust_match(target_mol: Chem.Mol, query_mol: Chem.Mol) -> tuple[int, ...]:
+    """Substructure match robust to kekulization / bond-order differences.
+
+    Tries an exact match first; if that fails, relaxes bond-order constraints
+    via ``AdjustQueryProperties`` before giving up.
+
+    Args:
+        target_mol: The molecule to search in.
+        query_mol:  The fragment/pattern to look for.
+
+    Returns:
+        A tuple of atom indices (non-empty on success, empty on failure).
+    """
+    match = target_mol.GetSubstructMatch(query_mol)
+    if match:
+        return match
+
+    try:
+        params = Chem.AdjustQueryParameters()
+        params.adjustDegree = False
+        params.adjustHeavyDegree = False
+        params.makeBondsGeneric = True
+        params.aromatizeIfPossible = True
+        loose_query = Chem.AdjustQueryProperties(query_mol, params)
+        match = target_mol.GetSubstructMatch(loose_query)
+        if match:
+            return match
+    except Exception:
+        pass
+    return ()
+
+
+def check_2d_match(mol: Chem.Mol, fragment_mol: Optional[Chem.Mol]) -> bool:
+    """Check whether *mol* contains *fragment_mol* as a 2-D substructure.
+
+    Uses :func:`get_robust_match` for kekulization-tolerant matching.
+
+    Args:
+        mol:          A valid RDKit ``Mol`` to search in.  The caller is
+                      responsible for obtaining it via :func:`check_validity`.
+        fragment_mol: The fragment pattern to look for.  Returns ``True``
+                      immediately when *None* (no constraint configured).
+
+    Returns:
+        ``True`` if the fragment is found (or no constraint is configured).
+    """
+    if fragment_mol is None:
+        return True
+    return bool(get_robust_match(mol, fragment_mol))
 
 
 def plot_docking_results(
@@ -51,8 +201,8 @@ def plot_docking_results(
 
     plt.figure(figsize=(10, 6))
 
-    valid_mask = is_valid == True
-    invalid_mask = is_valid == False
+    valid_mask = is_valid
+    invalid_mask = not is_valid
 
     # 4. Fix Plotting Order: Plot Noise (Red) FIRST, Signal (Blue) SECOND
     if np.any(invalid_mask):
@@ -211,9 +361,7 @@ async def fetch_ligand_expo_sdf(
                 await loop.run_in_executor(None, out_path.write_text, text)
                 return out_path
             else:
-                print(
-                    f"Failed to fetch SDF for {resname} from Ligand Expo: {response.status}"
-                )
+                print(f"Failed to fetch SDF for {resname} from Ligand Expo: {response.status}")
                 return None
     except Exception as e:
         print(f"Error fetching SDF for {resname}: {e}")

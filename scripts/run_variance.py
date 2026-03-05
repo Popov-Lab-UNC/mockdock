@@ -1,6 +1,13 @@
+#!/usr/bin/env python3
+"""
+Standalone script to run variance tests for the docking workflow.
+Relocated from fcgmb.variance to allow cleaner package structure.
+"""
+
 # Standard library imports
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 # Third-party imports
@@ -9,6 +16,9 @@ import numpy as np
 import polars as pl
 import seaborn as sns
 import yaml
+
+# Allow importing from src/
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 PALETTE = {
     "periwinkle": "#B8B8FF",
@@ -43,7 +53,7 @@ def run_variance_tests(
     config_dir: Path = Path("configs"),
     run_base_dir: Path = Path("variance_runs"),
     n_iterations: int = 5,
-    workflow_script: str = "run_workflow.py",
+    workflow_script: str = str(Path(__file__).parent / "run_workflow.py"),
 ):
     """
     Run docking multiple times for each benchmark to test variance.
@@ -56,9 +66,7 @@ def run_variance_tests(
         return
 
     print("\n" + "=" * 60)
-    print(
-        f"VARIANCE BENCHMARK: Running {len(configs)} systems, {n_iterations} iterations each"
-    )
+    print(f"VARIANCE BENCHMARK: Running {len(configs)} systems, {n_iterations} iterations each")
     print(f"Base Directory: {run_base_dir}")
     print("=" * 60 + "\n")
 
@@ -72,7 +80,7 @@ def run_variance_tests(
         try:
             subprocess.run(
                 [
-                    "python",
+                    sys.executable,
                     workflow_script,
                     "--config",
                     str(config_path),
@@ -87,7 +95,7 @@ def run_variance_tests(
 
             subprocess.run(
                 [
-                    "python",
+                    sys.executable,
                     workflow_script,
                     "--config",
                     str(config_path),
@@ -138,7 +146,7 @@ def run_variance_tests(
             dst_work = dst_target_dir / str(doc_id)
             dst_work.mkdir(parents=True, exist_ok=True)
 
-            # Keep cleaned-data filename consistent with workflow.py naming.
+            # Keep cleaned-data filename consistent with workflow naming.
             prefix = f"{target_id}_{pdb_id}_{doc_id}"
             assay_id = config.get("assay_id")
             if assay_id:
@@ -156,7 +164,7 @@ def run_variance_tests(
             try:
                 subprocess.run(
                     [
-                        "python",
+                        sys.executable,
                         workflow_script,
                         "--config",
                         str(config_path),
@@ -209,21 +217,17 @@ def analyze_variance_results(
         print(f"\nAnalyzing {system_key} ({len(df_list)} runs)...")
 
         # Merge docking scores
-        merged = None
+        merged = pl.DataFrame()
         for i, df in enumerate(df_list):
             if "pchembl_value" not in df.columns:
-                raise RuntimeError(
-                    "Missing pchembl_value in results; cannot analyze variance."
-                )
+                raise RuntimeError("Missing pchembl_value in results; cannot analyze variance.")
             subset = df.select(["canonical_smiles", "docking_score", "pchembl_value"])
             subset = subset.rename({"docking_score": f"score_{i}"})
-            if merged is None:
+            if merged.is_empty():
                 merged = subset
             else:
                 cols_to_drop = [c for c in ["pchembl_value"] if c in merged.columns]
-                merged = merged.join(
-                    subset.drop(cols_to_drop), on="canonical_smiles", how="inner"
-                )
+                merged = merged.join(subset.drop(cols_to_drop), on="canonical_smiles", how="inner")
 
         score_cols = [c for c in merged.columns if c.startswith("score_")]
         valid_mask = pl.all_horizontal(
@@ -287,3 +291,53 @@ def analyze_variance_results(
         plt.savefig(svg_path, bbox_inches="tight")
         plt.close()
         print(f"  Analysis saved to {svg_path}")
+
+
+def main():
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser(description="Run Variance tests for Docking Workflow")
+    parser.add_argument(
+        "--config-dir", type=str, default="configs", help="Directory with YAML configs"
+    )
+    parser.add_argument(
+        "--run-dir", type=str, default="variance_runs", help="Base directory for runs"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="variance_analysis",
+        help="Directory for analysis output",
+    )
+    parser.add_argument(
+        "--n-iters", "--iterations", type=int, default=5, help="Number of iterations per system"
+    )
+    parser.add_argument("--workflow", type=str, help="Path to run_workflow.py script")
+    parser.add_argument(
+        "--analyze-only", action="store_true", help="Only run analysis on existing results"
+    )
+
+    args = parser.parse_args()
+
+    config_dir = Path(args.config_dir)
+    run_base_dir = Path(args.run_dir)
+    output_dir = Path(args.output_dir)
+
+    if not args.analyze_only:
+        workflow_script = (
+            args.workflow if args.workflow else str(Path(__file__).parent / "run_workflow.py")
+        )
+        run_variance_tests(
+            config_dir=config_dir,
+            run_base_dir=run_base_dir,
+            n_iterations=args.n_iters,
+            workflow_script=workflow_script,
+        )
+
+    analyze_variance_results(
+        run_base_dir=run_base_dir, config_dir=config_dir, output_dir=output_dir
+    )
+
+
+if __name__ == "__main__":
+    main()

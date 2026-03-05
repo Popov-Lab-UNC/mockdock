@@ -1,7 +1,7 @@
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import requests
 
@@ -39,9 +39,7 @@ def _download_mmcif(pdb_id: str, output_dir: Path) -> Path:
     structure_path = None
     try:
         # ProDy returns the downloaded file path or None
-        structure_path = fetchPDB(
-            pdb_id, folder=str(output_dir), compressed=False, format="cif"
-        )
+        structure_path = fetchPDB(pdb_id, folder=str(output_dir), compressed=False, format="cif")
     except Exception as e:
         print(f"   ProDy fetchPDB (cif) failed: {e}")
 
@@ -95,22 +93,16 @@ def _choose_altloc_token(sel) -> Optional[str]:
         return None
 
 
-def _pick_ligand_instance(
-    structure, ligand_resname: str
-) -> Tuple[str, str, int, Optional[str]]:
+def _pick_ligand_instance(structure, ligand_resname: str) -> tuple[str, str, int, Optional[str]]:
     """
     Find the first instance of a ligand resname and return (chain_id, resname, resnum, altloc_token).
     """
     all_ligands = structure.select(f"resname {ligand_resname}")
     if all_ligands is None:
-        raise LigandNotFoundError(
-            f"Ligand with resname {ligand_resname} not found in structure"
-        )
+        raise LigandNotFoundError(f"Ligand with resname {ligand_resname} not found in structure")
 
     altloc_token = _choose_altloc_token(all_ligands)
-    ligands_for_res = (
-        all_ligands.select(f"altloc {altloc_token}") if altloc_token else all_ligands
-    )
+    ligands_for_res = all_ligands.select(f"altloc {altloc_token}") if altloc_token else all_ligands
     ligand_res = ligands_for_res.getHierView().iterResidues().__next__()
     return (
         ligand_res.getChid(),
@@ -120,7 +112,7 @@ def _pick_ligand_instance(
     )
 
 
-def _select_protein(structure, chain_ids: List[str]):
+def _select_protein(structure, chain_ids: list[str]):
     """
     Select protein atoms for one or more chains. Prefer blank altloc (to avoid duplicates),
     but fall back to any altloc if blank selection is empty.
@@ -146,9 +138,7 @@ def _select_ligand(
         )
         if sel is not None:
             return sel
-    sel = structure.select(
-        f"chain {chain_id} and resname {resname} and resnum {resnum}"
-    )
+    sel = structure.select(f"chain {chain_id} and resname {resname} and resnum {resnum}")
     if sel is None:
         raise ValueError(f"Failed to select ligand {resname} {chain_id} {resnum}")
     return sel
@@ -156,7 +146,7 @@ def _select_ligand(
 
 def _pick_receptor_chains_from_ligand(
     structure, ligand_sel, distance_threshold: float = 5.0
-) -> List[str]:
+) -> list[str]:
     """
     Identify protein chains within a distance threshold of the ligand.
     """
@@ -215,7 +205,7 @@ def _pick_receptor_chains_from_ligand(
 
 def extract_protein_and_ligand(
     pdb_id: str, ligand_resname: str, output_dir: Union[str, Path] = "."
-) -> Tuple[Path, Path]:
+) -> tuple[Path, Path]:
     """
     mmCIF-first receptor/ligand extraction:
     - Download mmCIF (ProDy fetchPDB if possible, else direct RCSB)
@@ -236,9 +226,7 @@ def extract_protein_and_ligand(
     lig_chain, lig_resname, lig_resnum, altloc_token = _pick_ligand_instance(
         structure, ligand_resname
     )
-    ligand_sel = _select_ligand(
-        structure, lig_chain, lig_resname, lig_resnum, altloc_token
-    )
+    ligand_sel = _select_ligand(structure, lig_chain, lig_resname, lig_resnum, altloc_token)
 
     detected_chains = _pick_receptor_chains_from_ligand(structure, ligand_sel)
 
@@ -262,13 +250,9 @@ class ReceptorPreparer:
     ):
         self.autogrid_executable = shutil.which(autogrid_executable)
         if self.autogrid_executable is None:
-            raise FileNotFoundError(
-                f"Executable '{autogrid_executable}' not found in PATH"
-            )
+            raise FileNotFoundError(f"Executable '{autogrid_executable}' not found in PATH")
 
-        self.mk_prepare_receptor_executable = shutil.which(
-            mk_prepare_receptor_executable
-        )
+        self.mk_prepare_receptor_executable = shutil.which(mk_prepare_receptor_executable)
         if self.mk_prepare_receptor_executable is None:
             raise FileNotFoundError(
                 f"Executable '{mk_prepare_receptor_executable}' not found in PATH"
@@ -277,9 +261,7 @@ class ReceptorPreparer:
         # Preferred hydrogenation tool.
         self.reduce2_executable = shutil.which(reduce2_executable)
         if self.reduce2_executable is None:
-            raise FileNotFoundError(
-                f"Executable '{reduce2_executable}' not found in PATH"
-            )
+            raise FileNotFoundError(f"Executable '{reduce2_executable}' not found in PATH")
 
     def get_receptor_and_ligand_pdb(
         self,
@@ -288,7 +270,7 @@ class ReceptorPreparer:
         ligand_resname: str,
         protein_pdb_path: Optional[Union[str, Path]] = None,
         ligand_pdb_path: Optional[Union[str, Path]] = None,
-    ) -> Tuple[Path, Path]:
+    ) -> tuple[Path, Path]:
         """Obtain protein and ligand PDB files."""
         if protein_pdb_path and ligand_pdb_path:
             protein_pdb_path = Path(protein_pdb_path)
@@ -303,14 +285,10 @@ class ReceptorPreparer:
             ligand_pdb = output_dir / ligand_pdb_path.name
             shutil.copy2(protein_pdb_path, protein_pdb)
             shutil.copy2(ligand_pdb_path, ligand_pdb)
-            print(
-                f"Using provided protein ({protein_pdb.name}) and ligand ({ligand_pdb.name})"
-            )
+            print(f"Using provided protein ({protein_pdb.name}) and ligand ({ligand_pdb.name})")
             return protein_pdb, ligand_pdb
         else:
-            return extract_protein_and_ligand(
-                pdb_id, ligand_resname, output_dir=output_dir
-            )
+            return extract_protein_and_ligand(pdb_id, ligand_resname, output_dir=output_dir)
 
     def run_reduce2(self, protein_pdb: Path) -> Path:
         """Run mmtbx.reduce2 to add hydrogens (preferred)."""
@@ -332,21 +310,15 @@ class ReceptorPreparer:
             "--quiet",
         ]
         print(f"Running reduce2: {' '.join(cmd)}")
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=str(protein_pdb.parent)
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(protein_pdb.parent))
         if result.returncode != 0:
-            print(
-                f"   Warning: reduce2 failed (code {result.returncode}): {result.stderr}"
-            )
+            print(f"   Warning: reduce2 failed (code {result.returncode}): {result.stderr}")
             raise GridPrepError("reduce2 failed while adding hydrogens.")
 
         if reduced_pdb.exists():
             return reduced_pdb
 
-        print(
-            "   Warning: reduce2 produced no output; using cleaned PDB without hydrogens."
-        )
+        print("   Warning: reduce2 produced no output; using cleaned PDB without hydrogens.")
         return clean_protein_pdb
 
     def run_mk_prepare_receptor(
@@ -377,15 +349,11 @@ class ReceptorPreparer:
             cmd.append("--allow_bad_res")
 
         print(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(
-            cmd, cwd=str(output_dir), capture_output=True, text=True
-        )
+        result = subprocess.run(cmd, cwd=str(output_dir), capture_output=True, text=True)
 
         if result.returncode != 0:
             err_lines = [
-                line.strip()
-                for line in (result.stderr or "").splitlines()
-                if line.strip()
+                line.strip() for line in (result.stderr or "").splitlines() if line.strip()
             ]
             summary = err_lines[-1] if err_lines else "Unknown error"
             print(f"   Error: {summary}")
@@ -403,9 +371,7 @@ class ReceptorPreparer:
         print(f"Running AutoGrid4 for {gpf_path.name}...")
 
         ag_cmd = [self.autogrid_executable, "-p", gpf_path.name, "-l", glg_path.name]
-        ag_result = subprocess.run(
-            ag_cmd, cwd=str(output_dir), capture_output=True, text=True
-        )
+        ag_result = subprocess.run(ag_cmd, cwd=str(output_dir), capture_output=True, text=True)
 
         if ag_result.returncode != 0:
             print(f"   AutoGrid4 Error:\n{ag_result.stderr}")

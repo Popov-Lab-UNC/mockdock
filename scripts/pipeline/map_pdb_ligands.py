@@ -9,15 +9,16 @@ Input: data/chembl_targets.csv
 Output: data/chembl_pdb_map.csv
 """
 
+import argparse
+import asyncio
+import sys
+import time
+from pathlib import Path
+
+import aiohttp
 import pandas as pd
 import requests
-import time
-import asyncio
-import aiohttp
 from tqdm import tqdm
-import argparse
-from pathlib import Path
-import sys
 
 # Add script directory to path to import utils
 sys.path.append(str(Path(__file__).parent))
@@ -185,7 +186,7 @@ def get_ligand_info_for_pdb(pdb_id: str) -> list:
 
         entry_data = r.json().get("data", {}).get("entry", {})
         return _parse_entry_data(entry_data)
-    except Exception as e:
+    except Exception:
         return [], None
 
 
@@ -202,7 +203,7 @@ async def fetch_ligand_info_async(session, pdb_id: str):
             data = await response.json()
             entry_data = data.get("data", {}).get("entry", {})
             return _parse_entry_data(entry_data)
-    except Exception as e:
+    except Exception:
         return [], None
 
 

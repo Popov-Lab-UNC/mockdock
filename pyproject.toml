@@ -39,6 +39,7 @@ where = ["src"]
 fcgmb = ["configs/*.yaml", "grids/**/*", "bioactivity_data/*.csv"]
 
 [tool.ruff]
+line-length = 100
 # Avoid linting large/generated artifacts.
 extend-exclude = [
     ".venv",
@@ -51,6 +52,8 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+unfixable = []
 
 [tool.mypy]
 # Type-check source only (ignore run outputs / generated files)

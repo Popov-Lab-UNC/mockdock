@@ -1,6 +1,7 @@
-import polars as pl
 from pathlib import Path
-from typing import Optional, Union, List
+from typing import Optional, Union
+
+import polars as pl
 
 
 def get_cache_path(

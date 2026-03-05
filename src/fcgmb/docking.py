@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 from rdkit import RDLogger
 
@@ -38,9 +38,7 @@ class DockingOracle(ABC):
             raise FileNotFoundError(f"Receptor file not found: {self.receptor_file}")
 
     @abstractmethod
-    def dock_batch(
-        self, smiles_to_pdbqts: Dict[str, List[Path]], chunk_idx: int
-    ) -> List[Dict]:
+    def dock_batch(self, smiles_to_pdbqts: dict[str, list[Path]], chunk_idx: int) -> list[dict]:
         """Dock a batch of prepared ligand PDBQT files. Returns list of docking results."""
         pass
 
@@ -66,9 +64,7 @@ class AutoDockGPUOracle(DockingOracle):
         # Check if adgpu is callable
         resolved_exe = shutil.which(self.adgpu_executable)
         if resolved_exe is None:
-            if Path(self.adgpu_executable).exists() and os.access(
-                self.adgpu_executable, os.X_OK
-            ):
+            if Path(self.adgpu_executable).exists() and os.access(self.adgpu_executable, os.X_OK):
                 resolved_exe = str(Path(self.adgpu_executable).resolve())
             else:
                 raise FileNotFoundError(
@@ -76,9 +72,7 @@ class AutoDockGPUOracle(DockingOracle):
                 )
         self.adgpu_executable = resolved_exe
 
-    def dock_batch(
-        self, smiles_to_pdbqts: Dict[str, List[Path]], chunk_idx: int
-    ) -> List[Dict]:
+    def dock_batch(self, smiles_to_pdbqts: dict[str, list[Path]], chunk_idx: int) -> list[dict]:
         """Implementation of ADGPU docking for a batch of PDBQT files."""
         with tempfile.TemporaryDirectory(prefix=f"adgpu_chunk_{chunk_idx}_") as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -121,9 +115,7 @@ class AutoDockGPUOracle(DockingOracle):
                         stem = p.stem
                         f.write(f"{rel_path}\n")
                         f.write(f"{stem}\n")
-                        idx_to_info.append(
-                            {"smiles": smi, "stem": stem, "pdbqt_path": p}
-                        )
+                        idx_to_info.append({"smiles": smi, "stem": stem, "pdbqt_path": p})
 
             if not idx_to_info:
                 return []
@@ -152,9 +144,7 @@ class AutoDockGPUOracle(DockingOracle):
             ]
 
             try:
-                subprocess.run(
-                    cmd, cwd=str(tmp_path), capture_output=True, env=env, text=True
-                )
+                subprocess.run(cmd, cwd=str(tmp_path), capture_output=True, env=env, text=True)
             except Exception as e:
                 print(f"Exception running ADGPU: {e}")
 
@@ -165,9 +155,7 @@ class AutoDockGPUOracle(DockingOracle):
                 if dlg_path.exists():
                     persistent_dlg = None
                     if self.save_dir:
-                        persistent_dlg = (
-                            self.save_dir / f"chunk_{chunk_idx}_{info['stem']}.dlg"
-                        )
+                        persistent_dlg = self.save_dir / f"chunk_{chunk_idx}_{info['stem']}.dlg"
                         shutil.copy2(dlg_path, persistent_dlg)
 
                     final_results.append(
@@ -211,9 +199,7 @@ class AutoDockVinaOracle(DockingOracle):
         map_prefix = str(self.receptor_file).replace(".maps.fld", "")
         self.v.load_maps(map_prefix)
 
-    def dock_batch(
-        self, smiles_to_pdbqts: Dict[str, List[Path]], chunk_idx: int
-    ) -> List[Dict]:
+    def dock_batch(self, smiles_to_pdbqts: dict[str, list[Path]], chunk_idx: int) -> list[dict]:
         """Implementation of Vina docking for a batch of PDBQT files."""
         final_results = []
 
@@ -221,21 +207,15 @@ class AutoDockVinaOracle(DockingOracle):
             for p in paths:
                 try:
                     self.v.set_ligand_from_file(str(p))
-                    self.v.dock(
-                        exhaustiveness=self.exhaustiveness, n_poses=self.n_poses
-                    )
+                    self.v.dock(exhaustiveness=self.exhaustiveness, n_poses=self.n_poses)
 
                     stem = p.stem
                     output_pdbqt = p.parent / f"{stem}_docked.pdbqt"
-                    self.v.write_poses(
-                        str(output_pdbqt), n_poses=self.n_poses, overwrite=True
-                    )
+                    self.v.write_poses(str(output_pdbqt), n_poses=self.n_poses, overwrite=True)
 
                     persistent_pdbqt = None
                     if self.save_dir:
-                        persistent_pdbqt = (
-                            self.save_dir / f"chunk_{chunk_idx}_{stem}_docked.pdbqt"
-                        )
+                        persistent_pdbqt = self.save_dir / f"chunk_{chunk_idx}_{stem}_docked.pdbqt"
                         shutil.copy2(output_pdbqt, persistent_pdbqt)
 
                     final_results.append(
@@ -248,8 +228,6 @@ class AutoDockVinaOracle(DockingOracle):
                     )
                 except Exception as e:
                     print(f"Exception running Vina for {smiles}: {e}")
-                    final_results.append(
-                        {"smiles": smiles, "dlg_path": None, "pdbqt_path": p}
-                    )
+                    final_results.append({"smiles": smiles, "dlg_path": None, "pdbqt_path": p})
 
         return final_results

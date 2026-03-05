@@ -13,13 +13,12 @@ Usage:
 """
 
 import argparse
-import time
-import yaml
-from pathlib import Path
-from typing import Set, Tuple
-import polars as pl
 import sys
-import os
+import time
+from pathlib import Path
+
+import polars as pl
+import yaml
 
 # Add parent directory to path to import fcgmb modules
 # Add parent directory to path to import fcgmb modules
@@ -36,12 +35,12 @@ except ImportError:
     from fcgmb.data import fetch_chembl_data
 
 
-def get_unique_config_triplets(config_dir: Path) -> Set[Tuple[str, str, Optional[str]]]:
+def get_unique_config_triplets(config_dir: Path) -> set[tuple[str, str, Optional[str]]]:
     """Extract unique (target_id, doc_id, assay_id) triplets from all YAML configs."""
     triplets = set()
     for config_file in config_dir.glob("*.yaml"):
         try:
-            with open(config_file, "r") as f:
+            with open(config_file) as f:
                 config = yaml.safe_load(f)
                 target_id = config.get("target_id")
                 doc_id = config.get("doc_id")
@@ -106,7 +105,6 @@ def cache_all_chembl_data(
             f"[{idx}/{len(triplets)}] Fetching {target_id}_{doc_id}{'_' + assay_id if assay_id else ''}..."
         )
         retries = 0
-        success = False
 
         while retries <= max_retries:
             try:
@@ -119,7 +117,7 @@ def cache_all_chembl_data(
                 )
 
                 if df.is_empty():
-                    print(f"   Warning: No data returned")
+                    print("   Warning: No data returned")
                     failed.append((target_id, doc_id, assay_id, "No data"))
                     break
 
@@ -127,7 +125,6 @@ def cache_all_chembl_data(
                 df.write_csv(cache_file)
                 print(f"   Saved {len(df)} compounds to {cache_file}")
                 successful.append((target_id, doc_id, assay_id))
-                success = True
                 break
 
             except Exception as e:
@@ -148,12 +145,12 @@ def cache_all_chembl_data(
 
     # Summary
     print(f"\n{'=' * 60}")
-    print(f"Summary:")
+    print("Summary:")
     print(f"  Successful: {len(successful)}")
     print(f"  Failed: {len(failed)}")
 
     if failed:
-        print(f"\nFailed combinations:")
+        print("\nFailed combinations:")
         for target_id, doc_id, assay_id, error in failed:
             print(
                 f"  {target_id}_{doc_id}{'_' + assay_id if assay_id else ''}: {error}"

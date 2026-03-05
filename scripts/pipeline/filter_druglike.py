@@ -8,15 +8,14 @@ Input: data/chembl_pdb_map.csv (or merged chunks)
 Output: data/chembl_pdb_druglike.csv
 """
 
-import pandas as pd
 import argparse
-from pathlib import Path
-from tqdm import tqdm
 import sys
+from pathlib import Path
 
+import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
-
+from tqdm import tqdm
 
 HETEROATOM_PATTERN = Chem.MolFromSmarts("[N,O]")
 
@@ -108,7 +107,7 @@ def main():
         print(f"Loaded {len(df)} rows from {args.input}")
 
     # Filter to holo only
-    df_holo = df[df["is_holo"] == True].copy()
+    df_holo = df[df["is_holo"]].copy()
     print(f"Holo structures: {len(df_holo)}")
 
     # Apply drug-like filter

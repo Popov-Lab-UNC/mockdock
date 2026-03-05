@@ -8,8 +8,8 @@ Usage:
 """
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Add script directory to path to import utils
 sys.path.append(str(Path(__file__).parent))

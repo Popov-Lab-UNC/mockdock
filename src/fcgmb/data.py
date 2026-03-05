@@ -1,15 +1,11 @@
 # Standard library imports
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 # Third-party imports
 import polars as pl
-from rdkit import Chem
-from rdkit.Chem.MolStandardize import rdMolStandardize
 
-# Instantiate standardizer objects once at module level
-_FRAGMENT_CHOOSER = rdMolStandardize.LargestFragmentChooser()
-_UNCHARGER = rdMolStandardize.Uncharger()
+from .utils import standardize_smiles  # noqa: F401 – re-exported for backwards compat
 
 
 def _find_cache_directory(
@@ -47,31 +43,6 @@ def _find_cache_directory(
     return None
 
 
-def standardize_smiles(smiles: str) -> Optional[str]:
-    """
-    Strip salts, neutralize, and canonicalize a SMILES string.
-    Returns None if the SMILES is invalid.
-    """
-    if not smiles or not isinstance(smiles, str):
-        return None
-
-    try:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None
-
-        # 1. Keep largest fragment (removes [Na+], [Cl-], etc.)
-        mol = _FRAGMENT_CHOOSER.choose(mol)
-
-        # 2. Uncharge (neutralize where chemically sensible)
-        mol = _UNCHARGER.uncharge(mol)
-
-        # 3. Return canonical SMILES
-        return Chem.MolToSmiles(mol, canonical=True)
-    except Exception:
-        return None
-
-
 def fetch_chembl_data(
     target_chembl_id: str,
     document_chembl_id: str,
@@ -80,7 +51,7 @@ def fetch_chembl_data(
     cache_dir: Optional[Union[str, Path]] = None,
     use_cache: bool = True,
     cache_only: bool = False,
-) -> Union[pl.DataFrame, Tuple[pl.DataFrame, dict]]:
+) -> Union[pl.DataFrame, tuple[pl.DataFrame, dict]]:
     """
     Fetch bioactivity data from ChEMBL for a specific target and document.
 
@@ -95,25 +66,19 @@ def fetch_chembl_data(
             raise RuntimeError("ChEMBL data missing pchembl_value.")
 
         # 2. Basic cleanup and casting
-        temp_df = temp_df.with_columns(
-            pl.col("pchembl_value").cast(pl.Float64, strict=False)
-        )
+        temp_df = temp_df.with_columns(pl.col("pchembl_value").cast(pl.Float64, strict=False))
         temp_df = temp_df.drop_nulls(subset=["canonical_smiles", "pchembl_value"])
 
         n_orig = len(temp_df)
 
         # 3. Apply standardization (strip salts, neutralize, canonicalize)
         temp_df = temp_df.with_columns(
-            pl.col("canonical_smiles").map_elements(
-                standardize_smiles, return_dtype=pl.String
-            )
+            pl.col("canonical_smiles").map_elements(standardize_smiles, return_dtype=pl.String)
         ).drop_nulls(subset=["canonical_smiles"])
 
         n_clean = len(temp_df)
         if n_orig > n_clean:
-            print(
-                f"   Standardization: Removed {n_orig - n_clean} invalid/failed compounds."
-            )
+            print(f"   Standardization: Removed {n_orig - n_clean} invalid/failed compounds.")
 
         # 4. Deduplicate by canonical_smiles using median pchembl_value
         n_before = len(temp_df)
@@ -127,11 +92,9 @@ def fetch_chembl_data(
         temp_df = temp_df.group_by("canonical_smiles").agg(agg_exprs)
         n_after = len(temp_df)
         if n_after < n_before:
-            print(
-                f"   Deduplicated by canonical_smiles using median: {n_before} -> {n_after}"
-            )
+            print(f"   Deduplicated by canonical_smiles using median: {n_before} -> {n_after}")
 
-        return temp_df, n_orig, n_clean
+        return temp_df, n_orig, n_clean, n_after
 
     # Check cache first if enabled - this avoids API calls entirely
     if use_cache:
@@ -149,12 +112,14 @@ def fetch_chembl_data(
                 if assay_cache_file.exists():
                     try:
                         df = pl.read_csv(assay_cache_file)
-                        print(
-                            f"   Loaded {len(df)} compounds from assay cache: {assay_cache_file}"
-                        )
-                        df, n_orig, n_clean = process_data(df)
+                        print(f"   Loaded {len(df)} compounds from assay cache: {assay_cache_file}")
+                        df, n_orig, n_clean, n_after = process_data(df)
                         if return_stats:
-                            stats = {"n_total": n_orig, "n_standardized": n_clean}
+                            stats = {
+                                "n_total": n_orig,
+                                "n_standardized": n_clean,
+                                "n_deduplicated": n_after,
+                            }
                             return (df, stats)
                         return df
                     except Exception as e:
@@ -164,9 +129,7 @@ def fetch_chembl_data(
 
             # 2. Try document-level cache (legacy or fallback)
             # Path: found_cache_dir/{target_id}_{document_id}.csv
-            doc_cache_file = (
-                found_cache_dir / f"{target_chembl_id}_{document_chembl_id}.csv"
-            )
+            doc_cache_file = found_cache_dir / f"{target_chembl_id}_{document_chembl_id}.csv"
             if doc_cache_file.exists():
                 try:
                     df = pl.read_csv(doc_cache_file)
@@ -178,18 +141,18 @@ def fetch_chembl_data(
                             f"   Filtered document cache to assay {assay_chembl_id}: {n_before} -> {len(df)} compounds"
                         )
 
-                    print(
-                        f"   Loaded {len(df)} compounds from document cache: {doc_cache_file}"
-                    )
-                    df, n_orig, n_clean = process_data(df)
+                    print(f"   Loaded {len(df)} compounds from document cache: {doc_cache_file}")
+                    df, n_orig, n_clean, n_after = process_data(df)
                     if return_stats:
-                        stats = {"n_total": n_orig, "n_standardized": n_clean}
+                        stats = {
+                            "n_total": n_orig,
+                            "n_standardized": n_clean,
+                            "n_deduplicated": n_after,
+                        }
                         return (df, stats)
                     return df
                 except Exception as e:
-                    print(
-                        f"   Warning: Could not read document cache file {doc_cache_file}: {e}"
-                    )
+                    print(f"   Warning: Could not read document cache file {doc_cache_file}: {e}")
 
             # If nothing found and cache_only, fail
             if cache_only:
@@ -199,9 +162,7 @@ def fetch_chembl_data(
                     f"Build the cache first using fcgmb/pipeline/find_matching_documents.py"
                 )
             # Fallback message
-            print(
-                f"   Cache file not found for {target_chembl_id}_{document_chembl_id}"
-            )
+            print(f"   Cache file not found for {target_chembl_id}_{document_chembl_id}")
             print("   Will attempt API call...")
         else:
             # Cache directory doesn't exist - suggest building cache
@@ -211,9 +172,7 @@ def fetch_chembl_data(
                     "Build the cache first:\n"
                     "python fcgmb/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
                 )
-            print(
-                "   Cache directory not found. To avoid API rate limiting, build cache first:"
-            )
+            print("   Cache directory not found. To avoid API rate limiting, build cache first:")
             print(
                 "   python fcgmb/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
             )
@@ -282,16 +241,14 @@ def fetch_chembl_data(
     data = list(res)
 
     if not data:
-        stats = {"n_total": 0, "n_standardized": 0}
+        stats = {"n_total": 0, "n_standardized": 0, "n_deduplicated": 0}
         return (pl.DataFrame(), stats) if return_stats else pl.DataFrame()
 
     df = pl.from_dicts(data, infer_schema_length=None)
 
     # If a cache directory is available, write raw data so future runs use cache
     write_cache_dir = (
-        Path(cache_dir)
-        if cache_dir and Path(cache_dir).exists()
-        else _find_cache_directory(None)
+        Path(cache_dir) if cache_dir and Path(cache_dir).exists() else _find_cache_directory(None)
     )
     if write_cache_dir is None and cache_dir:
         write_cache_dir = Path(cache_dir)
@@ -301,23 +258,23 @@ def fetch_chembl_data(
             df = df.with_columns(pl.lit(target_chembl_id).alias("target_chembl_id"))
         if assay_chembl_id:
             cache_file = (
-                write_cache_dir
-                / target_chembl_id
-                / f"{document_chembl_id}_{assay_chembl_id}.csv"
+                write_cache_dir / target_chembl_id / f"{document_chembl_id}_{assay_chembl_id}.csv"
             )
             cache_file.parent.mkdir(parents=True, exist_ok=True)
         else:
-            cache_file = (
-                write_cache_dir / f"{target_chembl_id}_{document_chembl_id}.csv"
-            )
+            cache_file = write_cache_dir / f"{target_chembl_id}_{document_chembl_id}.csv"
         try:
             df.write_csv(cache_file)
             print(f"   Cached {len(df)} compounds to {cache_file}")
         except Exception as e:
             print(f"   Warning: Could not write cache to {cache_file}: {e}")
 
-    df, n_orig, n_clean = process_data(df)
-    stats = {"n_total": n_orig, "n_standardized": n_clean}
+    df, n_orig, n_clean, n_after = process_data(df)
+    stats = {
+        "n_total": n_orig,
+        "n_standardized": n_clean,
+        "n_deduplicated": n_after,
+    }
     print("   Using pchembl_value (unit-agnostic) from ChEMBL")
 
     return (df, stats) if return_stats else df

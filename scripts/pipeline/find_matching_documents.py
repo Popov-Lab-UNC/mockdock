@@ -11,26 +11,24 @@ Output: data/chembl_docking_benchmark.csv
 
 import argparse
 import os
-import pandas as pd
-from tqdm import tqdm
+import sqlite3
+import sys
 import time
 from collections import defaultdict
-from statistics import median
-import sys
 from pathlib import Path
-import sqlite3
+from statistics import median
+
+import pandas as pd
+from tqdm import tqdm
 
 # Add script directory to path to import utils
 sys.path.append(str(Path(__file__).parent))
-from utils import get_chunk_output_path
-
-from rdkit import Chem
-from rdkit.Chem import rdFingerprintGenerator
-from rdkit import DataStructs
-
 import polars as pl
-from chembl_cache import write_assay_cache
 import requests
+from chembl_cache import write_assay_cache
+from rdkit import Chem, DataStructs
+from rdkit.Chem import rdFingerprintGenerator
+from utils import get_chunk_output_path
 
 
 def check_api_status():
@@ -343,7 +341,7 @@ def main():
     )
     args = parser.parse_args()
 
-    print(f"Configuration:")
+    print("Configuration:")
 
     print(f"  Similarity Threshold: {args.similarity_threshold}")
     print(f"  Min Compounds per Assay: {args.min_compounds}")
@@ -515,7 +513,7 @@ def main():
     print(f"Unique documents: {df_out['document_chembl_id'].nunique()}")
     print(f"Unique assays: {df_out['assay_chembl_id'].nunique()}")
     if "document_type" in df_out.columns:
-        print(f"\nBy document type:")
+        print("\nBy document type:")
         print(df_out["document_type"].value_counts())
     print(f"\nCrystal ligand in assay: {df_out['crystal_in_assay'].sum()}")
 

@@ -5,9 +5,14 @@ from .ligand_prep import LigandPreparer
 from .oracle import FCGMBOracle
 from .utils import (
     assign_bond_orders_from_template,
+    check_2d_match,
+    check_validity,
+    detect_gpus,
     fetch_ligand_expo_sdf,
     plot_activity_distribution,
     plot_docking_results,
+    resolve_backend,
+    standardize_smiles,
 )
 
 
@@ -35,4 +40,9 @@ __all__ = [
     "fetch_ligand_expo_sdf",
     "assign_bond_orders_from_template",
     "FCGMBOracle",
+    "detect_gpus",
+    "resolve_backend",
+    "check_validity",
+    "standardize_smiles",
+    "check_2d_match",
 ]

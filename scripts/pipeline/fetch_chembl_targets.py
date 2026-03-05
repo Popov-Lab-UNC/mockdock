@@ -7,8 +7,9 @@ Output: data/chembl_targets.csv
 
 import argparse
 import os
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 from tqdm import tqdm
 
 

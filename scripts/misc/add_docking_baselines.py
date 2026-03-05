@@ -65,7 +65,7 @@ def _find_results_csv(
     doc_subdir = subdir / doc_id
     if not doc_subdir.exists():
         # Some runs may store the results directly under the target subdir
-        candidates = list(subdir.glob(f"*_results.csv"))
+        candidates = list(subdir.glob("*_results.csv"))
         return candidates[0] if candidates else None
 
     candidates = list(doc_subdir.glob("*_results.csv"))
@@ -164,7 +164,7 @@ def process_benchmark(benchmark_name: str) -> None:
 def main() -> None:
     benchmarks = ["AKT1", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
 
-    print(f"add_docking_baselines.py")
+    print("add_docking_baselines.py")
     print(f"  Variance runs dir : {VARIANCE_RUNS_DIR}")
     print(f"  Bioactivity dir   : {BIOACTIVITY_DIR}")
     print()

@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
-import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.stats import pearsonr, spearmanr
-
 from fcgmb.variance import get_pactivity
-
+from scipy.stats import pearsonr, spearmanr
 
 PALETTE = {
     "periwinkle": "#B8B8FF",
@@ -32,7 +29,7 @@ def set_publication_style():
     plt.rcParams["axes.spines.right"] = False
 
 
-def _load_crystal_mapping(mapping_path: Path) -> Dict[str, Dict[str, str]]:
+def _load_crystal_mapping(mapping_path: Path) -> dict[str, dict[str, str]]:
     """Loads system_key -> {molecule_id, label} mapping."""
     if not mapping_path.exists():
         return {}
@@ -49,11 +46,11 @@ def _load_crystal_mapping(mapping_path: Path) -> Dict[str, Dict[str, str]]:
     return mapping
 
 
-def _iter_run_dirs(runs_dir: Path) -> List[Path]:
+def _iter_run_dirs(runs_dir: Path) -> list[Path]:
     return sorted([p for p in runs_dir.glob("run_*") if p.is_dir()])
 
 
-def _iter_results(run_dir: Path) -> List[Tuple[str, Path]]:
+def _iter_results(run_dir: Path) -> list[tuple[str, Path]]:
     # Layout: run_dir/<target_id>_<pdb_id>/<doc_id>/<target_id>_<pdb_id>_<doc_id>_<assay_id>_results.csv
     # system_key is derived from the CSV filename stem (strip trailing "_results")
     results = []
@@ -66,7 +63,7 @@ def _iter_results(run_dir: Path) -> List[Tuple[str, Path]]:
     return results
 
 
-def _valid_score_mask(df: pl.DataFrame, score_cols: List[str]) -> pl.Expr:
+def _valid_score_mask(df: pl.DataFrame, score_cols: list[str]) -> pl.Expr:
     exprs = [
         (pl.col(c).is_not_null()) & (pl.col(c).is_finite()) & (pl.col(c) < 900)
         for c in score_cols
@@ -84,7 +81,7 @@ def _short_system_label(system_key: str) -> str:
 
 def _compute_system_correlations(
     df: pl.DataFrame, config_path: Path
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     if df.is_empty() or "docking_score" not in df.columns:
         return float("nan"), float("nan")
     p_activities, _ = get_pactivity(df, config_path)
@@ -102,7 +99,7 @@ def plot_run_barplot(runs_dir: Path, config_dir: Path, output_dir: Path) -> Path
     if not run_dirs:
         raise FileNotFoundError(f"No run_* directories found in {runs_dir}")
 
-    system_corrs: Dict[str, List[float]] = {}
+    system_corrs: dict[str, list[float]] = {}
     for run_dir in run_dirs:
         for system_key, csv_path in _iter_results(run_dir):
             config_path = config_dir / f"{system_key}.yaml"
@@ -201,15 +198,15 @@ def plot_system_variance(
     runs_dir: Path,
     config_dir: Path,
     output_dir: Path,
-    mapping: Dict[str, Dict[str, str]] = None,
-) -> List[Path]:
+    mapping: dict[str, dict[str, str]] = None,
+) -> list[Path]:
     mapping = mapping or {}
     run_dirs = _iter_run_dirs(runs_dir)
     if not run_dirs:
         raise FileNotFoundError(f"No run_* directories found in {runs_dir}")
 
     # Collect per-system data across runs
-    system_data: Dict[str, List[pl.DataFrame]] = {}
+    system_data: dict[str, list[pl.DataFrame]] = {}
     for run_dir in run_dirs:
         for system_key, csv_path in _iter_results(run_dir):
             df = pl.read_csv(csv_path)

@@ -16,12 +16,13 @@ Folder layout (per run):
         metrics.json        # Optional override (if present, used instead of computing)
 """
 
-import pandas as pd
-import numpy as np
 import argparse
-from pathlib import Path
-import sys
 import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
 
 try:
     from scipy.stats import pearsonr, spearmanr
@@ -53,7 +54,7 @@ def _metrics_from_results_csv(csv_path: Path) -> dict:
         return metrics
     if "pchembl_value" not in res.columns:
         return metrics
-    y = res["pchembl_value"].dropna().to_numpy()
+    res["pchembl_value"].dropna().to_numpy()
 
     # best_any: score_best_any vs pchembl_value (all rows with valid score)
     score_col = "score_best_any" if "score_best_any" in res.columns else "docking_score"

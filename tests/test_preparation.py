@@ -16,7 +16,7 @@ def test_preparation_pipeline():
     Test the full preparation pipeline until the docking stage.
     """
     # Use a known benchmark for configuration
-    benchmark_name = "CHEMBL4482_5XVA_CHEMBL4028914"
+    benchmark_name = "CHK1"
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -92,8 +92,10 @@ def test_preparation_pipeline():
         # 5. Verify 2D Filtering
         print(f"\n[5] Verifying 2D filtering")
         for smi in test_smiles:
-            matches = analyzer.check_2d_fragment_match(smi)
-            print(f"SMILES: {smi} matches fragment: {matches}")
+            mol = check_validity(smi)
+            is_valid = mol is not None
+            has_match = check_2d_match(mol, analyzer.fragment_mol) if is_valid else False
+            print(f"SMILES: {smi} valid={is_valid} matches fragment: {has_match}")
 
         print("\nPreparation stage test COMPLETED SUCCESSFULLY.")
 
