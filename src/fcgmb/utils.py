@@ -195,7 +195,7 @@ def plot_docking_results(
     plt.figure(figsize=(10, 6))
 
     valid_mask = is_valid
-    invalid_mask = not is_valid
+    invalid_mask = ~is_valid
 
     # 4. Fix Plotting Order: Plot Noise (Red) FIRST, Signal (Blue) SECOND
     if np.any(invalid_mask):
