@@ -4,7 +4,7 @@
 #SBATCH -n 1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=32G
-#SBATCH --time=7-00:00:00
+#SBATCH --time=01:00:00
 #SBATCH --output=benchmark_%j.log
 #SBATCH --error=benchmark_%j.err
 #SBATCH --mail-type=ALL
@@ -103,7 +103,7 @@ for config_file in generated_configs/*.yaml; do
         if [ -n "${SLURM_CPUS_PER_TASK:-}" ]; then
             CPUS_ARG=(--cpus "$SLURM_CPUS_PER_TASK")
         fi
-        python -u run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" "${CPUS_ARG[@]}"
+        python -u scripts/run_workflow.py --config "$config_file" --run-dir "$RUN_DIR" "${CPUS_ARG[@]}"
         echo ""
     fi
 done
