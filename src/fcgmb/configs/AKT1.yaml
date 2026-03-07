@@ -4,10 +4,10 @@ target_id: CHEMBL4282
 doc_id: CHEMBL2176970
 assay_id: CHEMBL2186223
 ligand_resname: 0R4
-fragment_smiles: "C1=CN=CC(C2=NC3=CC=CN=C3N2)=C1"
-fragment_smiles_with_dummies: "[*]C1=NC=CC=C1C2=NC3=CC([*])=C([*])N=C3N2[*]"
+fragment_smiles: C1=CN=CC(C2=NC3=CC=CN=C3N2)=C1
+fragment_smiles_with_dummies: '[*]C1=NC=CC=C1C2=NC3=CC([*])=C([*])N=C3N2[*]'
 require_fragment_match: true
 require_pose_rmsd: true
-low_score: -9.741
-high_score: -14.342
+low_score: -9.078
+high_score: -13.69
 rmsd_threshold: 2.0

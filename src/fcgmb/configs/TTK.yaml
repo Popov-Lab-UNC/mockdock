@@ -4,10 +4,10 @@ target_id: CHEMBL3983
 doc_id: CHEMBL3407417
 assay_id: CHEMBL3411333
 ligand_resname: O43
-fragment_smiles: "NC(=O)C1=CC=C(C2=CN=CN2)C=C1"
-fragment_smiles_with_dummies: "O=C(C1=CC=C(C=C1)C2=CN=C([*])N2[*])N[*]"
+fragment_smiles: NC(=O)C1=CC=C(C2=CN=CN2)C=C1
+fragment_smiles_with_dummies: O=C(C1=CC=C(C=C1)C2=CN=C([*])N2[*])N[*]
 require_fragment_match: true
 require_pose_rmsd: true
-low_score: -10.059
-high_score: -12.78
+low_score: -8.719
+high_score: -11.702
 rmsd_threshold: 2.0

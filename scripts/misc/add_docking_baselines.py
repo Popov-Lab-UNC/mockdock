@@ -13,6 +13,11 @@ written back into the six canonical bioactivity CSVs
                         Can be negative or exceed 1.0 when mean_docking_score
                         falls outside the calibration range.
 
+low_score and high_score are computed from the variance run data: high_score =
+best (min) mean_docking_score observed; low_score = mean of mean_docking_scores
+for compounds in the lower quantile by pactivity (pchembl_value). These values
+are written back into the benchmark YAML configs (fcgmb/configs/<benchmark>.yaml).
+
 Run once from the benchmark root::
 
     python add_docking_baselines.py
@@ -34,8 +39,8 @@ import yaml
 
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 VARIANCE_RUNS_DIR = BENCHMARK_ROOT / "variance_runs"
-BIOACTIVITY_DIR = BENCHMARK_ROOT / "fcgmb" / "bioactivity_data"
-CONFIGS_DIR = BENCHMARK_ROOT / "fcgmb" / "configs"
+BIOACTIVITY_DIR = BENCHMARK_ROOT / "src" / "fcgmb" / "bioactivity_data"
+CONFIGS_DIR = BENCHMARK_ROOT / "src" / "fcgmb" / "configs"
 
 N_RUNS = 5  # variance_runs/run_1 … run_5
 
@@ -82,14 +87,6 @@ def process_benchmark(benchmark_name: str) -> None:
     target_id = cfg["target_id"]
     pdb_id = cfg["pdb_id"]
     doc_id = cfg["doc_id"]
-    low_score: float | None = cfg.get("low_score")
-    high_score: float | None = cfg.get("high_score")
-
-    if low_score is None or high_score is None:
-        print(
-            f"  [WARN] {benchmark_name}: low_score/high_score not in config; "
-            "will add mean_docking_score but not normalised score."
-        )
 
     # ── Collect per-compound docking scores from all variance runs ──────────
     all_run_frames: list[pl.DataFrame] = []
@@ -126,27 +123,48 @@ def process_benchmark(benchmark_name: str) -> None:
         pl.col("docking_score").mean().alias("mean_docking_score")
     )
 
-    # ── Read bioactivity CSV and join ────────────────────────────────────────
+    # ── Read bioactivity CSV and join (needed for pactivity-based low_score) ─
     bio_df = pl.read_csv(csv_path)
-
-    # Drop existing columns so the script is idempotent
     for col in ["mean_docking_score", "score"]:
         if col in bio_df.columns:
             bio_df = bio_df.drop(col)
-
     merged = bio_df.join(mean_scores, on="molecule_chembl_id", how="left")
 
-    # ── Compute normalised score ─────────────────────────────────────────────
-    if low_score is not None and high_score is not None:
-        denom = low_score - high_score
-        if abs(denom) > 1e-6:
-            merged = merged.with_columns(
-                ((pl.lit(low_score) - pl.col("mean_docking_score")) / denom).alias(
-                    "score"
-                )
-            )
+    # ── Compute low_score and high_score from variance run data ──────────────
+    # high_score = best (min) mean_docking_score; low_score = mean for lower quantile by pactivity
+    with_scores = merged.filter(pl.col("mean_docking_score").is_not_null())
+    if with_scores.is_empty():
+        print(f"  [SKIP] {benchmark_name}: no compounds with variance run data.")
+        return
+
+    high_score = float(with_scores["mean_docking_score"].min())
+    if "pchembl_value" not in with_scores.columns:
+        print(
+            f"  [WARN] {benchmark_name}: pchembl_value missing; using mean for low_score."
+        )
+        low_score = float(with_scores["mean_docking_score"].mean())
+    else:
+        # Lower quantile = bottom 25% by pactivity (least active compounds)
+        q25 = float(with_scores["pchembl_value"].quantile(0.25))
+        lower_quantile = with_scores.filter(pl.col("pchembl_value") <= q25)
+        if lower_quantile.is_empty():
+            low_score = float(with_scores["mean_docking_score"].mean())
         else:
-            merged = merged.with_columns(pl.lit(None, dtype=pl.Float64).alias("score"))
+            low_score = float(lower_quantile["mean_docking_score"].mean())
+
+    # Write calibration values back to YAML config
+    cfg["low_score"] = round(low_score, 3)
+    cfg["high_score"] = round(high_score, 3)
+    config_path = CONFIGS_DIR / f"{benchmark_name}.yaml"
+    with open(config_path, "w") as f:
+        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+
+    # ── Compute normalised score ─────────────────────────────────────────────
+    denom = low_score - high_score
+    if abs(denom) > 1e-6:
+        merged = merged.with_columns(
+            ((pl.lit(low_score) - pl.col("mean_docking_score")) / denom).alias("score")
+        )
     else:
         merged = merged.with_columns(pl.lit(None, dtype=pl.Float64).alias("score"))
 

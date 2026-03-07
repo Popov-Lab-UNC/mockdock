@@ -3,11 +3,18 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import yaml
 import numpy as np
 import polars as pl
 import seaborn as sns
-from fcgmb.variance import get_pactivity
 from scipy.stats import pearsonr, spearmanr
+
+
+def _get_pactivity(df: pl.DataFrame, config_path: Path):
+    """Use ChEMBL pValue only; error if missing."""
+    if "pchembl_value" not in df.columns:
+        raise RuntimeError("Missing pchembl_value; cannot compute pActivity.")
+    return df.get_column("pchembl_value").to_numpy(), "pActivity (ChEMBL pValue)"
 
 PALETTE = {
     "periwinkle": "#B8B8FF",
@@ -43,6 +50,24 @@ def _load_crystal_mapping(mapping_path: Path) -> dict[str, dict[str, str]]:
             "molecule_id": str(row["molecule_chembl_id"]),
             "label": str(label),
         }
+    return mapping
+
+
+def _build_system_key_to_config(config_dir: Path) -> dict[str, Path]:
+    """Map system_key (target_id_pdb_id_doc_id_assay_id) to config file path."""
+    mapping = {}
+    for config_path in config_dir.glob("*.yaml"):
+        try:
+            cfg = yaml.safe_load(config_path.read_text())
+            target_id = cfg.get("target_id")
+            pdb_id = cfg.get("pdb_id")
+            doc_id = cfg.get("doc_id")
+            assay_id = cfg.get("assay_id")
+            if all([target_id, pdb_id, doc_id, assay_id]):
+                key = f"{target_id}_{pdb_id}_{doc_id}_{assay_id}"
+                mapping[key] = config_path
+        except Exception:
+            continue
     return mapping
 
 
@@ -84,7 +109,7 @@ def _compute_system_correlations(
 ) -> tuple[float, float]:
     if df.is_empty() or "docking_score" not in df.columns:
         return float("nan"), float("nan")
-    p_activities, _ = get_pactivity(df, config_path)
+    p_activities, _ = _get_pactivity(df, config_path)
     scores = df.get_column("docking_score").to_numpy()
     mask = np.isfinite(scores) & np.isfinite(p_activities) & (scores < 900)
     if np.sum(mask) < 2:
@@ -201,6 +226,7 @@ def plot_system_variance(
     mapping: dict[str, dict[str, str]] = None,
 ) -> list[Path]:
     mapping = mapping or {}
+    system_key_to_config = _build_system_key_to_config(config_dir)
     run_dirs = _iter_run_dirs(runs_dir)
     if not run_dirs:
         raise FileNotFoundError(f"No run_* directories found in {runs_dir}")
@@ -253,10 +279,10 @@ def plot_system_variance(
         means = np.mean(scores_matrix, axis=1)
         stds = np.std(scores_matrix, axis=1)
 
-        config_path = config_dir / f"{system_key}.yaml"
-        if not config_path.exists():
+        config_path = system_key_to_config.get(system_key)
+        if config_path is None:
             continue
-        p_activities, activity_label = get_pactivity(clean, config_path)
+        p_activities, activity_label = _get_pactivity(clean, config_path)
 
         # Implementation for true quantile shading and crystal labeling
         set_publication_style()
@@ -353,7 +379,7 @@ def main():
     parser.add_argument(
         "--config-dir",
         type=str,
-        default="configs",
+        default="src/fcgmb/configs",
         help="Directory with system YAML configs",
     )
     parser.add_argument(

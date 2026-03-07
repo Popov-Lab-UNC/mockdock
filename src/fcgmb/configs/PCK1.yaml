@@ -4,10 +4,10 @@ target_id: CHEMBL2911
 doc_id: CHEMBL1145376
 assay_id: CHEMBL889299
 ligand_resname: FTB
-fragment_smiles: "CN1C(=O)N(CC2=CC=CC=C2F)C(=O)C2=C1N=C(CC1=CC=C(N)C=C1)N2"
-fragment_smiles_with_dummies: "O=C(N(C(C1=C2N=C(N1)CC3=C([*])C=C(C=C3)N[*])=O)CC4=CC=CC=C4F)N2C[*]"
+fragment_smiles: CN1C(=O)N(CC2=CC=CC=C2F)C(=O)C2=C1N=C(CC1=CC=C(N)C=C1)N2
+fragment_smiles_with_dummies: O=C(N(C(C1=C2N=C(N1)CC3=C([*])C=C(C=C3)N[*])=O)CC4=CC=CC=C4F)N2C[*]
 require_fragment_match: true
 require_pose_rmsd: true
-low_score: -11.205
-high_score: -13.692
+low_score: -10.089
+high_score: -12.974
 rmsd_threshold: 2.0
