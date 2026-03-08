@@ -110,19 +110,6 @@ def fetch_assays_for_target(
         results = {}
 
         for doc_id, doc_assays in doc_groups.items():
-            # Check min compounds threshold (at document level after standardization and deduplication)
-            doc_smiles = set()
-            for acts in doc_assays.values():
-                for act in acts:
-                    smiles = act.get("canonical_smiles")
-                    if smiles:
-                        std_s = standardize_smiles(smiles)
-                        if std_s:
-                            doc_smiles.add(std_s)
-
-            if len(doc_smiles) < min_compounds:
-                continue
-
             # Process assays in this document
             for assay_id, acts in doc_assays.items():
                 smiles_list = []
@@ -164,7 +151,6 @@ def fetch_assays_for_target(
                     "type": doc_types.get(doc_id, "unknown"),
                     "smiles_list": list(unique_smiles),
                     "pchembl_by_smiles": pchembl_by_smiles,
-                    "n_compounds_in_doc": len(doc_smiles),
                 }
 
         return results
@@ -238,16 +224,6 @@ def fetch_assays_for_targets_sqlite(
             if pd.isna(doc_id):
                 continue
 
-            # Check min compounds threshold (at document level after standardization and deduplication)
-            doc_smiles = set()
-            for s in doc_df["canonical_smiles"].dropna():
-                std_s = standardize_smiles(s)
-                if std_s:
-                    doc_smiles.add(std_s)
-
-            if len(doc_smiles) < min_compounds:
-                continue
-
             # Process assays in this document
             for assay_id, assay_df in doc_df.groupby("assay_chembl_id"):
                 if pd.isna(assay_id):
@@ -302,7 +278,6 @@ def fetch_assays_for_targets_sqlite(
                     "type": doc_type,
                     "smiles_list": list(unique_smiles),
                     "pchembl_by_smiles": pchembl_by_smiles,
-                    "n_compounds_in_doc": len(doc_smiles),
                 }
 
     return results_by_target
@@ -359,6 +334,13 @@ def main():
         help="Minimum compounds in document to consider",
     )
     parser.add_argument(
+        "--min-pchembl-range",
+        type=float,
+        default=0.0,
+        help="Minimum pChEMBL range (max - min) required across compounds in an assay "
+             "(e.g. 1.0 requires at least a 10-fold potency spread). Default: 0.0 (no filter).",
+    )
+    parser.add_argument(
         "--start", type=int, default=0, help="Start index (for parallelization)"
     )
     parser.add_argument("--end", type=int, default=None, help="End index")
@@ -379,6 +361,7 @@ def main():
 
     print(f"  Similarity Threshold: {args.similarity_threshold}")
     print(f"  Min Compounds per Assay: {args.min_compounds}")
+    print(f"  Min pChEMBL Range: {args.min_pchembl_range}")
 
     def resolve_sqlite_path(cli_path):
         if cli_path:
@@ -483,6 +466,17 @@ def main():
                 median(vals) for vals in pchembl_by_smiles.values() if vals
             ]
             median_pchembl = median(per_smiles_medians) if per_smiles_medians else None
+            pchembl_range = (
+                max(per_smiles_medians) - min(per_smiles_medians)
+                if len(per_smiles_medians) >= 2
+                else 0.0
+            )
+
+            if n_compounds < args.min_compounds:
+                continue
+
+            if pchembl_range < args.min_pchembl_range:
+                continue
 
             for key, crystal_data in crystal_fps.items():
                 matches = find_matching_compounds(
@@ -511,12 +505,12 @@ def main():
                             "assay_chembl_id": assay_id,
                             "document_type": doc_type,
                             "n_compounds_in_assay": n_compounds,
-                            "n_compounds_in_doc": assay_data.get("n_compounds_in_doc"),
                             "n_matches": len(matches),
                             "best_match_smiles": best_match_smiles,
                             "best_similarity": best_similarity,
                             "crystal_in_assay": crystal_in_doc,
                             "median_pchembl": median_pchembl,
+                            "pchembl_range": pchembl_range,
                         }
                     )
 

@@ -35,6 +35,7 @@ python scripts/pipeline/find_matching_documents.py \
     --input data/chembl_pdb_druglike.csv \
     --output data/chembl_docking_benchmark.csv \
     --min-compounds 20 \
+    --min-pchembl-range 1.0 \
     --start $START \
     --end $END \
     --delay 0.5 \
