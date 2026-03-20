@@ -4,7 +4,7 @@
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
-#SBATCH --time=05:00:00
+#SBATCH --time=00:30:00
 #SBATCH --output=variance_%j.log
 #SBATCH --error=variance_%j.err
 #SBATCH --mail-user=shuhang@unc.edu
