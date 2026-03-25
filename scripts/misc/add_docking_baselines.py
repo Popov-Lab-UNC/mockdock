@@ -180,7 +180,7 @@ def process_benchmark(benchmark_name: str) -> None:
 
 
 def main() -> None:
-    benchmarks = ["AKT1", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
+    benchmarks = sorted(p.stem for p in CONFIGS_DIR.glob("*.yaml"))
 
     print("add_docking_baselines.py")
     print(f"  Variance runs dir : {VARIANCE_RUNS_DIR}")

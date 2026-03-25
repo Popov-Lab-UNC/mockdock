@@ -8,8 +8,8 @@ Files are named by `benchmark_name` as defined in the corresponding config YAML:
 
 ```
 bioactivity_data/
-├── AKT1.csv
 ├── CHK1.csv
+├── DPP4.csv
 ├── ITK.csv
 ├── PCK1.csv
 ├── TTK.csv

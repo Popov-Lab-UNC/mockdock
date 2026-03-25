@@ -29,9 +29,9 @@ Alternatively, you can let the oracle auto-prepare grids (requires `autogrid4`, 
 
 | Benchmark | PDB ID | Target       |
 |-----------|--------|--------------|
-| AKT1      | 4EJN   | CHEMBL4282   |
 | CHK1      | 2R0U   | CHEMBL4630   |
+| DPP4      | 2HHA   | CHEMBL284    |
 | ITK       | 3QGW   | CHEMBL2959   |
-| PCK1      | 1NHX   | CHEMBL2911   |
+| PCK1      | 2GMV   | CHEMBL2911   |
 | TTK       | 3WZJ   | CHEMBL3983   |
 | VEGFR2    | 3VHE   | CHEMBL279    |

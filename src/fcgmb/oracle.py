@@ -54,7 +54,7 @@ class FCGMBOracle:
         Initialize the oracle for a specific benchmark.
 
         Args:
-            benchmark_name: Name of the benchmark (e.g. 'AKT1', 'CHK1', 'ITK',
+            benchmark_name: Name of the benchmark (e.g. 'CHK1', 'DPP4', 'ITK',
                 'PCK1', 'TTK', 'VEGFR2'). Run FCGMBOracle.list_benchmarks() for
                 the full list.
             budget: Total number of compounds allowed to be scored.

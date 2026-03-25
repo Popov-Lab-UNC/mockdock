@@ -8,6 +8,6 @@ fragment_smiles: C1=CC2=C(C=NC=N2)N1
 fragment_smiles_with_dummies: '[*]N1C(C([*])=NC=N2)=C2C=C1'
 require_fragment_match: true
 require_pose_rmsd: true
-low_score: -10.141
+low_score: -10.038
 high_score: -12.41
 rmsd_threshold: 2.0
