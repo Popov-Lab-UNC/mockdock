@@ -10,6 +10,11 @@ from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 # Silence RDKit noise
 RDLogger.DisableLog("rdApp.*")
 
+# Cache heavy objects at the module level so they are initialized once per worker process
+_scrubber_cache = {}
+_preparator_cache = None
+_writer_cache = None
+
 
 class LigandPreparer:
     """Prepare SMILES molecules as PDBQT files for docking."""
@@ -37,8 +42,12 @@ class LigandPreparer:
                 return []
 
             # 2. Generate States (Scrub)
-            scrubber = Scrub(ph_low=self.ph_low, ph_high=self.ph_high)
-            
+            global _scrubber_cache, _preparator_cache, _writer_cache
+            key = (self.ph_low, self.ph_high)
+            if key not in _scrubber_cache:
+                _scrubber_cache[key] = Scrub(ph_low=self.ph_low, ph_high=self.ph_high)
+            scrubber = _scrubber_cache[key]
+
             try:
                 mol_states = list(scrubber(mol))
             except Exception as e:
@@ -50,7 +59,14 @@ class LigandPreparer:
 
             # 3. 3D Embedding, Minimization, and Meeko Prep
             state_counter = 0
-            preparator = MoleculePreparation()
+
+            if _preparator_cache is None:
+                _preparator_cache = MoleculePreparation()
+            preparator = _preparator_cache
+
+            if _writer_cache is None:
+                _writer_cache = PDBQTWriterLegacy()
+            writer = _writer_cache
 
             for mol_state in mol_states:
                 try:
@@ -82,7 +98,7 @@ class LigandPreparer:
                     # Prepare for Docking
                     mol_setups = preparator.prepare(mol_state)
                     for setup in mol_setups:
-                        pdbqt_string, is_ok, error_message = PDBQTWriterLegacy().write_string(setup)
+                        pdbqt_string, is_ok, error_message = writer.write_string(setup)
                         if is_ok:
                             fname = f"{batch_prefix}lig_{idx}_s{state_counter}.pdbqt"
                             fpath = pdbqt_dir / fname
