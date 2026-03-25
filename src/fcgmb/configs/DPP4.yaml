@@ -4,8 +4,8 @@ target_id: CHEMBL284
 doc_id: CHEMBL1137276
 assay_id: CHEMBL856512
 ligand_resname: 3TP
-fragment_smiles: CC(C)C(N)C(=O)N1CCCC1
-fragment_smiles_with_dummies: ""
+fragment_smiles: "CC(C)C(N)C(=O)N1CCCC1"
+fragment_smiles_with_dummies: "*C1CCN(C(=O)C(N)C(*)*)C1"
 require_fragment_match: true
 require_pose_rmsd: true
 low_score: -9.3

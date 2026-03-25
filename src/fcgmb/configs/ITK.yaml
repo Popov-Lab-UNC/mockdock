@@ -4,8 +4,8 @@ target_id: CHEMBL2959
 doc_id: CHEMBL1765075
 assay_id: CHEMBL1768448
 ligand_resname: L7A
-fragment_smiles: CC1=CNC(=O)C=C1
-fragment_smiles_with_dummies: "[*]C1=CNC(C([*])=C1)=O"
+fragment_smiles: "Cc1ccc(=O)[nH]c1"
+fragment_smiles_with_dummies: "*c1c[nH]c(=O)c(*)c1"
 require_fragment_match: true
 require_pose_rmsd: true
 low_score: -7.997
