@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 ACEGEN_ROOT = SCRIPT_DIR.parents[2] / "acegen-open"
-BENCHMARKS = ["AKT1", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
+BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
 
 
 # ── Interface bridge ──────────────────────────────────────────────────────────

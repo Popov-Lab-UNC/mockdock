@@ -42,7 +42,7 @@ python run.py --benchmark CHK1 --budget 5000
 python run.py --benchmark CHK1 --fragment-condition
 
 # Multiple benchmarks, 3 independent runs each
-python run.py --benchmark AKT1 --benchmark CHK1 --num-runs 3
+python run.py --benchmark DPP4 --benchmark CHK1 --num-runs 3
 
 # Full options
 python run.py \

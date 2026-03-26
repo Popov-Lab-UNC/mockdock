@@ -39,7 +39,7 @@ os_environ = __import__("os").environ
 os_environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-BENCHMARKS = ["AKT1", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
+BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
 
 
 def _resolve_default_frag_root() -> pathlib.Path:

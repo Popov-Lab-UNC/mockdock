@@ -378,7 +378,7 @@ def _get_null_oracle() -> OracleProtocol:
 # CLI  (mirrors prexsyn/scripts/benchmarks/optim.py)
 # ──────────────────────────────────────────────────────────────────────────────
 
-BENCHMARKS = ["AKT1", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
+BENCHMARKS = ["DPP4", "CHK1", "ITK", "PCK1", "TTK", "VEGFR2"]
 
 
 @click.command()

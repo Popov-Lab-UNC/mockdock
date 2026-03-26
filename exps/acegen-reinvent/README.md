@@ -36,10 +36,10 @@ pip install promptsmiles
 sbatch run.sbatch
 
 # Run a single benchmark interactively
-python run.py --benchmark AKT1 --budget 5000 --seed 0
+python run.py --benchmark DPP4 --budget 5000 --seed 0
 
 # Run a subset of benchmarks
-python run.py --benchmark AKT1 --benchmark CHK1 --budget 5000 --seed 0
+python run.py --benchmark DPP4 --benchmark CHK1 --budget 5000 --seed 0
 ```
 
 ## Outputs

@@ -3,7 +3,7 @@
 #SBATCH --partition=volta-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=48G
 #SBATCH --time=2-00:00:00
 #SBATCH --output=prexsyn_%j.log
@@ -34,7 +34,7 @@ OUT_DIR=${SCRIPT_DIR}/outputs
 # bottleneck    : elite population size fed to FingerprintGenetic each step
 # time_limit    : per-run wall-clock cap in seconds (empty = no limit)
 BUDGET=1000
-NUM_RUNS=1
+NUM_RUNS=5
 NUM_INIT=500
 BOTTLENECK=50
 TIME_LIMIT=""
@@ -44,7 +44,7 @@ TIME_LIMIT=""
 FRAGMENT_CONDITION="--fragment-condition"
 
 # ── Benchmarks ────────────────────────────────────────────────────────────────
-BENCHMARKS=(AKT1 CHK1 ITK PCK1 TTK VEGFR2)
+BENCHMARKS=(DPP4 CHK1 ITK PEPCK TTK VEGFR2)
 
 echo "========================================================"
 echo " PrexSyn × FCGMB Evaluation"
@@ -64,29 +64,43 @@ echo ""
 
 cd "${SCRIPT_DIR}"
 
-for BENCHMARK in "${BENCHMARKS[@]}"; do
+# When NUM_RUNS>1, we want *independent* full-suite runs to land in
+# different top-level run directories:
+#   run_<timestamp>_r01/<BENCHMARK>/...
+#   run_<timestamp>_r02/<BENCHMARK>/...
+#   ...
+#
+# Each suite run calls run.py with --num-runs 1 (one optimization run per
+# benchmark) so the directory split is clean and consistent.
+BASE_TS="$(date +%Y%m%d_%H%M%S)"
+
+# Build optional time-limit flag
+TIME_LIMIT_FLAG=""
+[ -n "${TIME_LIMIT}" ] && TIME_LIMIT_FLAG="--time-limit ${TIME_LIMIT}"
+
+for RUN_IDX in $(seq 1 "${NUM_RUNS}"); do
+    RUN_TAG=$(printf "r%02d" "${RUN_IDX}")
+    RUN_PARENT="${SCRIPT_DIR}/run_${BASE_TS}_${RUN_TAG}"
+    mkdir -p "${RUN_PARENT}"
+
     echo "──────────────────────────────────────────────────────"
-    echo " Starting benchmark: ${BENCHMARK}"
+    echo " Suite run      : ${RUN_IDX}/${NUM_RUNS}"
+    echo " Run parent     : ${RUN_PARENT}"
     echo " $(date)"
     echo "──────────────────────────────────────────────────────"
 
-    # Build optional time-limit flag
-    TIME_LIMIT_FLAG=""
-    [ -n "${TIME_LIMIT}" ] && TIME_LIMIT_FLAG="--time-limit ${TIME_LIMIT}"
-
     python -u run.py \
-        --benchmark         "${BENCHMARK}" \
         --model             "${PREXSYN_MODEL}" \
         --budget            "${BUDGET}" \
-        --num-runs          "${NUM_RUNS}" \
+        --num-runs          1 \
         --num-init-samples  "${NUM_INIT}" \
         --bottleneck-size   "${BOTTLENECK}" \
         --out               "${OUT_DIR}" \
+        --run-dir           "${RUN_PARENT}" \
         ${TIME_LIMIT_FLAG} \
-        ${FRAGMENT_CONDITION}
+        ${FRAGMENT_CONDITION} \
+        $(for b in "${BENCHMARKS[@]}"; do printf -- "--benchmark %q " "$b"; done)
 
-    echo ""
-    echo " Finished: ${BENCHMARK}  ($(date))"
     echo ""
 done
 

@@ -859,12 +859,23 @@ class FCGMBOracle:
             )
 
         # ── Status JSON (summary for live monitoring) ────────────────────
-        docked_df = self.results_df.filter(pl.col("skip_reason").is_null())
+        # NOTE:
+        # - "budget_used" counts molecules *attempted* for scoring (post-standardization
+        #   and post-2D-fragment filtering), regardless of docking/RMSD outcome.
+        # - "n_molecules_success" counts molecules that successfully produced a score:
+        #     - if pose RMSD is required, this means a valid RMSD-passing pose was found
+        #     - otherwise, any successful docking result counts
+        #   This matches skip_reason == null.
+        success_df = self.results_df.filter(pl.col("skip_reason").is_null())
         n_total = len(self.results_df)
-        n_docked = len(docked_df)
-        n_skipped_2d = len(self.results_df.filter(pl.col("skip_reason") == "2D fragment mismatch"))
-        best_score = float(docked_df["normalized_score"].max()) if n_docked > 0 else 0.0
-        best_docking = float(docked_df["docking_score"].min()) if n_docked > 0 else float("nan")
+        n_success = len(success_df)
+        # Skip reasons are set in _filter_smiles/_analyze_results via _create_skipped_result
+        n_skipped_2d = len(
+            self.results_df.filter(pl.col("skip_reason") == "failed_2d_match")
+        )
+        n_invalid = len(self.results_df.filter(pl.col("skip_reason") == "invalid_molecule"))
+        best_score = float(success_df["normalized_score"].max()) if n_success > 0 else 0.0
+        best_docking = float(success_df["docking_score"].min()) if n_success > 0 else float("nan")
 
         status = {
             "benchmark": self.benchmark_name,
@@ -872,8 +883,10 @@ class FCGMBOracle:
             "budget_total": self.max_budget,
             "generation_round": self._generation_round,
             "n_molecules_total": n_total,
-            "n_molecules_docked": n_docked,
+            "n_molecules_attempted": self.budget_used,
+            "n_molecules_success": n_success,
             "n_molecules_skipped_2d": n_skipped_2d,
+            "n_molecules_invalid": n_invalid,
             "best_normalized_score": best_score,
             "best_docking_score_kcal": best_docking,
         }

@@ -26,7 +26,7 @@ pip install promptsmiles
 
 ```bash
 sbatch run.sbatch
-python run.py --benchmark AKT1 --budget 5000 --seed 0
+python run.py --benchmark DPP4 --budget 5000 --seed 0
 ```
 
 ## Key hyperparameters
