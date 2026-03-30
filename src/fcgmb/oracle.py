@@ -55,7 +55,7 @@ class FCGMBOracle:
 
         Args:
             benchmark_name: Name of the benchmark (e.g. 'CHK1', 'DPP4', 'ITK',
-                'PCK1', 'TTK', 'VEGFR2'). Run FCGMBOracle.list_benchmarks() for
+                'PEPCK', 'TTK', 'VEGFR2'). Run FCGMBOracle.list_benchmarks() for
                 the full list.
             budget: Total number of compounds allowed to be scored.
             docking_backend: Backend to use ('autodock_gpu', 'vina', or 'auto').
@@ -278,32 +278,29 @@ class FCGMBOracle:
 
         self._ensure_components()
 
-        # 1. Pre-filter and standardize while preserving original SMILES
+        # 1. Budget cap (maintain original order)
+        available_budget = self.max_budget - self.budget_used
+        process_smiles = smiles_list[:available_budget]
+        out_of_budget_smiles = smiles_list[available_budget:]
+
+        # 2. Pre-filter and standardize while preserving original SMILES
         # valid_tasks: list of (canonical, original)
-        valid_tasks, skipped_results = self._filter_smiles(smiles_list)
+        valid_tasks, skipped_results = self._filter_smiles(process_smiles)
 
-        if not valid_tasks:
-            self._update_results_df(skipped_results)
-            return {smi: 0.0 for smi in smiles_list}
-
-        # 2. Budget cap (maintain original order)
-        process_tasks = valid_tasks[: self.max_budget - self.budget_used]
-        process_canonicals = [t[0] for t in process_tasks]
-        
-        out_of_budget_tasks = valid_tasks[self.max_budget - self.budget_used :]
-        for canonical, original in out_of_budget_tasks:
+        for smi in out_of_budget_smiles:
             skipped_results.append(
-                self._create_skipped_result(canonical, "budget_exhausted", original)
+                self._create_skipped_result(smi, "budget_exhausted", smi)
             )
 
         final_scores = {smi: 0.0 for smi in smiles_list}
 
-        if process_tasks:
+        if valid_tasks:
             # 3. Preparation and Docking
             with tempfile.TemporaryDirectory(prefix="fcgmb_prep_") as tmp_dir:
                 temp_path = Path(tmp_dir)
                 # prepare_batch now returns list of {'smiles': str, 'pdbqt_paths': [Path]}
-                # preserving order of process_canonicals
+                # preserving order of valid_tasks
+                process_canonicals = [t[0] for t in valid_tasks]
                 docking_tasks = self._prepare_ligands(process_canonicals, temp_path)
                 
                 # Run docking (accepts list[dict], returns list[dict])
@@ -311,18 +308,23 @@ class FCGMBOracle:
 
                 # 4. Analysis
                 scores_dict, batch_results = self._analyze_results(
-                    process_tasks, docking_raw_results
+                    valid_tasks, docking_raw_results
                 )
                 final_scores.update(scores_dict)
 
                 # 5. Finalize round
-                self.budget_used += len(process_tasks)
+                self.budget_used += len(process_smiles)
                 print(
-                    f"[FCGMB] Round {self._generation_round}: scored {len(process_tasks)} molecules "
-                    f"(budget {self.budget_used}/{self.max_budget})"
+                    f"[FCGMB] Round {self._generation_round}: processed {len(process_smiles)} molecules "
+                    f"({len(valid_tasks)} passed 2D filter) (budget {self.budget_used}/{self.max_budget})"
                 )
                 self._update_results_df(skipped_results + batch_results)
         else:
+            self.budget_used += len(process_smiles)
+            print(
+                 f"[FCGMB] Round {self._generation_round}: processed {len(process_smiles)} molecules "
+                 f"(0 passed 2D filter) (budget {self.budget_used}/{self.max_budget})"
+            )
             self._update_results_df(skipped_results)
 
         return final_scores
@@ -399,8 +401,16 @@ class FCGMBOracle:
                 skip_reason = "failed_rmsd"
 
             best_norm = 0.0
+            # With require_pose_rmsd, reward only if a pose exists under the RMSD cap.
+            rmsd_reward_ok = (not self._require_pose_rmsd) or (
+                skip_reason != "failed_rmsd"
+                and valid_pose_found
+                and math.isfinite(best_valid)
+            )
             if (
-                valid_pose_found
+                rmsd_reward_ok
+                and valid_pose_found
+                and math.isfinite(best_valid)
                 and self._low_score is not None
                 and self._high_score is not None
             ):
@@ -409,6 +419,9 @@ class FCGMBOracle:
                     best_norm = (self._low_score - best_valid) / denom
                 else:
                     best_norm = 1.0 if best_valid <= self._high_score else 0.0
+
+            if self._require_pose_rmsd and skip_reason == "failed_rmsd":
+                best_norm = 0.0
 
             final_scores_list.append((original, best_norm))
             batch_results.append(
@@ -814,7 +827,8 @@ class FCGMBOracle:
                               2D-mismatched/skipped), so post-hoc novelty/uniqueness
                               analysis works without any data loss.
           results.yaml      — Same data sorted by normalized_score DESC, human-readable.
-          status.json       — Summary counters / best scores for live monitoring.
+          status.json       — Summary counters / best scores for live monitoring
+                              (see n_molecules_attempted vs budget_used in code comments).
         """
         if self.results_df.is_empty():
             return
@@ -859,14 +873,14 @@ class FCGMBOracle:
             )
 
         # ── Status JSON (summary for live monitoring) ────────────────────
-        # NOTE:
-        # - "budget_used" counts molecules *attempted* for scoring (post-standardization
-        #   and post-2D-fragment filtering), regardless of docking/RMSD outcome.
-        # - "n_molecules_success" counts molecules that successfully produced a score:
-        #     - if pose RMSD is required, this means a valid RMSD-passing pose was found
-        #     - otherwise, any successful docking result counts
-        #   This matches skip_reason == null.
-        success_df = self.results_df.filter(pl.col("skip_reason").is_null())
+        # - budget_used: oracle calls (includes invalid / 2D-fail / budget_exhausted rows).
+        # - n_molecules_attempted: passed validity + 2D fragment match (sent to docking).
+        # - n_molecules_success: skip_reason is null and valid_pose_found (docked; if
+        #   require_pose_rmsd, passed the fragment RMSD gate).
+        sr = pl.col("skip_reason")
+        success_df = self.results_df.filter(
+            sr.is_null() & pl.col("valid_pose_found")
+        )
         n_total = len(self.results_df)
         n_success = len(success_df)
         # Skip reasons are set in _filter_smiles/_analyze_results via _create_skipped_result
@@ -874,22 +888,33 @@ class FCGMBOracle:
             self.results_df.filter(pl.col("skip_reason") == "failed_2d_match")
         )
         n_invalid = len(self.results_df.filter(pl.col("skip_reason") == "invalid_molecule"))
+        n_budget_exhausted = len(
+            self.results_df.filter(pl.col("skip_reason") == "budget_exhausted")
+        )
+        # Molecules that passed validity + 2D match (everything except pre-dock skips)
+        n_attempted = n_total - n_invalid - n_skipped_2d - n_budget_exhausted
         best_score = float(success_df["normalized_score"].max()) if n_success > 0 else 0.0
         best_docking = float(success_df["docking_score"].min()) if n_success > 0 else float("nan")
 
+        def _json_clean(v):
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                return None
+            return v
+
         status = {
             "benchmark": self.benchmark_name,
-            "budget_used": self.budget_used,
             "budget_total": self.max_budget,
+            "budget_used": self.budget_used,
             "generation_round": self._generation_round,
             "n_molecules_total": n_total,
-            "n_molecules_attempted": self.budget_used,
-            "n_molecules_success": n_success,
-            "n_molecules_skipped_2d": n_skipped_2d,
             "n_molecules_invalid": n_invalid,
+            "n_molecules_skipped_2d": n_skipped_2d,
+            "n_molecules_attempted": n_attempted,
+            "n_molecules_success": n_success,
             "best_normalized_score": best_score,
-            "best_docking_score_kcal": best_docking,
+            "best_docking_score": best_docking,
         }
+        status = {k: _json_clean(v) for k, v in status.items()}
         live_status = self._run_dir / "status.json"
         with open(live_status, "w") as f:
-            json.dump(status, f, indent=2, default=str)
+            json.dump(status, f, indent=2, allow_nan=False)

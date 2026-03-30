@@ -4,7 +4,7 @@
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=48G
+#SBATCH --mem=16G
 #SBATCH --time=2-00:00:00
 #SBATCH --output=ahc_%j.log
 #SBATCH --error=ahc_%j.err
@@ -26,7 +26,7 @@ OUT_DIR=${SCRIPT_DIR}/outputs
 BUDGET=1000
 SEED=0
 N_WARMUP=25
-NUM_RUNS=1
+NUM_RUNS=5
 
 echo "========================================================"
 echo " AceGen-AHC x FCGMB Evaluation"

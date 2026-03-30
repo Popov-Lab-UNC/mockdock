@@ -9,6 +9,25 @@ from rdkit import Chem
 from .utils import get_robust_match
 
 
+def unroll_multiconf_rdkit_mols(rdkit_mols: list[Chem.Mol]) -> list[Chem.Mol]:
+    """Split one RDKit mol with multiple conformers into one mol per conformer.
+
+    Meeko/Vina often returns a single mol with N conformers; RMSD and pose indices
+    are defined per conformer. This must match the logic in filter_poses_by_rmsd
+    so export uses the same pose ordering as scoring.
+    """
+    if len(rdkit_mols) == 1 and rdkit_mols[0].GetNumConformers() > 1:
+        base_mol = rdkit_mols[0]
+        unrolled: list[Chem.Mol] = []
+        for conf in base_mol.GetConformers():
+            new_mol = Chem.Mol(base_mol)
+            new_mol.RemoveAllConformers()
+            new_mol.AddConformer(conf, assignId=True)
+            unrolled.append(new_mol)
+        return unrolled
+    return rdkit_mols
+
+
 def aggregate_results_per_id(
     df: pl.DataFrame,
     score_col: str = "docking_score",
@@ -150,9 +169,18 @@ class DockingAnalyzer:
                 self.ref_coords.append((pos.x, pos.y, pos.z))
 
     def calculate_rmsd(self, probe_mol: Chem.Mol, conf_id: int = -1) -> float:
-        """Calculate RMSD of the fragment between probe_mol and self.ref_mol."""
-        if self.ref_mol is None or self.fragment_mol is None or not self.ref_match:
-            return 0.0
+        """Calculate RMSD of the fragment between probe_mol and self.ref_mol.
+
+        Returns NaN when the reference match or coordinates are unavailable so that
+        pose filtering does not treat the pose as passing (NaN < threshold is False).
+        """
+        if (
+            self.ref_mol is None
+            or self.fragment_mol is None
+            or not self.ref_match
+            or not self.ref_coords
+        ):
+            return float("nan")
 
         probe_match = get_robust_match(probe_mol, self.fragment_mol)
         if not probe_match:
@@ -198,16 +226,7 @@ class DockingAnalyzer:
             if not rdkit_mols:
                 return float("nan"), False, None, float("nan"), None, -1, -1
 
-            # Unroll multi-conformer mols (typical for Vina PDBQT output)
-            if len(rdkit_mols) == 1 and rdkit_mols[0].GetNumConformers() > 1:
-                base_mol = rdkit_mols[0]
-                unrolled = []
-                for conf in base_mol.GetConformers():
-                    new_mol = Chem.Mol(base_mol)
-                    new_mol.RemoveAllConformers()
-                    new_mol.AddConformer(conf, assignId=True)
-                    unrolled.append(new_mol)
-                rdkit_mols = unrolled
+            rdkit_mols = unroll_multiconf_rdkit_mols(rdkit_mols)
 
             best_valid_score = float("nan")
             best_valid_mol = None
@@ -228,7 +247,7 @@ class DockingAnalyzer:
                     best_any_idx = idx
 
                 rmsd = self.calculate_rmsd(mol)
-                if rmsd < self.rmsd_threshold:
+                if math.isfinite(rmsd) and rmsd < self.rmsd_threshold:
                     if math.isnan(best_valid_score) or score < best_valid_score:
                         best_valid_score = score
                         best_valid_mol = mol
@@ -312,6 +331,8 @@ class DockingAnalyzer:
                     print(f"  [skip] No RDKit molecules from {pose_file.name}")
                     continue
 
+                rdkit_mols = unroll_multiconf_rdkit_mols(rdkit_mols)
+
                 # Collect (energy, mol) pairs; energies come from pose_data if available
                 energies = []
                 if hasattr(pdbqt_mol, "_pose_data") and "free_energies" in pdbqt_mol._pose_data:
@@ -328,11 +349,22 @@ class DockingAnalyzer:
                 chosen_mol = None
                 chosen_rmsd: Optional[float] = None
 
-                if use_rmsd and check_rmsd_for_row:
+                pi = row.get("pose_index")
+                if pi is None or (isinstance(pi, float) and math.isnan(pi)):
+                    pi = -1
+                else:
+                    pi = int(pi)
+
+                if 0 <= pi < len(rdkit_mols):
+                    chosen_mol = rdkit_mols[pi]
+                    if use_rmsd:
+                        chosen_rmsd = self.calculate_rmsd(chosen_mol)
+
+                if chosen_mol is None and use_rmsd and check_rmsd_for_row:
                     # Prefer the lowest-energy pose that satisfies the RMSD threshold
                     for energy, mol in pose_pairs:
                         rmsd = self.calculate_rmsd(mol)
-                        if rmsd < self.rmsd_threshold:
+                        if math.isfinite(rmsd) and rmsd < self.rmsd_threshold:
                             chosen_mol = mol
                             chosen_rmsd = rmsd
                             break
@@ -351,7 +383,7 @@ class DockingAnalyzer:
                 chosen_mol.SetProp("normalized_score", str(row.get("normalized_score", "")))
                 chosen_mol.SetProp("dlg_path", str(row[dlg_col]))
                 chosen_mol.SetProp("score_type", score_col)
-                if chosen_rmsd is not None:
+                if chosen_rmsd is not None and math.isfinite(chosen_rmsd):
                     chosen_mol.SetProp("RMSD_fragment", f"{chosen_rmsd:.3f}")
                     chosen_mol.SetProp(
                         "rmsd_passed_threshold",
