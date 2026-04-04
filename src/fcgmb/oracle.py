@@ -18,9 +18,9 @@ from rdkit import Chem
 
 # Local imports
 from .analysis import DockingAnalyzer
-from .data import fetch_chembl_data
 from .docking import AutoDockGPUOracle, AutoDockVinaOracle
 from .ligand_prep import LigandPreparer
+from .loader import BenchmarkLoader
 from .utils import (
     check_2d_match,
     detect_gpus,
@@ -92,54 +92,17 @@ class FCGMBOracle:
             "n_poses": 10,
         }
 
-        # ── Load config ───────────────────────────────────────────────
-        internal_config_dir = Path(__file__).parent / "configs"
-        config_path = internal_config_dir / f"{benchmark_name}.yaml"
-
-        if not config_path.exists():
-            config_path = internal_config_dir / benchmark_name
-            if not config_path.exists():
-                config_path = Path("configs") / f"{benchmark_name}.yaml"
-                if not config_path.exists():
-                    config_path = Path("configs") / benchmark_name
-                if not config_path.exists():
-                    available = self.list_benchmarks()
-                    raise FileNotFoundError(
-                        f"Benchmark config '{benchmark_name}' not found. Available: {available}"
-                    )
-
-        with open(config_path) as f:
-            _raw = yaml.safe_load(f)
-
-        self._pdb_id = _raw.get("pdb_id")
-
-        # Private config fields
-        self._target_id = _raw.get("target_id")
-        self._doc_id = _raw.get("doc_id")
-        self._fragment_smiles = _raw.get("fragment_smiles")
-        self._fragment_smiles_with_dummies = _raw.get("fragment_smiles_with_dummies")
-        self._rmsd_threshold = _raw.get("rmsd_threshold", 2.0)
-        self._require_fragment_match = _raw.get("require_fragment_match", True)
-        self._require_pose_rmsd = _raw.get("require_pose_rmsd", True)
-        # Invariant: without a 2D fragment match, fragment RMSD is undefined
-        if not self._require_fragment_match:
-            self._require_pose_rmsd = False
-        self._ligand_resname = _raw.get("ligand_resname")
-        self._low_score = _raw.get("low_score")
-        self._high_score = _raw.get("high_score")
+        # ── Load config & bioactivity ──────────────────────────────────
+        self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
 
         # ── Directory layout (all private) ────────────────────────────
-        # scratch_dir: persistent CACHE for pre-built receptor grids and bioactivity
-        # data downloads. Defaults to ~/.fcgmb. Only created on first actual use.
-        # run_dir: all per-run outputs (poses, CSVs, YAML, metrics, SDF). Lives in CWD
-        # (or wherever the caller sets it) so results are easy to find.
+        # scratch_dir: persistent CACHE for pre-built receptor grids.
+        # run_dir: all per-run outputs (poses, CSVs, YAML, metrics, SDF).
         _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".fcgmb"
         _pkg = Path(__file__).parent
-        self._pkg_bioactivity_dir = _pkg / "bioactivity_data"
         self._pkg_grids_dir = _pkg / "grids"
         self._grids_base_dir = _scratch / "grids"
         self._grid_dir = self._grids_base_dir / self.pdb_id
-        self._bioactivity_data_dir = _scratch / "bioactivity_data"
         # Lazy: cache dirs are created only when actually needed (before first ChEMBL
         # fetch or grid generation) so that a fresh install with pre-built grids and
         # bundled bioactivity data never creates directories unnecessarily.
@@ -162,7 +125,7 @@ class FCGMBOracle:
         self._docking_oracle = None
         self._ligand_preparer = None
         self._docking_analyzer = None
-        self._chembl_data = None
+        self._chembl_data = None  # maintained for backward compatibility or direct access if needed
 
     # ──────────────────────────────────────────────────────────────────
     # Public API
@@ -181,23 +144,23 @@ class FCGMBOracle:
     @property
     def fragment_smiles(self) -> str:
         """Fragment SMILES that every submitted molecule must contain."""
-        return self._fragment_smiles
+        return self._loader.fragment_smiles
 
     @property
     def fragment_smiles_with_dummies(self) -> Optional[str]:
         """Fragment SMILES with (*) dummy attachment point(s) for PromptSMILES
         scaffold decoration.  Returns None if not yet set in the benchmark config YAML."""
-        return self._fragment_smiles_with_dummies
+        return self._loader.fragment_smiles_with_dummies
 
     @property
     def config(self) -> dict:
         """Key benchmark configuration parameters."""
         return {
-            "rmsd_threshold": self._rmsd_threshold,
-            "require_fragment_match": self._require_fragment_match,
-            "require_pose_rmsd": self._require_pose_rmsd,
-            "low_score": self._low_score,
-            "high_score": self._high_score,
+            "rmsd_threshold": self._loader.rmsd_threshold,
+            "require_fragment_match": self._loader.require_fragment_match,
+            "require_pose_rmsd": self._loader.require_pose_rmsd,
+            "low_score": self._loader.low_score,
+            "high_score": self._loader.high_score,
         }
 
     @property
@@ -211,19 +174,17 @@ class FCGMBOracle:
     @property
     def rmsd_threshold(self) -> float:
         """RMSD threshold for pose validity."""
-        return self._rmsd_threshold
+        return self._loader.rmsd_threshold
 
     @property
     def ligand_resname(self) -> Optional[str]:
         """Residue name of the reference ligand."""
-        return self._ligand_resname
+        return self._loader.ligand_resname
 
     @property
     def pdb_id(self) -> str:
         """PDB ID of the benchmark system."""
-        if self._pdb_id is None:
-            raise RuntimeError("PDB ID not set in config.")
-        return self._pdb_id
+        return self._loader.pdb_id
 
     def set_backend_config(self, **kwargs):
         """Override default backend settings (e.g. vina_exhaustiveness, n_poses)."""
@@ -232,24 +193,20 @@ class FCGMBOracle:
     @classmethod
     def list_benchmarks(cls) -> list[str]:
         """Return all canonical benchmark names bundled with the fcgmb package."""
-        pkg_config_dir = Path(__file__).parent / "configs"
-        if not pkg_config_dir.exists():
-            return []
-        return sorted(f.stem for f in pkg_config_dir.glob("*.yaml"))
+        return BenchmarkLoader.list_benchmarks()
 
     def get_initial_compounds(self) -> pl.DataFrame:
         """
         Retrieve the initial compound set (lowest-quartile bioactivity).
         These are provided to the generative model as starting points.
         """
-        df, threshold, act_col = self._get_full_data_and_threshold()
-        if df.is_empty():
-            return df
-        initial_df = df.filter(pl.col(act_col) <= threshold)
+        initial_df = self._loader.get_initial_compounds()
+        if initial_df.is_empty():
+            return initial_df
+        
         has_score = "score" in initial_df.columns
         print(
-            f"[FCGMB] Prepared {len(initial_df)} initial compounds "
-            f"(threshold {act_col} <= {threshold:.2f})"
+            f"[FCGMB] Prepared {len(initial_df)} initial compounds"
             + (" [pre-computed docking scores available]" if has_score else "")
         )
         return initial_df
@@ -259,14 +216,11 @@ class FCGMBOracle:
         Retrieve the validation compound set (above-lowest-quartile bioactivity).
         These are used to evaluate oracle performance.
         """
-        df, threshold, act_col = self._get_full_data_and_threshold()
-        if df.is_empty():
-            return df
-        validation_df = df.filter(pl.col(act_col) > threshold)
-        print(
-            f"[FCGMB] Prepared {len(validation_df)} validation compounds "
-            f"(threshold {act_col} > {threshold:.2f})"
-        )
+        validation_df = self._loader.get_validation_compounds()
+        if validation_df.is_empty():
+            return validation_df
+        
+        print(f"[FCGMB] Prepared {len(validation_df)} validation compounds")
         return validation_df
 
     def score(self, smiles_list: list[str]) -> dict[str, float]:
@@ -341,7 +295,7 @@ class FCGMBOracle:
                 continue
 
             mol = Chem.MolFromSmiles(canonical)
-            if self._require_fragment_match and not check_2d_match(
+            if self._loader.require_fragment_match and not check_2d_match(
                 mol, self._docking_analyzer.fragment_mol
             ):
                 skipped_results.append(
@@ -397,12 +351,12 @@ class FCGMBOracle:
                 skip_reason = "failed_ligand_prep"
             elif math.isnan(best_any):
                 skip_reason = "failed_docking"
-            elif math.isnan(best_valid) and self._require_pose_rmsd:
+            elif math.isnan(best_valid) and self._loader.require_pose_rmsd:
                 skip_reason = "failed_rmsd"
 
             best_norm = 0.0
             # With require_pose_rmsd, reward only if a pose exists under the RMSD cap.
-            rmsd_reward_ok = (not self._require_pose_rmsd) or (
+            rmsd_reward_ok = (not self._loader.require_pose_rmsd) or (
                 skip_reason != "failed_rmsd"
                 and valid_pose_found
                 and math.isfinite(best_valid)
@@ -411,16 +365,16 @@ class FCGMBOracle:
                 rmsd_reward_ok
                 and valid_pose_found
                 and math.isfinite(best_valid)
-                and self._low_score is not None
-                and self._high_score is not None
+                and self._loader.low_score is not None
+                and self._loader.high_score is not None
             ):
-                denom = self._low_score - self._high_score
+                denom = self._loader.low_score - self._loader.high_score
                 if abs(denom) > 1e-6:
                     best_norm = (self._low_score - best_valid) / denom
                 else:
                     best_norm = 1.0 if best_valid <= self._high_score else 0.0
 
-            if self._require_pose_rmsd and skip_reason == "failed_rmsd":
+            if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
                 best_norm = 0.0
 
             final_scores_list.append((original, best_norm))
@@ -462,7 +416,7 @@ class FCGMBOracle:
             if math.isnan(best_any) or best_a < best_any:
                 best_any = best_a
 
-            if self._require_pose_rmsd:
+            if self._loader.require_pose_rmsd:
                 if passed:
                     valid_pose_found = True
                     if math.isnan(best_valid) or best_v < best_valid:
@@ -626,63 +580,8 @@ class FCGMBOracle:
         print(f"[FCGMB] {sep}")
 
     def _get_full_data_and_threshold(self) -> tuple[pl.DataFrame, float, str]:
-        """Load bioactivity data and compute the 25 % activity threshold.
-
-        Lookup order:
-        1. In-memory cache
-        2. Package-bundled CSV  (fcgmb/bioactivity_data/<name>.csv)
-        3. Scratch cache        (~/.fcgmb/bioactivity_data/<name>_chembl.csv)
-        4. Live ChEMBL fetch
-        """
-        if self._chembl_data is not None:
-            df = self._chembl_data
-        else:
-            df = pl.DataFrame()
-
-            pkg_file = self._pkg_bioactivity_dir / f"{self.benchmark_name}.csv"
-            if pkg_file.exists():
-                print(f"[FCGMB] Loading bundled bioactivity data from {pkg_file.name}")
-                df = pl.read_csv(pkg_file)
-
-            if df.is_empty():
-                cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
-                if cache_file.exists():
-                    print(f"[FCGMB] Loading cached ChEMBL data from {cache_file.name}")
-                    df = pl.read_csv(cache_file)
-
-            if df.is_empty():
-                print(f"[FCGMB] Downloading bioactivity data from ChEMBL for {self._target_id}...")
-                df = fetch_chembl_data(self._target_id, self._doc_id)
-                if not df.is_empty():
-                    # Lazily create the cache dir before first write
-                    self._bioactivity_data_dir.mkdir(parents=True, exist_ok=True)
-                    cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
-                    df.write_csv(cache_file)
-                    print(f"[FCGMB] Saved ChEMBL data to {cache_file}")
-
-            if not df.is_empty():
-                self._chembl_data = df
-
-        if df.is_empty():
-            print("[FCGMB] Warning: No compounds found for this benchmark.")
-            return df, 0.0, ""
-
-        if "pchembl_value" not in df.columns:
-            raise RuntimeError("Missing pchembl_value in bioactivity data.")
-
-        act_col = "pchembl_value"
-        pvals = df.get_column(act_col).to_numpy()
-
-        # Use the empirical 25th percentile as the activity threshold instead of
-        # a simple linear interpolation between min and max. This matches the
-        # intended "lowest-quartile bioactivity" description and yields a
-        # more stable initial context size across benchmarks.
-        if pvals.size == 0:
-            threshold = 0.0
-        else:
-            threshold = float(np.quantile(pvals, 0.25))
-
-        return df, threshold, act_col
+        """Backward compatibility shim."""
+        return self._loader.get_full_data_and_threshold()
 
     def _resolve_backend(self) -> str:
         """Resolve which docking backend to use."""
@@ -732,7 +631,7 @@ class FCGMBOracle:
             )
             fld_path = preparer.prepare_receptor_and_grid(
                 self.pdb_id,
-                ligand_resname=self._ligand_resname,
+                ligand_resname=self._loader.ligand_resname,
                 output_dir=self._grids_base_dir / self.pdb_id,
                 allow_bad_res=True,
             )
@@ -746,8 +645,8 @@ class FCGMBOracle:
             ref_path = self._grid_dir / f"{self.pdb_id}_ligand.pdb"
         self._docking_analyzer = DockingAnalyzer(
             reference_ligand_path=ref_path if ref_path.exists() else None,
-            fragment_smiles=self._fragment_smiles,
-            rmsd_threshold=self._rmsd_threshold,
+            fragment_smiles=self._loader.fragment_smiles,
+            rmsd_threshold=self._loader.rmsd_threshold,
         )
 
         # Preparer

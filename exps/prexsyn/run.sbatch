@@ -35,7 +35,7 @@ OUT_DIR=${SCRIPT_DIR}/outputs
 # time_limit    : per-run wall-clock cap in seconds (empty = no limit)
 BUDGET=1000
 NUM_RUNS=5
-NUM_INIT=500
+NUM_INIT=25
 BOTTLENECK=50
 TIME_LIMIT=""
 

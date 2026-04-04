@@ -1,7 +1,9 @@
 from .analysis import DockingAnalyzer
 from .data import fetch_chembl_data
 from .docking import AutoDockGPUOracle, AutoDockVinaOracle, DockingOracle
+from .evaluator import FCGMBEvaluator
 from .ligand_prep import LigandPreparer
+from .loader import BenchmarkLoader
 from .oracle import FCGMBOracle
 from .utils import (
     assign_bond_orders_from_template,
@@ -39,6 +41,8 @@ __all__ = [
     "fetch_ligand_expo_sdf",
     "assign_bond_orders_from_template",
     "FCGMBOracle",
+    "FCGMBEvaluator",
+    "BenchmarkLoader",
     "detect_gpus",
     "resolve_backend",
     "standardize_smiles",
