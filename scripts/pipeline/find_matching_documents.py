@@ -30,7 +30,7 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
 from utils import get_chunk_output_path
 
-# Add project root and src directory for fcgmb imports
+# Add project root and src directory for mockdock imports
 project_root = Path(__file__).parent.parent.parent
 src_dir = project_root / "src"
 
@@ -40,7 +40,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 try:
-    from fcgmb.utils import standardize_smiles
+    from mockdock.utils import standardize_smiles
 except ImportError:
     # Fallback to no-op if import fails
     def standardize_smiles(s): return s

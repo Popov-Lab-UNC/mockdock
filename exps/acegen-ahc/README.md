@@ -1,7 +1,7 @@
-# AceGen-AHC × FCGMB
+# AceGen-AHC × mockdock
 
 Benchmarks AceGen's **AHC** (Augmented Hill-Climbing) algorithm against all
-six FCGMB targets.
+six mockdock targets.
 
 ## Algorithm
 
@@ -9,13 +9,13 @@ AHC is a REINVENT-variant that selects only the top-k fraction of generated
 molecules (by score) to compute the training loss, effectively performing hill
 climbing in chemical space.  Prioritised experience replay is enabled.
 
-## FCGMB adaptations
+## mockdock adaptations
 
 | Feature | Implementation |
 |---------|----------------|
 | Fragment conditioning | Benchmark fragment → PromptSMILES scaffold (single `(*)` attachment point). |
 | Initial compounds | Up to 25 lowest-quartile compounds pre-scored for oracle warmup. |
-| Scoring | `FCGMBOracle.score(smiles)`, normalised [0, 1]. |
+| Scoring | `mockdockOracle.score(smiles)`, normalised [0, 1]. |
 
 ## Setup
 

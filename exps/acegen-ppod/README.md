@@ -1,6 +1,6 @@
-# AceGen-PPOD × FCGMB
+# AceGen-PPOD × mockdock
 
-Benchmarks AceGen's **PPOD** algorithm against all six FCGMB targets.
+Benchmarks AceGen's **PPOD** algorithm against all six mockdock targets.
 
 ## Algorithm
 
@@ -9,13 +9,13 @@ PPOD is PPO with a prioritised **experience replay buffer** enabled
 generated molecules and mixes them with fresh on-policy data at each update,
 improving sample efficiency and reducing mode collapse.
 
-## FCGMB adaptations
+## mockdock adaptations
 
 | Feature | Implementation |
 |---------|----------------|
 | Fragment conditioning | Benchmark fragment → PromptSMILES scaffold (single `(*)` attachment point). |
 | Initial compounds | Up to 25 lowest-quartile compounds pre-scored for oracle warmup. |
-| Scoring | `FCGMBOracle.score(smiles)`, normalised [0, 1]. |
+| Scoring | `mockdockOracle.score(smiles)`, normalised [0, 1]. |
 
 ## Setup
 

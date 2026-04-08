@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Standalone script to run the docking workflow for specific protein-ligand benchmarks.
-Relocated from fcgmb.workflow to allow cleaner package structure.
+Relocated from legacy workflow module to allow cleaner package structure.
 """
 
 # Standard library imports
@@ -29,12 +29,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # Local imports (using absolute imports since this is a script)
 from typing import cast
 
-from fcgmb.analysis import DockingAnalyzer, aggregate_results_per_id
-from fcgmb.data import fetch_chembl_data
-from fcgmb.docking import AutoDockGPUOracle, AutoDockVinaOracle
-from fcgmb.ligand_prep import LigandPreparer
-from fcgmb.receptor import ReceptorPreparer
-from fcgmb.utils import (
+from mockdock.analysis import DockingAnalyzer, aggregate_results_per_id
+from mockdock.data import fetch_chembl_data
+from mockdock.docking import AutoDockGPUOracle, AutoDockVinaOracle
+from mockdock.ligand_prep import LigandPreparer
+from mockdock.receptor import ReceptorPreparer
+from mockdock.utils import (
     check_2d_match,
     detect_gpus,
     plot_docking_results,

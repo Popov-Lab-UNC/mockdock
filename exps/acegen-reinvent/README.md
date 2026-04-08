@@ -1,6 +1,6 @@
-# AceGen-REINVENT × FCGMB
+# AceGen-REINVENT × mockdock
 
-Benchmarks AceGen's **REINVENT** algorithm against all six FCGMB targets using
+Benchmarks AceGen's **REINVENT** algorithm against all six mockdock targets using
 docking-based fragment-constrained scoring.
 
 ## Algorithm
@@ -11,22 +11,22 @@ frozen prior and an adaptive agent; the agent is trained to maximize a
 penalised likelihood objective that balances reward with proximity to the prior.
 Experience replay (prioritised) is enabled by default.
 
-## FCGMB adaptations
+## mockdock adaptations
 
 | Feature | Implementation |
 |---------|----------------|
 | Fragment conditioning | The benchmark fragment is converted to a PromptSMILES scaffold (single `(*)` attachment point added via RDKit). The model is forced to elaborate the fragment throughout training. |
 | Initial compounds | Up to 25 lowest-quartile bioactivity compounds are pre-scored before the RL loop to warm up the docking infrastructure and establish baseline data. |
-| Scoring | `FCGMBOracle.score(smiles)` is called each RL iteration; scores are normalised to [0, 1]. |
+| Scoring | `mockdockOracle.score(smiles)` is called each RL iteration; scores are normalised to [0, 1]. |
 
 ## Setup
 
 ```bash
-# Install acegen (editable) and fcgmb into your environment:
+# Install acegen (editable) and mockdock into your environment:
 pip install -e /work/users/s/h/shuhang/acegen-open
 pip install promptsmiles
 
-# fcgmb should already be installed in py312 conda env + acegen venv
+# mockdock should already be installed in py312 conda env + acegen venv
 ```
 
 ## Running

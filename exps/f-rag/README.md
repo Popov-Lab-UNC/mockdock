@@ -1,7 +1,7 @@
-# f-RAG x FCGMB Evaluation
+# f-RAG x mockdock Evaluation
 
 This experiment adapts the original [f-RAG](https://arxiv.org/abs/2411.12078)
-generation loop to FCGMB docking benchmarks.
+generation loop to mockdock docking benchmarks.
 
 ## What stays the same as f-RAG
 
@@ -9,15 +9,15 @@ generation loop to FCGMB docking benchmarks.
 - Arm / linker fragment populations
 - Retrieval-augmented generation through `SAFEFusionDesign`
 
-## What changes for FCGMB
+## What changes for mockdock
 
-- Uses `FCGMBOracle` as the scoring oracle.
+- Uses `MDOracle` as the scoring oracle.
 - Uses `oracle.get_initial_compounds()` as the starting context.
   - Initial compounds seed both:
     - molecule population (`mol_population`)
     - arm/linker fragment populations used for retrieval.
 
-This explicitly uses benchmark-provided initial compounds as requested by FCGMB.
+This explicitly uses benchmark-provided initial compounds as requested by mockdock.
 
 ## Files
 
@@ -29,7 +29,7 @@ This explicitly uses benchmark-provided initial compounds as requested by FCGMB.
 ```bash
 cd benchmark/exps/f-rag
 
-# Run all six FCGMB benchmarks
+# Run all six mockdock benchmarks
 python run.py --budget 5000 --seed 0
 
 # Single benchmark
@@ -41,6 +41,6 @@ python run.py --f-rag-root ../../../f-RAG --benchmark CHK1 --budget 5000
 
 Outputs are written under `outputs/<BENCHMARK>/`:
 
-- `seed_<N>.csv`: generated molecules with FCGMB score
-- `oracle_results_seed_<N>.csv`: full docking records from `FCGMBOracle`
+- `seed_<N>.csv`: generated molecules with mockdock score
+- `oracle_results_seed_<N>.csv`: full docking records from `MDOracle`
 - `log.txt`: run log

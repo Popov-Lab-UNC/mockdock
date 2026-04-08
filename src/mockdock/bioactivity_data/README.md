@@ -37,7 +37,7 @@ The oracle computes the lower 25% of the pChEMBL range as the **initial set**
 3. Place the CSV in this directory.
 
 If no bundled CSV is found, the oracle will fall back to a local scratch cache
-at `.fcgmb/data/<benchmark_name>_chembl.csv`, and ultimately to a live ChEMBL API call.
+at `~/.mockdock/bioactivity_data/<benchmark_name>_chembl.csv`, and ultimately to a live ChEMBL API call.
 
 ## Regenerating This Data
 

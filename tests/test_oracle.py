@@ -5,20 +5,18 @@ from unittest.mock import patch
 
 import polars as pl
 
-# Mock imports before fcgmb.oracle is imported if needed,
-# but here we can patch 'fcgmb.oracle.fetch_chembl_data'
-from fcgmb.oracle import FCGMBOracle
+from mockdock.oracle import MDOracle
 
 
-class TestFCGMBOracleCaching(unittest.TestCase):
+class TestMDOracleCaching(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.scratch_dir = Path(self.tmp_dir.name)
-        self.benchmark_name = "AKT1"
+        self.benchmark_name = "CHK1"
 
         # Ensure necessary dirs exist
         (self.scratch_dir / "bioactivity_data").mkdir(parents=True)
-        (self.scratch_dir / "grids" / "4EJN").mkdir(parents=True)
+        (self.scratch_dir / "grids" / "2R0U").mkdir(parents=True)
 
         # Create a mock config file in the expected location if it doesn't verify existence differently
         # The Oracle loads config using package resources or relative paths.
@@ -27,7 +25,7 @@ class TestFCGMBOracleCaching(unittest.TestCase):
     def tearDown(self):
         self.tmp_dir.cleanup()
 
-    @patch("fcgmb.oracle.fetch_chembl_data")
+    @patch("mockdock.loader.fetch_chembl_data")
     @patch("polars.read_csv")
     def test_caching_logic(self, mock_read_csv, mock_fetch):
         # Setup mock data
@@ -39,7 +37,7 @@ class TestFCGMBOracleCaching(unittest.TestCase):
             }
         )
 
-        oracle = FCGMBOracle(
+        oracle = MDOracle(
             benchmark_name=self.benchmark_name, scratch_dir=self.scratch_dir
         )
 
@@ -72,7 +70,7 @@ class TestFCGMBOracleCaching(unittest.TestCase):
         self.assertTrue(df.equals(df2))
 
         # 3. Test File Cache (new oracle instance, file exists)
-        oracle2 = FCGMBOracle(
+        oracle2 = MDOracle(
             benchmark_name=self.benchmark_name, scratch_dir=self.scratch_dir
         )
         mock_read_csv.return_value = mock_df

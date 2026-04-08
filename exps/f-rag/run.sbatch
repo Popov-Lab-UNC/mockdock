@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=frag_fcgmb
+#SBATCH --job-name=frag_mockdock
 #SBATCH --partition=volta-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
@@ -26,7 +26,7 @@ NUM_RUNS=1
 cd "${SCRIPT_DIR}"
 
 echo "========================================================"
-echo " f-RAG x FCGMB Evaluation"
+echo " f-RAG x mockdock Evaluation"
 echo "========================================================"
 echo " Budget      : ${BUDGET}"
 echo " Seed        : ${SEED}"

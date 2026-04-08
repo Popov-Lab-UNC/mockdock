@@ -1,7 +1,7 @@
 [project]
-name = "fcgmb"
+name = "mockdock"
 version = "0.2.0"
-description = "Fragment-Constrained Generative Model Benchmark"
+description = "mockdock — Fragment-Constrained Generative Model Benchmark"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -37,7 +37,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-fcgmb = ["configs/*.yaml", "grids/**/*", "bioactivity_data/*.csv"]
+mockdock = ["configs/*.yaml", "grids/**/*", "bioactivity_data/*.csv"]
 
 [tool.ruff]
 line-length = 100
@@ -75,7 +75,7 @@ norecursedirs = [
 addopts = "--tb=short"
 
 [tool.coverage.run]
-source = ["src/fcgmb"]
+source = ["src/mockdock"]
 omit = ["tests/*"]
 
 [tool.coverage.report]

@@ -1,37 +1,37 @@
-# FCGMB: Fragment-Constrained Generative Model Benchmark
+# mockdock: Fragment-Constrained Generative Model Benchmark
 
 A benchmarking package for generative molecular models. Each benchmark is built around a protein–ligand system from the PDB and a corresponding set of bioactivity-annotated compounds from ChEMBL. Models are scored by docking compounds that contain a specified molecular fragment, using AutoDock-GPU as the backend.
 
 ## Installation
 
 ```bash
-git clone https://github.com/Popov-Lab-UNC/fcgmb.git
-cd fcgmb
+git clone https://github.com/Popov-Lab-UNC/mockdock.git
+cd mockdock
 pip install -e .
 ```
 
 Or using [uv](https://github.com/astral-sh/uv):
 
 ```bash
-git clone https://github.com/Popov-Lab-UNC/fcgmb.git
-cd fcgmb
+git clone https://github.com/Popov-Lab-UNC/mockdock.git
+cd mockdock
 uv venv && uv sync
 ```
 
 ## Quickstart
 
 ```python
-from fcgmb import FCGMBOracle
+from mockdock import MDOracle
 
 # List all available benchmarks
-FCGMBOracle.list_benchmarks()
+MDOracle.list_benchmarks()
 # ['AKT1', 'CHK1', 'ITK', 'PCK1', 'TTK', 'VEGFR2']
 
 # Instantiate for a specific benchmark
-oracle = FCGMBOracle("CHK1", budget=5000)
+oracle = MDOracle("CHK1", budget=5000)
 
 # The fragment SMILES that every submitted molecule must contain
-print(oracle.fragment)
+print(oracle.fragment_smiles)
 
 # Lower-quartile compounds from ChEMBL — provide these to your generative model
 initial_df = oracle.get_initial_compounds()
@@ -58,14 +58,14 @@ print(oracle.status)            # 'active' or 'finished'
 
 ## API Reference
 
-### `FCGMBOracle(benchmark_name, budget, docking_backend, scratch_dir, n_cpus, n_gpus)`
+### `MDOracle(benchmark_name, budget, docking_backend, scratch_dir, n_cpus, n_gpus)`
 
 | Parameter | Default | Description |
 |---|---|---|
 | `benchmark_name` | required | Name of the benchmark (see table above) |
 | `budget` | `5000` | Maximum number of compounds that can be scored |
 | `docking_backend` | `"auto"` | `"autodock_gpu"`, `"vina"`, or `"auto"` |
-| `scratch_dir` | `.fcgmb/` | Directory for cached grids, bioactivity data, and results |
+| `scratch_dir` | `~/.mockdock` | Directory for cached grids, bioactivity data, and results |
 | `n_cpus` | autodetect | CPUs for ligand preparation |
 | `n_gpus` | autodetect | GPUs for AutoDock-GPU |
 
@@ -75,7 +75,7 @@ print(oracle.status)            # 'active' or 'finished'
 |---|---|
 | `oracle.benchmark_name` | Name of this benchmark |
 | `oracle.pdb_id` | PDB ID of the receptor structure |
-| `oracle.fragment` | Fragment SMILES molecules must contain |
+| `oracle.fragment_smiles` | Fragment SMILES molecules must contain |
 | `oracle.config` | `{rmsd_threshold, require_fragment_match, require_pose_rmsd, low_score, high_score}` |
 | `oracle.n_cpus` / `n_gpus` | Hardware in use |
 | `oracle.max_budget` | Total scoring budget |
@@ -87,7 +87,7 @@ print(oracle.status)            # 'active' or 'finished'
 ### Methods
 
 ```python
-FCGMBOracle.list_benchmarks()          # class method — list bundled benchmarks
+MDOracle.list_benchmarks()            # class method — list bundled benchmarks
 oracle.get_initial_compounds()         # lower-quartile bioactivity compounds (DataFrame)
 oracle.get_validation_compounds()      # upper-quartile bioactivity compounds (DataFrame)
 oracle.score(smiles_list)              # dock and score; returns {smiles: float}
@@ -109,9 +109,9 @@ Both constraints are `True` by default (standard benchmark behaviour). They can 
 **Disable the 2D fragment filter** — any molecule is docked, regardless of whether it contains the fragment. This also disables the 3D RMSD check (since there is no fragment to measure RMSD against):
 
 ```python
-from fcgmb import FCGMBOracle
+from mockdock import MDOracle
 
-oracle = FCGMBOracle("AKT1", budget=5000)
+oracle = MDOracle("AKT1", budget=5000)
 oracle._require_fragment_match = False  # molecules without fragment are now docked
 oracle._require_pose_rmsd = False       # automatically implied, but set explicitly for clarity
 
@@ -121,9 +121,9 @@ scores = oracle.score(["CCO", "CCC"])  # both are docked even without the AKT1 f
 **Disable only the 3D RMSD filter** — the fragment must still be present (2D check passes), but any docking pose is accepted rather than requiring the fragment to overlay the crystal pose within the RMSD threshold:
 
 ```python
-from fcgmb import FCGMBOracle
+from mockdock import MDOracle
 
-oracle = FCGMBOracle("CHK1", budget=5000)
+oracle = MDOracle("CHK1", budget=5000)
 oracle._require_pose_rmsd = False  # best docking score accepted regardless of pose RMSD
 
 scores = oracle.score(my_smiles_list)
@@ -133,22 +133,22 @@ scores = oracle.score(my_smiles_list)
 
 ## Local Storage
 
-FCGMB caches all runtime data under a `.fcgmb/` scratch directory (configurable via `scratch_dir`):
+mockdock caches all runtime data under a `~/.mockdock/` scratch directory (configurable via `scratch_dir`):
 
 ```
-.fcgmb/
+.mockdock/
 ├── grids/<pdb_id>/         # AutoGrid maps (prepared once, reused)
 ├── bioactivity_data/       # Cached ChEMBL CSVs
 └── runs/<benchmark>/
     └── results/            # Docking output files
 ```
 
-Bundled assets (pre-built grids and curated bioactivity CSVs) are shipped inside the package under `fcgmb/configs/`, `fcgmb/grids/`, and `fcgmb/bioactivity_data/`, and are used automatically.
+Bundled assets (pre-built grids and curated bioactivity CSVs) are shipped inside the package under `mockdock/configs/`, `mockdock/grids/`, and `mockdock/bioactivity_data/`, and are used automatically.
 
 ## Package Layout
 
 ```
-fcgmb/
+mockdock/                    # repository root (clone folder name may differ)
 ├── .github/workflows/     # CI (ci.yml) and publishing (publish.yml) workflows
 ├── docs/                  # Documentation and drafts
 ├── notebooks/             # Jupyter/marimo notebooks
@@ -157,11 +157,11 @@ fcgmb/
 │   ├── pipeline/          # Data mining scripts (ChEMBL, MCS, etc.)
 │   └── slurm/             # SLURM batch job scripts
 ├── src/
-│   └── fcgmb/             # The Python package
+│   └── mockdock/          # The Python package
 │       ├── configs/       # Bundled YAML benchmark configs
 │       ├── bioactivity_data/  # Curated ChEMBL CSVs (ground truth)
 │       ├── grids/         # Pre-built AutoGrid maps
-│       ├── oracle.py      # FCGMBOracle — main user-facing class
+│       ├── oracle.py      # MDOracle — main user-facing class
 │       ├── docking.py     # AutoDock-GPU and Vina backends
 │       ├── receptor.py    # Receptor preparation pipeline
 │       ├── ligand_prep.py # Ligand preparation (PDBQT conversion)
@@ -177,8 +177,8 @@ fcgmb/
 Clone the repository and install in editable mode with dev dependencies:
 
 ```bash
-git clone https://github.com/Popov-Lab-UNC/fcgmb.git
-cd fcgmb
+git clone https://github.com/Popov-Lab-UNC/mockdock.git
+cd mockdock
 uv sync --dev
 ```
 
@@ -188,7 +188,7 @@ Optionally, install [direnv](https://direnv.net/) and run `direnv allow` to auto
 
 ```bash
 uv run pytest                          # run all tests
-uv run pytest --cov=src/fcgmb         # with coverage report
+uv run pytest --cov=src/mockdock       # with coverage report
 ```
 
 ### Formatting & Linting
@@ -203,7 +203,7 @@ uv run ruff check . --fix             # lint and auto-fix
 ### Type Checking
 
 ```bash
-uv run ty check src/fcgmb
+uv run ty check src/mockdock
 ```
 
 ### Pre-commit Hooks

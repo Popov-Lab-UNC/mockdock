@@ -164,7 +164,7 @@ def fetch_chembl_data(
                 target_file = assay_cache_file if assay_chembl_id else doc_cache_file
                 raise RuntimeError(
                     f"Cache-only mode enabled but cache file not found: {target_file}\n"
-                    f"Build the cache first using fcgmb/pipeline/find_matching_documents.py"
+                    f"Build the cache first using scripts/pipeline/find_matching_documents.py"
                 )
             # Fallback message
             print(f"   Cache file not found for {target_chembl_id}_{document_chembl_id}")
@@ -175,18 +175,18 @@ def fetch_chembl_data(
                 raise RuntimeError(
                     "Cache-only mode enabled but cache directory not found.\n"
                     "Build the cache first:\n"
-                    "python fcgmb/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
+                    "python scripts/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
                 )
             print("   Cache directory not found. To avoid API rate limiting, build cache first:")
             print(
-                "   python fcgmb/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
+                "   python scripts/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
             )
 
     # If cache miss or disabled, fetch from API (unless cache_only is True)
     if cache_only:
         raise RuntimeError(
             f"Cache-only mode enabled but cache not found for {target_chembl_id}_{document_chembl_id}.\n"
-            f"Build the cache first using fcgmb/pipeline/find_matching_documents.py"
+            f"Build the cache first using scripts/pipeline/find_matching_documents.py"
         )
     # Use lazy import with better error handling
     try:
@@ -206,7 +206,7 @@ def fetch_chembl_data(
                 # API is down - provide helpful error message
                 cache_hint = ""
                 if use_cache:
-                    cache_hint = "\n   To avoid this error, build the cache first:\n   python fcgmb/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
+                    cache_hint = "\n   To avoid this error, build the cache first:\n   python scripts/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
                 raise RuntimeError(
                     f"ChEMBL API is currently unavailable (HTTP 500 error). "
                     f"The API may be experiencing issues or rate limiting.{cache_hint}\n"
@@ -217,7 +217,7 @@ def fetch_chembl_data(
                 raise RuntimeError(
                     f"Could not import ChEMBL client. Detail: {import_error}\n"
                     f"If the API is down, build the cache first:\n"
-                    f"python fcgmb/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
+                    f"python scripts/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
                 )
     except RuntimeError:
         # Re-raise our custom RuntimeError
@@ -228,7 +228,7 @@ def fetch_chembl_data(
         raise RuntimeError(
             "ChEMBL API is currently unavailable. Please try again later or use a local CSV file.\n"
             "To avoid API issues, build the cache first:\n"
-            "python fcgmb/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
+            "python scripts/pipeline/cache_chembl_data.py --config-dir configs --cache-dir data/chembl_cache"
         )
 
     activity = new_client.activity

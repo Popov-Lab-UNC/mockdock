@@ -31,7 +31,7 @@ from rdkit.Chem import rdFingerprintGenerator
 
 # Resolve paths relative to benchmark root (parent of scripts/)
 BENCHMARK_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_CONFIGS_DIR = BENCHMARK_ROOT / "src" / "fcgmb" / "configs"
+DEFAULT_CONFIGS_DIR = BENCHMARK_ROOT / "src" / "mockdock" / "configs"
 DEFAULT_OUTPUT = BENCHMARK_ROOT / "variance_runs" / "crystal_ligand_mapping.csv"
 
 RCSB_CHEMCOMP_URL = "https://data.rcsb.org/rest/v1/core/chemcomp/{comp_id}"

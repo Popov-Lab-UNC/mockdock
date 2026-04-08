@@ -1,20 +1,20 @@
-# FCGMB Evaluator & Analysis Pipeline — Implementation Plan
+# mockdock Evaluator & Analysis Pipeline — Implementation Plan
 
 ## Overview
 
-This plan describes three components that together form a complete post-hoc evaluation and visualization pipeline for the FCGMB benchmark experiments stored in `exps/`.
+This plan describes three components that together form a complete post-hoc evaluation and visualization pipeline for the mockdock benchmark experiments stored in `exps/`.
 
-1. **`src/fcgmb/loader.py`** — A shared `BenchmarkLoader` class used by **both** `FCGMBOracle` and `FCGMBEvaluator` to load benchmark config and bioactivity data; eliminates duplication and ensures consistency.
-2. **`src/fcgmb/evaluator.py`** — Houses the `FCGMBEvaluator` class. Reads a single `results.csv` from one run/target, computes a comprehensive set of intrinsic and extrinsic metrics, and writes `eval_metrics.json`.
-3. **`scripts/analyze_experiments.py`** — Discovers all experiment runs under `exps/`, invokes `FCGMBEvaluator` on each, aggregates results across the 5 seeds per model, computes mean ± std, and produces publication-quality figures and a master CSV.
+1. **`src/mockdock/loader.py`** — A shared `BenchmarkLoader` class used by **both** `MDOracle` and `MDEvaluator` to load benchmark config and bioactivity data; eliminates duplication and ensures consistency.
+2. **`src/mockdock/evaluator.py`** — Houses the `MDEvaluator` class. Reads a single `results.csv` from one run/target, computes a comprehensive set of intrinsic and extrinsic metrics, and writes `eval_metrics.json`.
+3. **`scripts/analyze_experiments.py`** — Discovers all experiment runs under `exps/`, invokes `MDEvaluator` on each, aggregates results across the 5 seeds per model, computes mean ± std, and produces publication-quality figures and a master CSV.
 
 ---
 
-## 1. Shared Loader (`src/fcgmb/loader.py`)
+## 1. Shared Loader (`src/mockdock/loader.py`)
 
 ### 1.1 Motivation
 
-Both `FCGMBOracle` (docking) and `FCGMBEvaluator` (post-hoc metrics) need two things from the benchmark config:
+Both `MDOracle` (docking) and `MDEvaluator` (post-hoc metrics) need two things from the benchmark config:
 
 - The benchmark **YAML config** (fragment SMILES, score bounds, PDB ID, etc.)
 - The **bioactivity data** and the 25th-percentile threshold that defines the initial compound set
@@ -24,10 +24,10 @@ Centralizing this in `BenchmarkLoader` eliminates duplication and ensures both c
 ### 1.2 Interface Sketch
 
 ```python
-# src/fcgmb/loader.py
+# src/mockdock/loader.py
 """
-Shared loader for FCGMB benchmark config and bioactivity data.
-Used by both FCGMBOracle and FCGMBEvaluator.
+Shared loader for mockdock benchmark config and bioactivity data.
+Used by both MDOracle and MDEvaluator.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -48,7 +48,7 @@ class BenchmarkLoader:
         self.benchmark_name = benchmark_name
         _pkg = Path(__file__).parent
         self._pkg_bioactivity_dir = _pkg / "bioactivity_data"
-        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".fcgmb"
+        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".mockdock"
         self._bioactivity_data_dir = _scratch / "bioactivity_data"
 
         config_path = self._find_config(benchmark_name, _pkg / "configs")
@@ -115,11 +115,11 @@ class BenchmarkLoader:
         return df.filter(pl.col(act_col) > threshold) if not df.is_empty() else df
 ```
 
-> **Downstream effect on `FCGMBOracle`**: The private `_get_full_data_and_threshold()`, `get_initial_compounds()`, and `get_validation_compounds()` methods in `oracle.py` are replaced by delegation to a `BenchmarkLoader` instance (`self._loader`). Config attributes (`_fragment_smiles`, `_pdb_id`, `_low_score`, etc.) are read from `self._loader` rather than re-parsed from YAML. This is a refactor with identical external behaviour.
+> **Downstream effect on `MDOracle`**: The private `_get_full_data_and_threshold()`, `get_initial_compounds()`, and `get_validation_compounds()` methods in `oracle.py` are replaced by delegation to a `BenchmarkLoader` instance (`self._loader`). Config attributes (`_fragment_smiles`, `_pdb_id`, `_low_score`, etc.) are read from `self._loader` rather than re-parsed from YAML. This is a refactor with identical external behaviour.
 
 ---
 
-## 2. Evaluator (`src/fcgmb/evaluator.py`)
+## 2. Evaluator (`src/mockdock/evaluator.py`)
 
 ### 2.1 Input / Output
 
@@ -168,16 +168,16 @@ class BenchmarkLoader:
 ### 2.3 Implementation Sketch
 
 ```python
-# src/fcgmb/evaluator.py
+# src/mockdock/evaluator.py
 """
-FCGMBEvaluator — post-hoc metric computation for a single FCGMB benchmark run.
+MDEvaluator — post-hoc metric computation for a single mockdock benchmark run.
 
 Usage (CLI):
-    python -m fcgmb.evaluator results.csv --benchmark CHK1 [--output eval_metrics.json]
+    python -m mockdock.evaluator results.csv --benchmark CHK1 [--output eval_metrics.json]
 
 Usage (Python API):
-    from fcgmb import FCGMBEvaluator
-    ev = FCGMBEvaluator("CHK1")
+    from mockdock import MDEvaluator
+    ev = MDEvaluator("CHK1")
     metrics = ev.compute_metrics(Path("results.csv"))
 """
 from __future__ import annotations
@@ -216,9 +216,9 @@ METRIC_DESCRIPTIONS = {
 }
 
 
-class FCGMBEvaluator:
+class MDEvaluator:
     """
-    Post-hoc evaluator for a single FCGMB benchmark run.
+    Post-hoc evaluator for a single mockdock benchmark run.
 
     Delegates all config/bioactivity loading to BenchmarkLoader — no docking engine
     is instantiated, making this lightweight and safe to run on a login node.
@@ -373,7 +373,7 @@ class FCGMBEvaluator:
         return len(scores)
 ```
 
-> **Note:** `FCGMBEvaluator` avoids instantiating `FCGMBOracle` (no docking engine, no grid prep). Invocable from CLI as `python -m fcgmb.evaluator`.
+> **Note:** `MDEvaluator` avoids instantiating `MDOracle` (no docking engine, no grid prep). Invocable from CLI as `python -m mockdock.evaluator`.
 
 ### 2.4 Reference Set: Why Initial Compounds?
 
@@ -399,7 +399,7 @@ exps/
 
 **Steps:**
 
-1. For each `exps/<model>/run_*/<target>/results.csv`, call `FCGMBEvaluator(target).compute_metrics(path)`.
+1. For each `exps/<model>/run_*/<target>/results.csv`, call `MDEvaluator(target).compute_metrics(path)`.
 2. Collect into `{model: {target: {seed: metrics}}}`.
 3. Aggregate over 5 seeds: **mean** and **std** for every numeric metric.
 4. Macro-average across **all 6 targets** (CHK1, DPP4, ITK, PEPCK, TTK, VEGFR2).
@@ -493,10 +493,10 @@ Grouped bar chart of `fraction_lipinski` and `fraction_pains_free` across models
 ## 4. File Layout
 
 ```
-src/fcgmb/
-├── __init__.py               [MODIFY] export FCGMBEvaluator, BenchmarkLoader
+src/mockdock/
+├── __init__.py               [MODIFY] export MDEvaluator, BenchmarkLoader
 ├── loader.py                 [NEW]    BenchmarkLoader (shared config + bioactivity)
-├── evaluator.py              [NEW]    FCGMBEvaluator class
+├── evaluator.py              [NEW]    MDEvaluator class
 ├── oracle.py                 [MODIFY] delegate to BenchmarkLoader
 └── ... (existing files unchanged)
 
@@ -509,7 +509,7 @@ scripts/
 ### 4.1 Changes to `__init__.py`
 
 ```python
-from .evaluator import FCGMBEvaluator
+from .evaluator import MDEvaluator
 from .loader import BenchmarkLoader
 # Add both to __all__
 ```
@@ -558,7 +558,7 @@ All required packages are already in the project environment:
 
 6. **Lipinski & PAINS**: Explicit fractions (`fraction_lipinski`, `fraction_pains_free`) complement QED/SA with direct drug-likeness and chemical quality readouts.
 
-7. **Modularity**: `BenchmarkLoader` is the single source of truth for config and bioactivity data, shared by both `FCGMBOracle` and `FCGMBEvaluator`.
+7. **Modularity**: `BenchmarkLoader` is the single source of truth for config and bioactivity data, shared by both `MDOracle` and `MDEvaluator`.
 
 8. **Figure format**: Both SVG (vector editing) and PNG @ 300 dpi (manuscript insertion).
 
@@ -569,7 +569,7 @@ All required packages are already in the project environment:
 ### Automated
 ```bash
 # Evaluate a single run
-python -m fcgmb.evaluator \
+python -m mockdock.evaluator \
     exps/acegen-reinvent/run_20260330_155654_r01/CHK1/results.csv \
     --benchmark CHK1
 

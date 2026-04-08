@@ -1,7 +1,7 @@
-# src/fcgmb/loader.py
+# src/mockdock/loader.py
 """
-Shared loader for FCGMB benchmark config and bioactivity data.
-Used by both FCGMBOracle and FCGMBEvaluator.
+Shared loader for mockdock benchmark config and bioactivity data.
+Used by both MDOracle and MDEvaluator.
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class BenchmarkLoader:
         _pkg = Path(__file__).parent
         self._pkg_bioactivity_dir = _pkg / "bioactivity_data"
         _pkg_configs_dir = _pkg / "configs"
-        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".fcgmb"
+        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".mockdock"
         self._bioactivity_data_dir = _scratch / "bioactivity_data"
 
         # Load config
@@ -92,8 +92,8 @@ class BenchmarkLoader:
 
         Lookup order:
         1. In-memory cache
-        2. Package-bundled CSV (fcgmb/bioactivity_data/<name>.csv)
-        3. Scratch cache (~/.fcgmb/bioactivity_data/<name>_chembl.csv)
+        2. Package-bundled CSV (mockdock/bioactivity_data/<name>.csv)
+        3. Scratch cache (~/.mockdock/bioactivity_data/<name>_chembl.csv)
         4. Live ChEMBL fetch
         """
         if self._chembl_data is not None:

@@ -1,14 +1,14 @@
 """
-PrexSyn × FCGMB Benchmark Evaluation
+PrexSyn × mockdock Benchmark Evaluation
 ======================================
-Evaluates PrexSyn on FCGMB docking benchmarks using an exposed
+Evaluates PrexSyn on mockdock docking benchmarks using an exposed
 generate → score → update loop that mirrors the structure of
 prexsyn/scripts/benchmarks/optim.py as closely as possible.
 
 Key differences from prexsyn's autodock_Mpro_7gaw task:
-  - Oracle is FCGMBOracle (6 targets) rather than a bundled AutoDock oracle.
+  - Oracle is MDOracle (6 targets) rather than a bundled AutoDock oracle.
   - The oracle call (score_with_oracle) is factored out so that the
-    SMILES list passed to and scores returned from FCGMBOracle are visible.
+    SMILES list passed to and scores returned from MDOracle are visible.
   - num_runs defaults to 1 (docking is expensive; increase for statistics).
 """
 
@@ -33,7 +33,7 @@ from prexsyn.properties import PropertySet
 from prexsyn.queries import Query
 from prexsyn.utils.oracles import CachedOracle, OracleProtocol
 
-from fcgmb import FCGMBOracle
+from mockdock import MDOracle
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ def query_fragment(ps: PropertySet, fragment_smiles: str) -> Query:
     Soft BRICS-based fragment conditioning query.
     Biases PrexSyn toward generating molecules that decompose into
     fragments resembling the benchmark fragment.
-    Hard enforcement is always applied by FCGMBOracle regardless.
+    Hard enforcement is always applied by MDOracle regardless.
     """
     fragment_mol = Chem.MolFromSmiles(fragment_smiles)
     if fragment_mol is None:
@@ -88,7 +88,7 @@ def _pick_column(columns: list[str], candidates: list[str]) -> str | None:
 
 
 def _extract_initial_context_mols(
-    oracle: FCGMBOracle,
+    oracle: MDOracle,
     max_refs: int,
 ) -> list[Chem.Mol]:
     """
@@ -163,26 +163,26 @@ def auc_top10_from_df(df: pd.DataFrame, max_evals: int) -> float:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FCGMBOracle adapter
+# MDOracle adapter
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-class FCGMBOracleAdapter:
+class MDOracleAdapter:
     """
-    Wraps FCGMBOracle so it satisfies OracleProtocol (Chem.Mol → float).
+    Wraps MDOracle so it satisfies OracleProtocol (Chem.Mol → float).
 
     The score() call is made visible here: SMILES are extracted from
     the molecule(s), passed to oracle.score(), and the dict result is
     unpacked back into floats.
     """
 
-    def __init__(self, oracle: FCGMBOracle) -> None:
+    def __init__(self, oracle: MDOracle) -> None:
         self._oracle = oracle
 
     def __call__(self, mol: Chem.Mol | list[Chem.Mol]) -> float | list[float]:
         if isinstance(mol, list):
             smiles_list = [Chem.MolToSmiles(m) for m in mol]
-            # ── Explicit call to FCGMBOracle ──────────────────────────────────
+            # ── Explicit call to MDOracle ──────────────────────────────────
             score_map: dict[str, float] = self._oracle.score(smiles_list)
             return [float(score_map.get(smi, 0.0)) for smi in smiles_list]
         else:
@@ -191,7 +191,7 @@ class FCGMBOracleAdapter:
             return float(score_map.get(smi, 0.0))
 
     def __repr__(self) -> str:
-        return f"FCGMBOracle({self._oracle.benchmark_name})"
+        return f"MDOracle({self._oracle.benchmark_name})"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -223,11 +223,11 @@ class Task:
         self.use_initial_context = use_initial_context
         self.initial_context_refs = initial_context_refs
 
-        # FCGMBOracle — one instance shared across all runs (tracks total budget)
-        self.fcgmb = FCGMBOracle(benchmark_name, budget=budget, run_dir=run_dir)
+        # MDOracle — one instance shared across all runs (tracks total budget)
+        self.md_oracle = MDOracle(benchmark_name, budget=budget, run_dir=run_dir)
 
-        # PrexSyn-compatible oracle wrapping FCGMBOracle
-        self.oracle_fn: OracleProtocol = CachedOracle(FCGMBOracleAdapter(self.fcgmb))
+        # PrexSyn-compatible oracle wrapping MDOracle
+        self.oracle_fn: OracleProtocol = CachedOracle(MDOracleAdapter(self.md_oracle))
         self.constraint_fn: OracleProtocol = CachedOracle(_get_null_oracle())
 
         self.step_strategy = FingerprintGenetic(
@@ -242,7 +242,7 @@ class Task:
         out_root: pathlib.Path,
         time_limit: int | None = None,
     ) -> None:
-        task_dir = self.fcgmb.run_dir
+        task_dir = self.md_oracle.run_dir
         task_dir.mkdir(parents=True, exist_ok=True)
 
         logger = logging.getLogger(self.benchmark_name)
@@ -252,21 +252,21 @@ class Task:
         logger.addHandler(logging.FileHandler(task_dir / "log.txt"))
 
         logger.info(f"Benchmark   : {self.benchmark_name}")
-        logger.info(f"Fragment    : {self.fcgmb.fragment_smiles}")
-        logger.info(f"PDB ID      : {self.fcgmb.pdb_id}")
+        logger.info(f"Fragment    : {self.md_oracle.fragment_smiles}")
+        logger.info(f"PDB ID      : {self.md_oracle.pdb_id}")
         logger.info(f"Budget      : {self.budget}")
         logger.info(f"Num runs    : {self.num_runs}")
         logger.info(f"Frag. cond. : {self.use_fragment_condition}")
         logger.info(
             f"Init ctx    : {self.use_initial_context} (refs={self.initial_context_refs})"
         )
-        logger.info(f"Run dir     : {self.fcgmb.run_dir}")
+        logger.info(f"Run dir     : {self.md_oracle.run_dir}")
 
         cond_parts: list[Query] = []
         if self.use_fragment_condition:
             try:
                 frag_query = query_fragment(
-                    facade.property_set, self.fcgmb.fragment_smiles
+                    facade.property_set, self.md_oracle.fragment_smiles
                 )
                 cond_parts.append(frag_query)
                 logger.info(f"Fragment query enabled: {frag_query}")
@@ -276,7 +276,7 @@ class Task:
         if self.use_initial_context:
             try:
                 ref_mols = _extract_initial_context_mols(
-                    self.fcgmb, self.initial_context_refs
+                    self.md_oracle, self.initial_context_refs
                 )
                 ctx_query = query_initial_context(facade.property_set, ref_mols)
                 if ctx_query is not None:
@@ -337,16 +337,16 @@ class Task:
                 logger.info(
                     f"Run {run_id}/{self.num_runs}, "
                     f"AUC-Top10({self.budget / 1000:.0f}k): {auc_top10:.4f}, "
-                    f"Rounds: {self.fcgmb.generation_round}"
+                    f"Rounds: {self.md_oracle.generation_round}"
                 )
         finally:
             # Save oracle results and run artifacts even if interrupted
-            self.fcgmb.results_df.write_csv(task_dir / "oracle_results.csv")
+            self.md_oracle.results_df.write_csv(task_dir / "oracle_results.csv")
             try:
-                self.fcgmb.export_top_poses(n=10)
+                self.md_oracle.export_top_poses(n=10)
             except Exception as exc:
                 logger.warning(f"Could not export top poses: {exc}")
-            self.fcgmb.save_metrics(extra={"model": "prexsyn"})
+            self.md_oracle.save_metrics(extra={"model": "prexsyn"})
 
         logger.info("==== Summary ====")
         logger.info(f"Oracle: {self.benchmark_name}")
@@ -354,8 +354,8 @@ class Task:
         logger.info(
             f"- AUC-Top10: {np.mean(auc_top10_all):.3f} ± {np.std(auc_top10_all):.3f}"
         )
-        logger.info(f"- Budget used: {self.fcgmb.budget_used} / {self.budget}")
-        logger.info(f"- Rounds: {self.fcgmb.generation_round}")
+        logger.info(f"- Budget used: {self.md_oracle.budget_used} / {self.budget}")
+        logger.info(f"- Rounds: {self.md_oracle.generation_round}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -438,7 +438,7 @@ BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
     help=(
         "Enable soft BRICS fragment conditioning. Biases PrexSyn toward "
         "the benchmark fragment during generation. Hard enforcement is always "
-        "applied by FCGMBOracle regardless."
+        "applied by MDOracle regardless."
     ),
 )
 @click.option(

@@ -32,9 +32,9 @@ from .utils import (
 # when no pre-built grid is found.
 
 
-class FCGMBOracle:
+class MDOracle:
     """
-    Fragment-Constrained Generative Model Benchmark (FCGMB) Oracle.
+    mockdock Oracle — Fragment-Constrained Generative Model Benchmark.
 
     Provides a standardized interface for benchmarking generative models
     against specific protein-ligand systems using fragment-constrained docking.
@@ -55,12 +55,12 @@ class FCGMBOracle:
 
         Args:
             benchmark_name: Name of the benchmark (e.g. 'CHK1', 'DPP4', 'ITK',
-                'PEPCK', 'TTK', 'VEGFR2'). Run FCGMBOracle.list_benchmarks() for
+                'PEPCK', 'TTK', 'VEGFR2'). Run MDOracle.list_benchmarks() for
                 the full list.
             budget: Total number of compounds allowed to be scored.
             docking_backend: Backend to use ('autodock_gpu', 'vina', or 'auto').
             scratch_dir: Directory to store persistent cache assets (grids,
-                bioactivity data). Defaults to ~/.fcgmb.
+                bioactivity data). Defaults to ~/.mockdock.
             run_dir: Directory for this run's outputs (docking results, live CSV,
                 metrics, top poses). Defaults to ./run_<timestamp>/ in CWD.
             n_cpus: Number of CPUs for parallel operations. Autodetected if None.
@@ -98,7 +98,7 @@ class FCGMBOracle:
         # ── Directory layout (all private) ────────────────────────────
         # scratch_dir: persistent CACHE for pre-built receptor grids.
         # run_dir: all per-run outputs (poses, CSVs, YAML, metrics, SDF).
-        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".fcgmb"
+        _scratch = Path(scratch_dir).resolve() if scratch_dir else Path.home() / ".mockdock"
         _pkg = Path(__file__).parent
         self._pkg_grids_dir = _pkg / "grids"
         self._grids_base_dir = _scratch / "grids"
@@ -119,7 +119,7 @@ class FCGMBOracle:
         self._run_dir.mkdir(parents=True, exist_ok=True)
         self._results_dir = self._run_dir / "poses"
         self._results_dir.mkdir(parents=True, exist_ok=True)
-        print(f"[FCGMB] Run directory: {self._run_dir}")
+        print(f"[mockdock] Run directory: {self._run_dir}")
 
         # ── Lazy-initialised components (private) ─────────────────────
         self._docking_oracle = None
@@ -192,7 +192,7 @@ class FCGMBOracle:
 
     @classmethod
     def list_benchmarks(cls) -> list[str]:
-        """Return all canonical benchmark names bundled with the fcgmb package."""
+        """Return all canonical benchmark names bundled with the mockdock package."""
         return BenchmarkLoader.list_benchmarks()
 
     def get_initial_compounds(self) -> pl.DataFrame:
@@ -206,7 +206,7 @@ class FCGMBOracle:
         
         has_score = "score" in initial_df.columns
         print(
-            f"[FCGMB] Prepared {len(initial_df)} initial compounds"
+            f"[mockdock] Prepared {len(initial_df)} initial compounds"
             + (" [pre-computed docking scores available]" if has_score else "")
         )
         return initial_df
@@ -220,14 +220,14 @@ class FCGMBOracle:
         if validation_df.is_empty():
             return validation_df
         
-        print(f"[FCGMB] Prepared {len(validation_df)} validation compounds")
+        print(f"[mockdock] Prepared {len(validation_df)} validation compounds")
         return validation_df
 
     def score(self, smiles_list: list[str]) -> dict[str, float]:
         """Dock a list of SMILES and return normalised scores."""
         self._generation_round += 1
         if self.budget_used >= self.max_budget:
-            print("[FCGMB] Oracle budget exhausted.")
+            print("[mockdock] Oracle budget exhausted.")
             return {smi: 0.0 for smi in smiles_list}
 
         self._ensure_components()
@@ -250,7 +250,7 @@ class FCGMBOracle:
 
         if valid_tasks:
             # 3. Preparation and Docking
-            with tempfile.TemporaryDirectory(prefix="fcgmb_prep_") as tmp_dir:
+            with tempfile.TemporaryDirectory(prefix="mockdock_prep_") as tmp_dir:
                 temp_path = Path(tmp_dir)
                 # prepare_batch now returns list of {'smiles': str, 'pdbqt_paths': [Path]}
                 # preserving order of valid_tasks
@@ -269,14 +269,14 @@ class FCGMBOracle:
                 # 5. Finalize round
                 self.budget_used += len(process_smiles)
                 print(
-                    f"[FCGMB] Round {self._generation_round}: processed {len(process_smiles)} molecules "
+                    f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
                     f"({len(valid_tasks)} passed 2D filter) (budget {self.budget_used}/{self.max_budget})"
                 )
                 self._update_results_df(skipped_results + batch_results)
         else:
             self.budget_used += len(process_smiles)
             print(
-                 f"[FCGMB] Round {self._generation_round}: processed {len(process_smiles)} molecules "
+                 f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
                  f"(0 passed 2D filter) (budget {self.budget_used}/{self.max_budget})"
             )
             self._update_results_df(skipped_results)
@@ -370,9 +370,11 @@ class FCGMBOracle:
             ):
                 denom = self._loader.low_score - self._loader.high_score
                 if abs(denom) > 1e-6:
-                    best_norm = (self._low_score - best_valid) / denom
+                    best_norm = (self._loader.low_score - best_valid) / denom
                 else:
-                    best_norm = 1.0 if best_valid <= self._high_score else 0.0
+                    best_norm = (
+                        1.0 if best_valid <= self._loader.high_score else 0.0
+                    )
 
             if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
                 best_norm = 0.0
@@ -468,7 +470,7 @@ class FCGMBOracle:
             score_col="docking_score",
             dlg_col="dlg_path",
         )
-        print(f"[FCGMB] Exported top {n} poses to {output_path}")
+        print(f"[mockdock] Exported top {n} poses to {output_path}")
         return output_path
 
     def fetch_poses(self, smiles: Optional[str] = None, top_n: int = 10) -> list:
@@ -512,7 +514,7 @@ class FCGMBOracle:
                     best.SetProp("normalized_score", str(row["normalized_score"]))
                     mols.append(best)
             except Exception as e:
-                print(f"[FCGMB] fetch_poses: could not read {pose_file}: {e}")
+                print(f"[mockdock] fetch_poses: could not read {pose_file}: {e}")
         return mols
 
     def save_metrics(self, extra: Optional[dict] = None) -> Path:
@@ -525,36 +527,47 @@ class FCGMBOracle:
         Returns:
             Path to the written metrics file.
         """
-        n_docked = (
-            len(self.results_df.filter(pl.col("skip_reason").is_null()))
-            if not self.results_df.is_empty()
-            else 0
-        )
         n_total = len(self.results_df) if not self.results_df.is_empty() else 0
+        n_generated_ligands = n_total
+        avg_oracle_time_per_mol = (
+            self._total_prep_time / max(1, self._n_prepped)
+            + self._total_dock_time / max(1, self._n_docked)
+            + self._total_analysis_time / max(1, self._n_docked)
+        )
+        total_generation_time = 0.0
+        if extra and "total_generation_time_sec" in extra:
+            total_generation_time = float(extra["total_generation_time_sec"])
+        if extra and "n_generated_ligands" in extra:
+            n_generated_ligands = int(extra["n_generated_ligands"])
+        avg_generation_time = total_generation_time / max(1, n_generated_ligands)
 
         metrics: dict = {
             "benchmark": self.benchmark_name,
             "budget_used": self.budget_used,
             "budget_total": self.max_budget,
             "generation_rounds": self._generation_round,
-            "timing": {
-                "total_prep_time_sec": round(self._total_prep_time, 2),
-                "total_dock_time_sec": round(self._total_dock_time, 2),
-                "total_analysis_time_sec": round(self._total_analysis_time, 2),
-                "avg_prep_time_per_mol_sec": round(
-                    self._total_prep_time / max(1, self._n_prepped), 4
-                ),
-                "avg_dock_time_per_mol_sec": round(
-                    self._total_dock_time / max(1, self._n_docked), 4
-                ),
-                "avg_analysis_time_per_mol_sec": round(
-                    self._total_analysis_time / max(1, self._n_docked), 4
-                ),
-            },
-            "results_summary": {
-                "n_total_scored": n_total,
-                "n_valid_poses": n_docked,
-            },
+            "n_molecules_total": int(n_total),
+            "n_molecules_attempted": int(self._n_docked),
+            "total_gen_time": round(total_generation_time, 2),
+            "avg_gen_time_per_mol": round(avg_generation_time, 4),
+            "total_eval_time": round(
+                self._total_prep_time
+                + self._total_dock_time
+                + self._total_analysis_time,
+                2,
+            ),
+            "avg_eval_time_per_mol": round(avg_oracle_time_per_mol, 4),
+            "total_time": round(
+                total_generation_time
+                + self._total_prep_time
+                + self._total_dock_time
+                + self._total_analysis_time,
+                2,
+            ),
+            "avg_time_per_mol": round(
+                avg_generation_time + avg_oracle_time_per_mol,
+                4,
+            ),
         }
         if extra:
             metrics.update(extra)
@@ -562,7 +575,7 @@ class FCGMBOracle:
         metrics_path = self._run_dir / "metrics.json"
         with open(metrics_path, "w") as f:
             json.dump(metrics, f, indent=2, default=str)
-        print(f"[FCGMB] Metrics saved to {metrics_path}")
+        print(f"[mockdock] Metrics saved to {metrics_path}")
         return metrics_path
 
     # ──────────────────────────────────────────────────────────────────
@@ -571,17 +584,19 @@ class FCGMBOracle:
 
     def _print_verbose_init(self):
         sep = "═" * 44
-        print(f"[FCGMB] {sep}")
-        print(f"[FCGMB] Benchmark: {self.benchmark_name}")
-        print(f"[FCGMB] Backend:   {self._resolved_backend.upper()}")
-        print(f"[FCGMB] Hardware:  {self.n_cpus} CPUs, {self.n_gpus} GPUs")
+        print(f"[mockdock] {sep}")
+        print(f"[mockdock] Benchmark: {self.benchmark_name}")
+        print(f"[mockdock] Backend:   {self._resolved_backend.upper()}")
+        print(f"[mockdock] Hardware:  {self.n_cpus} CPUs, {self.n_gpus} GPUs")
         if self._resolved_backend == "vina":
-            print(f"[FCGMB] Vina exhaustiveness: {self._backend_config['vina_exhaustiveness']}")
-        print(f"[FCGMB] {sep}")
+            print(f"[mockdock] Vina exhaustiveness: {self._backend_config['vina_exhaustiveness']}")
+        print(f"[mockdock] {sep}")
 
     def _get_full_data_and_threshold(self) -> tuple[pl.DataFrame, float, str]:
-        """Backward compatibility shim."""
-        return self._loader.get_full_data_and_threshold()
+        """Backward compatibility shim (mirrors loader cache on the oracle instance)."""
+        out = self._loader.get_full_data_and_threshold()
+        self._chembl_data = self._loader._chembl_data
+        return out
 
     def _resolve_backend(self) -> str:
         """Resolve which docking backend to use."""
@@ -606,21 +621,21 @@ class FCGMBOracle:
             fld_files = list(pkg_grid_dir.glob("*.maps.fld"))
             if fld_files:
                 self._grid_dir = pkg_grid_dir
-                print(f"[FCGMB] Using pre-built package grids for {self.pdb_id}")
+                print(f"[mockdock] Using pre-built package grids for {self.pdb_id}")
 
         if not fld_files:
             fld_files = list(self._grid_dir.glob("*.maps.fld"))
             if fld_files:
-                print(f"[FCGMB] Using scratch grids for {self.pdb_id}")
+                print(f"[mockdock] Using scratch grids for {self.pdb_id}")
 
         if not fld_files:
-            print(f"[FCGMB] No pre-built grid found — preparing receptor for {self.pdb_id}...")
+            print(f"[mockdock] No pre-built grid found — preparing receptor for {self.pdb_id}...")
             try:
                 from .receptor import ReceptorPreparer
             except ImportError as e:
                 raise ImportError(
                     "Receptor preparation requires 'prody', which is an optional dependency. "
-                    "Install it with: pip install fcgmb[receptor]  or  conda install -c conda-forge prody"
+                    "Install it with: pip install mockdock[receptor]  or  conda install -c conda-forge prody"
                 ) from e
             # Lazily create the scratch grid dir before first write
             self._grid_dir.mkdir(parents=True, exist_ok=True)
@@ -637,7 +652,7 @@ class FCGMBOracle:
             )
         else:
             fld_path = fld_files[0]
-            print(f"[FCGMB] Using existing grids for {self.pdb_id}: {fld_path.name}")
+            print(f"[mockdock] Using existing grids for {self.pdb_id}: {fld_path.name}")
 
         # Analyzer
         ref_path = self._grid_dir / f"{self.pdb_id}_ligand_corrected.sdf"

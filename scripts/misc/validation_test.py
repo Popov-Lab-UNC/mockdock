@@ -1,10 +1,10 @@
 """
-FCGMB Validation Test
-=====================
+mockdock Validation Test
+========================
 Runs docking-based validation for all configured benchmarks.
 
 For each benchmark the script:
-  1. Auto-discovers benchmark names from fcgmb/configs/*.yaml (+ any local configs/).
+  1. Auto-discovers benchmark names from mockdock/configs/*.yaml (+ any local configs/).
   2. Loads the upper 75% activity compounds (validation set) from bundled or
      cached bioactivity data.
   3. Docks those compounds and reports normalized scores.
@@ -24,10 +24,10 @@ Usage
 Extending
 ---------
   To add your own benchmark:
-    1. Create fcgmb/configs/<MyBenchmark>.yaml  (see existing files for format)
-    2. Add bioactivity data at fcgmb/bioactivity_data/<MyBenchmark>.csv
+    1. Create mockdock/configs/<MyBenchmark>.yaml  (see existing files for format)
+    2. Add bioactivity data at mockdock/bioactivity_data/<MyBenchmark>.csv
        (columns: molecule_chembl_id, canonical_smiles, pchembl_value)
-    3. Place pre-built grids in fcgmb/grids/<PDB_ID>/  OR let the oracle
+    3. Place pre-built grids in mockdock/grids/<PDB_ID>/  OR let the oracle
        auto-prepare them (requires autogrid4 + reduce2).
 """
 
@@ -38,7 +38,7 @@ from pathlib import Path
 
 import polars as pl
 
-from fcgmb.oracle import FCGMBOracle
+from mockdock.oracle import MDOracle
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -90,9 +90,9 @@ def run_validation(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Discover benchmarks
-    # By default use only the curated package benchmarks (fcgmb/configs/).
+    # By default use only the curated package benchmarks (mockdock/configs/).
     # Pass include_user_configs=True to also pick up local configs/.
-    all_available = FCGMBOracle.list_benchmarks()
+    all_available = MDOracle.list_benchmarks()
 
     if benchmarks:
         to_run = benchmarks
@@ -101,7 +101,7 @@ def run_validation(
 
     if not to_run:
         print(
-            "[ERROR] No benchmark configs found. Check fcgmb/configs/ or local configs/."
+            "[ERROR] No benchmark configs found. Check mockdock/configs/ or local configs/."
         )
         sys.exit(1)
 
@@ -111,7 +111,7 @@ def run_validation(
         print(f"Available: {all_available}")
         sys.exit(1)
 
-    print(f"\nFCGMB Validation — {len(to_run)} benchmark(s): {to_run}")
+    print(f"\nmockdock Validation — {len(to_run)} benchmark(s): {to_run}")
     adgpu_exe = os.environ.get("ADGPU_EXE", "adgpu")
 
     summary_rows = []
@@ -122,7 +122,7 @@ def run_validation(
         print(f"{'=' * 60}")
 
         try:
-            oracle = FCGMBOracle(bm_name, budget=2000)
+            oracle = MDOracle(bm_name, budget=2000)
             oracle.set_backend_config(adgpu_executable=adgpu_exe)
 
             # ------------------------------------------------------------------
@@ -231,7 +231,7 @@ def run_validation(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="FCGMB validation: dock upper-75%% activity compounds for each benchmark."
+        description="mockdock validation: dock upper-75%% activity compounds for each benchmark."
     )
     parser.add_argument(
         "--all",

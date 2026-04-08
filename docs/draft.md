@@ -45,7 +45,7 @@ Furthermore, there exists a significant disconnect between the academic focus on
 
 ## Our Contribution
 
-In this work, we introduce the Fragment-Constrained Generative Model Benchmark (FCGMB), a novel benchmarking framework designed to evaluate chemical language models in scenarios that more closely reflect the challenges of practical drug discovery. Our approach addresses the limitations of existing benchmarks by:
+In this work, we introduce the Fragment-Constrained Generative Model Benchmark (mockdock), a novel benchmarking framework designed to evaluate chemical language models in scenarios that more closely reflect the challenges of practical drug discovery. Our approach addresses the limitations of existing benchmarks by:
 
 1. **Integrating structure-based evaluation** through molecular docking against experimentally validated crystal structures, providing physics-based validation that is significantly harder to exploit than QSAR models;$^{35,40,41}$
 
@@ -213,7 +213,7 @@ By mapping each assay series to all available compatible PDB structures, we gene
 
 [Figures showing specific examples with molecular structures, binding site visualizations, and performance plots] 
 
-**Table 2.** Exemplary benchmark tasks from the FCGMB dataset.
+**Table 2.** Exemplary benchmark tasks from the mockdock dataset.
 
 | Target Name (ID) | PDB ID | Resolution (Å) | Fragment SMILES | N Compounds | Mean Spearman ρ | % Passed RMSD | Score Range (low → high) | Assay Type |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -249,7 +249,7 @@ By mapping each assay series to all available compatible PDB structures, we gene
 
 **Table 3.** Comparison of molecular generation benchmark characteristics.
 
-| Feature | GuacaMol | MOSES | MolOpt | DOCKSTRING | smina-dock | MolScore | FCGMB |
+| Feature | GuacaMol | MOSES | MolOpt | DOCKSTRING | smina-dock | MolScore | mockdock |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | Evaluation Type | Similarity | Distribution | Multi-objective | Docking | Docking | Multi-objective | Docking + Pose |
 | Fragment Constraint | No | No | No | No | No | Optional | Yes (MCS) |
@@ -393,7 +393,7 @@ Ultimately, our vision is that rigorous, realistic benchmarking will accelerate 
 58. AL and uncertainty-aware exploration offer a principled alternative. PMC. 
 ## Data Availability
 
-All benchmark data, evaluation scripts, and protocols are publicly available through a GitHub repository (https://github.com/Popov-Lab-UNC/fcgmb) and will be archived on Zenodo for long-term accessibility. The benchmark package includes: (1) curated YAML configuration files defining each benchmark task; (2) pre-built AutoGrid4 maps for all six benchmark receptor structures; (3) curated bioactivity data CSVs with ChEMBL compound identifiers and pChEMBL values; (4) the `FCGMBOracle` Python class providing a standardized scoring interface; (5) reference ligand coordinates with corrected bond orders for RMSD validation; and (6) complete data mining and receptor preparation pipelines for generating new benchmarks. The package is installable via `pip install fcgmb` (or `pip install -e .` from source) and requires only AutoDock-GPU or AutoDock Vina as an external dependency for standard usage. All other software dependencies (RDKit, Meeko, MolStandardize) are installed automatically.
+All benchmark data, evaluation scripts, and protocols are publicly available through a GitHub repository (https://github.com/Popov-Lab-UNC/mockdock) and will be archived on Zenodo for long-term accessibility. The benchmark package includes: (1) curated YAML configuration files defining each benchmark task; (2) pre-built AutoGrid4 maps for all six benchmark receptor structures; (3) curated bioactivity data CSVs with ChEMBL compound identifiers and pChEMBL values; (4) the `MDOracle` Python class providing a standardized scoring interface; (5) reference ligand coordinates with corrected bond orders for RMSD validation; and (6) complete data mining and receptor preparation pipelines for generating new benchmarks. The package is installable via `pip install mockdock` (or `pip install -e .` from source) and requires only AutoDock-GPU or AutoDock Vina as an external dependency for standard usage. All other software dependencies (RDKit, Meeko, MolStandardize) are installed automatically.
 
 ## Supplementary Information
 
@@ -415,9 +415,9 @@ The multi-step ligand preparation pipeline ensures chemically valid and biologic
 
 ### S2. Bioactivity Data Curation
 
-Bioactivity data for each benchmark is bundled as pre-curated CSV files within the package (`fcgmb/bioactivity_data/<benchmark>.csv`). Each CSV contains three columns: `molecule_chembl_id`, `canonical_smiles`, and `pchembl_value` (−log₁₀ of IC₅₀, Ki, or Kd). Data was curated at the assay level (single `assay_chembl_id`) to guarantee measurements originate from consistent experimental conditions. Duplicate SMILES entries within the same assay were consolidated using the median pChEMBL value.
+Bioactivity data for each benchmark is bundled as pre-curated CSV files within the package (`mockdock/bioactivity_data/<benchmark>.csv`). Each CSV contains three columns: `molecule_chembl_id`, `canonical_smiles`, and `pchembl_value` (−log₁₀ of IC₅₀, Ki, or Kd). Data was curated at the assay level (single `assay_chembl_id`) to guarantee measurements originate from consistent experimental conditions. Duplicate SMILES entries within the same assay were consolidated using the median pChEMBL value.
 
-The oracle supports three data sources in order of priority: (1) bundled CSV (fastest, no network required), (2) local scratch cache (`.fcgmb/data/<name>_chembl.csv`), and (3) live ChEMBL API fetch (used only when no cached data exists).
+The oracle supports three data sources in order of priority: (1) bundled CSV (fastest, no network required), (2) local scratch cache (`.mockdock/bioactivity_data/<name>_chembl.csv`), and (3) live ChEMBL API fetch (used only when no cached data exists).
 
 ### S3. Software Versions and Dependencies
 
@@ -480,9 +480,9 @@ Surrogate models is more important, generative models going OOD is bad: https://
 
 Similarity-based benchmarks evaluate models on their ability to regenerate molecules that are already known to be active. In actual medicinal chemistry campaigns, however, the goal is to discover novel chemical matter with desired properties, not to rediscover existing solutions. This fundamental mismatch means that high performance on similarity-based benchmarks may not translate to success in prospective molecular design {Coley 2020; Thomas 2025 TTT}. The target-based benchmarks in GuacaMol (GSK3β, DRD2, JNK3) partially address this concern by using machine learning classifiers trained on bioactivity data from the ExCAPE-DB database {Sun 2017; Brown 2019}. While these provide more activity-relevant evaluation than pure similarity metrics, they introduce new concerns about prediction reliability for out-of-distribution molecules. When a generative model produces a molecule structurally distinct from the classifier's training set, the predicted activity may be profoundly unreliable, potentially rewarding models for generating molecules that appear active according to flawed predictions but would fail in experimental validation {Renz 2019; Langevin 2022}.
 
-### Advantages of the FCGMB Benchmark
+### Advantages of the mockdock Benchmark
 
-The FCGMB benchmark represents a substantial expansion over existing structure-based benchmarking resources. Unlike static datasets such as DUD-E or PDBbind that focus on receptor–ligand binding prediction, FCGMB provides fragment-constrained generation tasks with paired bioactivity labels, enabling simultaneous evaluation of structural fidelity (via RMSD-based pose validation) and property prediction (via correlation with experimental pChEMBL values). The inclusion of 7,792 distinct benchmark configurations—each with a defined chemical scaffold constraint derived from experimental structural data—offers unprecedented scale and diversity for systematic assessment of fragment-based and scaffold-hopping generative approaches.
+The mockdock benchmark represents a substantial expansion over existing structure-based benchmarking resources. Unlike static datasets such as DUD-E or PDBbind that focus on receptor–ligand binding prediction, mockdock provides fragment-constrained generation tasks with paired bioactivity labels, enabling simultaneous evaluation of structural fidelity (via RMSD-based pose validation) and property prediction (via correlation with experimental pChEMBL values). The inclusion of 7,792 distinct benchmark configurations—each with a defined chemical scaffold constraint derived from experimental structural data—offers unprecedented scale and diversity for systematic assessment of fragment-based and scaffold-hopping generative approaches.
 
 Furthermore, the assay-level organization ensures that bioactivity comparisons are made within consistent experimental contexts, avoiding the confounding effects of mixed assay conditions that plague many existing benchmarks. The requirement that the reference ligand itself appear in the assay compound series guarantees that each benchmark possesses a known "ground truth" binding mode, facilitating rigorous pose prediction evaluation alongside affinity prediction.
  

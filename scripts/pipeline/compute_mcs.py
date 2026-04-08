@@ -25,7 +25,7 @@ from rdkit import Chem
 from rdkit.Chem import rdFMCS
 from utils import get_chunk_output_path
 
-# Add project root and src directory for fcgmb imports
+# Add project root and src directory for mockdock imports
 script_dir = Path(__file__).parent
 project_root = script_dir.parent.parent
 src_dir = project_root / "src"
@@ -36,7 +36,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 try:
-    from fcgmb.data import standardize_smiles
+    from mockdock.data import standardize_smiles
 except ImportError:
     # Fallback to manual definition if everything fails
     def standardize_smiles(s): return s

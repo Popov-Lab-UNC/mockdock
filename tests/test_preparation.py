@@ -3,11 +3,11 @@ from pathlib import Path
 
 from rdkit import Chem
 
-from fcgmb.analysis import DockingAnalyzer
-from fcgmb.ligand_prep import LigandPreparer
-from fcgmb.oracle import FCGMBOracle
-from fcgmb.receptor import ReceptorPreparer
-from fcgmb.utils import check_2d_match
+from mockdock.analysis import DockingAnalyzer
+from mockdock.ligand_prep import LigandPreparer
+from mockdock.oracle import MDOracle
+from mockdock.receptor import ReceptorPreparer
+from mockdock.utils import check_2d_match
 
 
 def test_preparation_pipeline():
@@ -21,9 +21,9 @@ def test_preparation_pipeline():
         tmp_path = Path(tmp_dir)
         print(f"Working in temporary directory: {tmp_path}")
 
-        # 1. Initialize FCGMBOracle to get config
-        print(f"\n[1] Initializing FCGMBOracle for {benchmark_name}")
-        oracle = FCGMBOracle(benchmark_name, scratch_dir=tmp_path)
+        # 1. Initialize MDOracle to get config
+        print(f"\n[1] Initializing MDOracle for {benchmark_name}")
+        oracle = MDOracle(benchmark_name, scratch_dir=tmp_path)
 
         # 2. Test Receptor Preparation
         print("\n[2] Testing ReceptorPreparer")

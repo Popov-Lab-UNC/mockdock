@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=fcgmb_val
+#SBATCH --job-name=mockdock_val
 #SBATCH --partition=volta-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1

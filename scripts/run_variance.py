@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Standalone script to run variance tests for the docking workflow.
-Relocated from fcgmb.variance to allow cleaner package structure.
+Relocated from legacy variance module to allow cleaner package structure.
 """
 
 # Standard library imports

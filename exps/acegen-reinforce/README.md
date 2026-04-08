@@ -1,19 +1,19 @@
-# AceGen-REINFORCE × FCGMB
+# AceGen-REINFORCE × mockdock
 
-Benchmarks AceGen's **REINFORCE** algorithm against all six FCGMB targets.
+Benchmarks AceGen's **REINFORCE** algorithm against all six mockdock targets.
 
 ## Algorithm
 
 REINFORCE is a simple policy-gradient algorithm.  AceGen's implementation
 includes an optional prioritised experience replay buffer.
 
-## FCGMB adaptations
+## mockdock adaptations
 
 | Feature | Implementation |
 |---------|----------------|
 | Fragment conditioning | Benchmark fragment → PromptSMILES scaffold (single `(*)` attachment point). |
 | Initial compounds | Up to 25 lowest-quartile compounds pre-scored for oracle warmup. |
-| Scoring | `FCGMBOracle.score(smiles)`, normalised [0, 1]. |
+| Scoring | `mockdockOracle.score(smiles)`, normalised [0, 1]. |
 
 ## Setup
 

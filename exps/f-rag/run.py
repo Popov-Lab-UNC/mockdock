@@ -1,15 +1,15 @@
 """
-f-RAG x FCGMB Benchmark Evaluation
-==================================
-Runs f-RAG's fragment-retrieval generation loop against the six FCGMB oracles.
+f-RAG x mockdock Benchmark Evaluation
+======================================
+Runs f-RAG's fragment-retrieval generation loop against the six mockdock oracles.
 
 This implementation keeps the original f-RAG flow:
   - SAFE generation + GA reproduction
   - arm/linker fragment populations
   - retrieval-augmented generation via SAFEFusionDesign
 
-FCGMB-specific changes:
-  - Oracle is FCGMBOracle instead of qVina.
+mockdock-specific changes:
+  - Oracle is MDOracle instead of qVina.
   - Initial compound context comes from oracle.get_initial_compounds().
     We use those compounds to seed molecule and fragment populations.
 """
@@ -33,7 +33,7 @@ import yaml
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from fcgmb import FCGMBOracle
+from mockdock import MDOracle
 
 os_environ = __import__("os").environ
 os_environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -118,7 +118,7 @@ class HParams:
         return cls(**raw)
 
 
-class FRAGFCGMB:
+class FRAGMockdock:
     def __init__(
         self,
         benchmark_name: str,
@@ -147,7 +147,7 @@ class FRAGFCGMB:
         self.SAFEFusionDesign = mods["SAFEFusionDesign"]
         self.MolSlicer = mods["MolSlicer"]
 
-        self.oracle = FCGMBOracle(benchmark_name, budget=budget, run_dir=self.out_dir)
+        self.oracle = MDOracle(benchmark_name, budget=budget, run_dir=self.out_dir)
         self.designer = self.SAFEFusionDesign.load_default()
         self.designer.load_fuser(self.args.injection_model_path)
         # Fallback generator: vanilla SAFE-GPT without f-RAG fusion, used when
@@ -786,7 +786,7 @@ def main(
         for run_idx in range(num_runs):
             run_seed = seed + run_idx
             logger.info("Run %d/%d (seed=%d)", run_idx + 1, num_runs, run_seed)
-            runner = FRAGFCGMB(
+            runner = FRAGMockdock(
                 benchmark_name=benchmark_name,
                 budget=budget,
                 seed=run_seed,

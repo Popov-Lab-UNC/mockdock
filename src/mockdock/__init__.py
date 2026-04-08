@@ -1,10 +1,10 @@
 from .analysis import DockingAnalyzer
 from .data import fetch_chembl_data
 from .docking import AutoDockGPUOracle, AutoDockVinaOracle, DockingOracle
-from .evaluator import FCGMBEvaluator
+from .evaluator import MDEvaluator
 from .ligand_prep import LigandPreparer
 from .loader import BenchmarkLoader
-from .oracle import FCGMBOracle
+from .oracle import MDOracle
 from .utils import (
     assign_bond_orders_from_template,
     check_2d_match,
@@ -24,7 +24,7 @@ def __getattr__(name):
         globals()["ReceptorPreparer"] = ReceptorPreparer
         globals()["extract_protein_and_ligand"] = extract_protein_and_ligand
         return globals()[name]
-    raise AttributeError(f"module 'fcgmb' has no attribute {name!r}")
+    raise AttributeError(f"module 'mockdock' has no attribute {name!r}")
 
 
 __all__ = [
@@ -40,8 +40,8 @@ __all__ = [
     "plot_activity_distribution",
     "fetch_ligand_expo_sdf",
     "assign_bond_orders_from_template",
-    "FCGMBOracle",
-    "FCGMBEvaluator",
+    "MDOracle",
+    "MDEvaluator",
     "BenchmarkLoader",
     "detect_gpus",
     "resolve_backend",

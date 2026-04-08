@@ -1,6 +1,6 @@
-# AceGen-PPO × FCGMB
+# AceGen-PPO × mockdock
 
-Benchmarks AceGen's **PPO** algorithm against all six FCGMB targets using
+Benchmarks AceGen's **PPO** algorithm against all six mockdock targets using
 docking-based fragment-constrained scoring.
 
 ## Algorithm
@@ -11,13 +11,13 @@ GRU backbone with a separate critic head, optimised with clipped surrogate loss
 and GAE advantage estimation.  Experience replay is **disabled** in this folder
 (see `acegen-ppod` for PPO+D with replay).
 
-## FCGMB adaptations
+## mockdock adaptations
 
 | Feature | Implementation |
 |---------|----------------|
 | Fragment conditioning | The benchmark fragment is converted to a PromptSMILES scaffold (single `(*)` attachment point added via RDKit). The model is forced to elaborate the fragment throughout training. |
 | Initial compounds | Up to 25 lowest-quartile bioactivity compounds are pre-scored before the RL loop to warm up the docking infrastructure and establish baseline data. |
-| Scoring | `FCGMBOracle.score(smiles)` is called each RL iteration; scores are normalised to [0, 1]. |
+| Scoring | `mockdockOracle.score(smiles)` is called each RL iteration; scores are normalised to [0, 1]. |
 
 ## Setup
 

@@ -379,7 +379,7 @@ def main():
     parser.add_argument(
         "--config-dir",
         type=str,
-        default="src/fcgmb/configs",
+        default="src/mockdock/configs",
         help="Directory with system YAML configs",
     )
     parser.add_argument(

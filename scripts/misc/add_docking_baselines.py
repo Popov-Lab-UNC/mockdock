@@ -4,7 +4,7 @@
 Reads the five variance runs (variance_runs/run_1 … run_5) and computes a
 mean docking score for each compound across the repeats.  The result is
 written back into the six canonical bioactivity CSVs
-(fcgmb/bioactivity_data/<benchmark>.csv) as two new columns:
+(mockdock/bioactivity_data/<benchmark>.csv) as two new columns:
 
   mean_docking_score  – raw mean docking score in kcal/mol (lower = better)
   score               – normalised score using each benchmark's low_score /
@@ -16,7 +16,7 @@ written back into the six canonical bioactivity CSVs
 low_score and high_score are computed from the variance run data: high_score =
 best (min) mean_docking_score observed; low_score = mean of mean_docking_scores
 for compounds in the lower quantile by pactivity (pchembl_value). These values
-are written back into the benchmark YAML configs (fcgmb/configs/<benchmark>.yaml).
+are written back into the benchmark YAML configs (mockdock/configs/<benchmark>.yaml).
 
 Run once from the benchmark root::
 
@@ -39,8 +39,8 @@ import yaml
 
 BENCHMARK_ROOT = Path(__file__).resolve().parent
 VARIANCE_RUNS_DIR = BENCHMARK_ROOT / "variance_runs"
-BIOACTIVITY_DIR = BENCHMARK_ROOT / "src" / "fcgmb" / "bioactivity_data"
-CONFIGS_DIR = BENCHMARK_ROOT / "src" / "fcgmb" / "configs"
+BIOACTIVITY_DIR = BENCHMARK_ROOT / "src" / "mockdock" / "bioactivity_data"
+CONFIGS_DIR = BENCHMARK_ROOT / "src" / "mockdock" / "configs"
 
 N_RUNS = 5  # variance_runs/run_1 … run_5
 

@@ -63,7 +63,7 @@ def resolve_backend(
         if adgpu_ok:
             return "autodock_gpu"
         print(
-            f"[FCGMB] Warning: AutoDock-GPU not found ('{adgpu_executable}'). Falling back to Vina."
+            f"[mockdock] Warning: AutoDock-GPU not found ('{adgpu_executable}'). Falling back to Vina."
         )
         return "vina"
     if requested == "vina":

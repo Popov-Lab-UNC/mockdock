@@ -42,14 +42,13 @@ class TestAutoDockGPUOracleOptimized(unittest.TestCase):
         cls.modules_patcher = patch.dict("sys.modules", cls.mocked_modules)
         cls.modules_patcher.start()
 
-        # Ensure 'fcgmb' is in path
-        sys.path.insert(
-            0, os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        )
+        # Ensure src layout is on path
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        sys.path.insert(0, os.path.join(repo_root, "src"))
 
         # Now we can safely import
         try:
-            from fcgmb.docking import AutoDockGPUOracle
+            from mockdock.docking import AutoDockGPUOracle
 
             cls.AutoDockGPUOracle = AutoDockGPUOracle
         except ImportError as e:

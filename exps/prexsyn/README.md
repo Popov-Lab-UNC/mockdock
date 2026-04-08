@@ -1,11 +1,11 @@
-# PrexSyn × FCGMB Evaluation
+# PrexSyn × mockdock Evaluation
 
-Evaluates [PrexSyn](https://arxiv.org/abs/2512.00384) on the six FCGMB docking
+Evaluates [PrexSyn](https://arxiv.org/abs/2512.00384) on the six mockdock docking
 benchmarks. The script mirrors the structure of
 `prexsyn/scripts/benchmarks/optim.py` as closely as possible, using the same
 `Task` / `Optimizer` / `FingerprintGenetic` / `CachedOracle` / `OptimTracker`
-building blocks from PrexSyn. The only FCGMB-specific piece is
-`FCGMBOracleAdapter`, which adapts `FCGMBOracle.score()` to PrexSyn's
+building blocks from PrexSyn. The only mockdock-specific piece is
+`MDOracleAdapter`, which adapts `MDOracle.score()` to PrexSyn's
 `OracleProtocol`.
 
 ## Script
@@ -13,7 +13,7 @@ building blocks from PrexSyn. The only FCGMB-specific piece is
 ### `run.py`
 
 PrexSyn's `Optimizer` (with `FingerprintGenetic` step strategy) drives the
-loop. The FCGMB oracle call is isolated in `FCGMBOracleAdapter.__call__()`,
+loop. The mockdock oracle call is isolated in `MDOracleAdapter.__call__()`,
 which makes the SMILES list → score dict exchange visible:
 
 ```python
@@ -26,7 +26,7 @@ score_map: dict[str, float] = self._oracle.score(smiles_list)
 outputs/<BENCHMARK>/
 ├── run_01.df.pkl      # OptimTracker DataFrame (pickle) — same as prexsyn optim.py
 ├── log.txt            # Per-benchmark log
-└── oracle_results.csv # Full docking records from FCGMBOracle
+└── oracle_results.csv # Full docking records from MDOracle
 ```
 
 ## Usage
@@ -64,10 +64,10 @@ PrexSyn conditions generation on **BRICS fragment fingerprints** via its
 the model is steered toward molecules that decompose into fragments resembling the
 target fragment, but there is no hard guarantee the fragment will appear.
 
-Hard fragment enforcement is handled by `FCGMBOracle` — molecules that fail the
+Hard fragment enforcement is handled by `MDOracle` — molecules that fail the
 2D substructure check get score `0.0` and **do not count against the budget**.
 
-In addition, this benchmark wrapper can use FCGMB initial compounds as context
+In addition, this benchmark wrapper can use mockdock initial compounds as context
 (`--initial-context`, enabled by default). It builds an ECFP reference query
 from selected initial compounds and combines it with fragment conditioning when
 `--fragment-condition` is used.
@@ -82,5 +82,5 @@ Both packages must be installed in the same environment:
 
 ```bash
 pip install -e /path/to/prexsyn
-pip install -e /path/to/benchmark   # or pip install fcgmb
+pip install -e /path/to/benchmark   # or pip install mockdock
 ```

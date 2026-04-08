@@ -206,7 +206,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# FCGMB: Runtime outputs and experimental data (not for version control)
+# mockdock: Runtime outputs and experimental data (not for version control)
 benchmark_runs/
 results/
 generated_configs/
@@ -219,15 +219,15 @@ logs/
 *.log
 *.err
 
-# FCGMB: User-specific experiment configs / data (keep examples in examples/ instead)
+# mockdock: User-specific experiment configs / data (keep examples in examples/ instead)
 custom_configs/
 custom_data/
 
-# FCGMB: Local data cache (large binary files)
+# mockdock: Local data cache (large binary files)
 data/
 data_v1/
 
-# FCGMB: Validation result CSVs (outputs, not source)
+# mockdock: Validation result CSVs (outputs, not source)
 validation_results_*.csv
 validation_summary.csv
 

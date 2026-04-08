@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # scripts/analyze_experiments.py
 """
-Aggregates FCGMB experiment results across models, targets, and seeds.
+Aggregates mockdock experiment results across models, targets, and seeds.
 Generates master CSVs and publication-quality figures.
 """
 from __future__ import annotations
@@ -15,14 +15,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 import seaborn as sns
-from scipy import stats
 
 try:
-    from fcgmb import FCGMBEvaluator
+    from mockdock import MDEvaluator
 except ImportError:
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-    from fcgmb import FCGMBEvaluator
+    from mockdock import MDEvaluator
 
 
 def setup_plotting():
@@ -68,7 +67,7 @@ def discover_results(exps_dir: Path) -> list[tuple[str, str, str, Path]]:
 
 def process_all(results_list: list[tuple[str, str, str, Path]], scratch_dir: Path = None) -> pl.DataFrame:
     """
-    Process each results.csv through FCGMBEvaluator.
+    Process each results.csv through MDEvaluator.
     Returns a master DataFrame with all metrics.
     """
     all_data = []
@@ -80,7 +79,7 @@ def process_all(results_list: list[tuple[str, str, str, Path]], scratch_dir: Pat
         print(f"Evaluating {model} | {target} | {seed}...")
         
         if target not in evaluators:
-            evaluators[target] = FCGMBEvaluator(target, scratch_dir=scratch_dir)
+            evaluators[target] = MDEvaluator(target, scratch_dir=scratch_dir)
             
         try:
             # Check if metrics already computed to save time
@@ -91,6 +90,10 @@ def process_all(results_list: list[tuple[str, str, str, Path]], scratch_dir: Pat
             else:
                 metrics = evaluators[target].compute_metrics(csv_path)
             
+            # Optional runtime metadata from oracle-side metrics.json
+            runtime_path = csv_path.parent / "metrics.json"
+            runtime_metrics = _read_runtime_metrics(runtime_path)
+
             # Flat row data
             row = {
                 "model": model,
@@ -101,12 +104,46 @@ def process_all(results_list: list[tuple[str, str, str, Path]], scratch_dir: Pat
             for k, v in metrics.items():
                 if k != "descriptions" and not isinstance(v, dict):
                     row[k] = v
+            row.update(runtime_metrics)
             
             all_data.append(row)
         except Exception as e:
             print(f"  Error processing {csv_path}: {e}")
             
     return pl.DataFrame(all_data)
+
+
+def _read_runtime_metrics(metrics_json_path: Path) -> dict:
+    """Extract runtime fields from run-level metrics.json when present."""
+    if not metrics_json_path.exists():
+        return {}
+    try:
+        with open(metrics_json_path, "r") as f:
+            payload = json.load(f)
+    except Exception:
+        return {}
+
+    def _get_value(key: str):
+        return payload.get(key)
+
+    out = {}
+    aliases = {
+        "n_molecules_total": ["n_molecules_total"],
+        "n_molecules_attempted": ["n_molecules_attempted"],
+        "total_gen_time": ["total_gen_time"],
+        "avg_gen_time_per_mol": ["avg_gen_time_per_mol"],
+        "total_eval_time": ["total_eval_time"],
+        "avg_eval_time_per_mol": ["avg_eval_time_per_mol"],
+        "total_time": ["total_time"],
+        "avg_time_per_mol": ["avg_time_per_mol"],
+    }
+    for canonical_key, candidates in aliases.items():
+        for candidate in candidates:
+            value = _get_value(candidate)
+            if value is not None:
+                out[canonical_key] = value
+                break
+    return out
 
 
 def compute_aggregates(df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
@@ -135,71 +172,148 @@ def compute_aggregates(df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
 
 # ─── Plotting Functions ─────────────────────────────────────────────
 
-def plot_figure_1_bars(summary_df: pl.DataFrame, output_dir: Path):
-    """Figure 1: Bar charts breakdown for each target using FacetGrids."""
+def _plot_metric_panels(
+    full_df: pl.DataFrame,
+    metrics_map: dict[str, str],
+    output_path_stem: Path,
+    figure_title: str,
+    ncols: int = 3,
+):
+    """Shared panel plot helper: one panel per metric with benchmark-wise comparisons."""
     setup_plotting()
-    metrics = ["avg_top_10", "validity", "novelty", "internal_diversity", "fragment_incorporation"]
-    
-    for metric in metrics:
-        mean_col = f"{metric}_mean"
-        std_col = f"{metric}_std"
-        if mean_col not in summary_df.columns:
-            continue
-            
-        print(f"  Generating breakdown bars for {metric}...")
-        
-        # Convert to pandas for FacetGrid
-        pdf = summary_df.select(["model", "target", mean_col, std_col]).to_pandas()
-        
-        # Clean up column names for plotting
-        display_name = metric.replace("_", " ").capitalize()
-        pdf.rename(columns={mean_col: display_name}, inplace=True)
-        
-        g = sns.FacetGrid(pdf, col="target", col_wrap=3, height=5, aspect=1.3, sharey=True)
-        g.map_dataframe(sns.barplot, x="model", y=display_name, hue="model", palette="viridis", legend=False)
-        
-        # Add error bars manually on each axis
-        for ax, (_, target_data) in zip(g.axes.flat, pdf.groupby("target")):
-            models = target_data["model"].unique()
-            x_pos = np.arange(len(models))
-            ax.errorbar(x=x_pos, y=target_data[display_name], yerr=target_data[std_col], 
-                        fmt='none', c='black', capsize=5)
-            
-        g.set_xticklabels(rotation=45)
-        g.set_titles("{col_name}")
-        g.fig.suptitle(f"Benchmark Performance: {display_name}", y=1.02, fontsize=18)
-        
-        plt.tight_layout()
-        plt.savefig(output_dir / f"fig1_bars_{metric}.svg")
-        plt.savefig(output_dir / f"fig1_bars_{metric}.png", dpi=300)
-        plt.close()
+    available = [(metric, label) for metric, label in metrics_map.items() if metric in full_df.columns]
+    if not available:
+        return
+
+    pdf = full_df.select(["model", "target"] + [m for m, _ in available]).to_pandas()
+    targets = sorted(pdf["target"].unique())
+    n_panels = len(available)
+    nrows = int(np.ceil(n_panels / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 4.5 * nrows), squeeze=False)
+    axes_flat = axes.flatten()
+
+    for idx, (metric, label) in enumerate(available):
+        ax = axes_flat[idx]
+        sns.pointplot(
+            data=pdf,
+            x="target",
+            y=metric,
+            hue="model",
+            order=targets,
+            estimator=np.mean,
+            errorbar=("ci", 95),
+            dodge=0.4,
+            markers="o",
+            linestyles="-",
+            ax=ax,
+        )
+        ax.set_title(label)
+        ax.set_xlabel("Benchmark")
+        ax.set_ylabel("Value")
+        ax.tick_params(axis="x", rotation=35)
+        if idx > 0:
+            legend = ax.get_legend()
+            if legend is not None:
+                legend.remove()
+
+    for idx in range(n_panels, len(axes_flat)):
+        axes_flat[idx].axis("off")
+
+    handles, labels = axes_flat[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.02), ncol=min(6, len(labels)))
+    fig.suptitle(figure_title, y=1.06, fontsize=18)
+    fig.tight_layout()
+    fig.savefig(output_path_stem.with_suffix(".svg"))
+    fig.savefig(output_path_stem.with_suffix(".png"), dpi=300)
+    plt.close(fig)
 
 
-def plot_figure_2_trajectory(exps_dir: Path, output_dir: Path, k: int = 10):
-    """Figure 2: Running top-k average with 90% CI shaded band for each target."""
+def plot_figure_1_generation(full_df: pl.DataFrame, output_dir: Path):
+    """Figure 1: Intrinsic/extrinsic generation quality across benchmarks."""
+    metrics_map = {
+        "validity": "Validity",
+        "uniqueness": "Uniqueness",
+        "fragment_incorporation": "Fragment 2D",
+        "novelty": "Novelty",
+        "nonidenticality": "Nonidenticality",
+        "effective_novelty": "Effective Novelty",
+    }
+    _plot_metric_panels(
+        full_df=full_df,
+        metrics_map=metrics_map,
+        output_path_stem=output_dir / "fig1_generation_metrics",
+        figure_title="Generation Metrics Across Benchmarks (mean +/- 95% CI)",
+        ncols=3,
+    )
+
+
+def plot_figure_2_optimization(full_df: pl.DataFrame, output_dir: Path):
+    """Figure 2: Optimization endpoints across benchmarks."""
+    metrics_map = {
+        "avg_top_10": "Avg Top-10 (Raw Score)",
+        "avg_top_100": "Avg Top-100 (Raw Score)",
+        "oracle_efficiency_80": "Oracle Efficiency @80% (optional)",
+        "valid_pose_rate": "Valid Pose Rate (optional)",
+    }
+    _plot_metric_panels(
+        full_df=full_df,
+        metrics_map=metrics_map,
+        output_path_stem=output_dir / "fig2_optimization_metrics",
+        figure_title="Optimization Metrics Across Benchmarks (mean +/- 95% CI)",
+        ncols=2,
+    )
+
+
+def plot_figure_3_quality(full_df: pl.DataFrame, output_dir: Path):
+    """Figure 3: Medicinal chemistry quality, prioritizing novel compounds when available."""
+    metrics_map = {
+        "mean_qed_novel": "Mean QED (Novel Only)",
+        "mean_sa_novel": "Mean SA (Novel Only)",
+        "fraction_lipinski": "Fraction Lipinski",
+        "fraction_pains_free": "Fraction PAINS-free",
+    }
+    fallback_map = {
+        "mean_qed": "Mean QED (All Unique)",
+        "mean_sa": "Mean SA (All Unique)",
+    }
+    if ("mean_qed_novel" not in full_df.columns) and ("mean_qed" in full_df.columns):
+        metrics_map["mean_qed"] = fallback_map["mean_qed"]
+    if ("mean_sa_novel" not in full_df.columns) and ("mean_sa" in full_df.columns):
+        metrics_map["mean_sa"] = fallback_map["mean_sa"]
+    _plot_metric_panels(
+        full_df=full_df,
+        metrics_map=metrics_map,
+        output_path_stem=output_dir / "fig3_quality_metrics",
+        figure_title="Chemical Quality Metrics Across Benchmarks (mean +/- 95% CI)",
+        ncols=2,
+    )
+
+
+def plot_figure_4_trajectory(exps_dir: Path, output_dir: Path, k: int = 10):
+    """Figure 4: Running top-k trajectories with median and IQR across seeds."""
     setup_plotting()
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # 1. Discover all unique targets
+
     targets_found = set()
     for model_dir in exps_dir.iterdir():
-        if not model_dir.is_dir(): continue
+        if not model_dir.is_dir():
+            continue
         for run_dir in model_dir.iterdir():
-            if not run_dir.is_dir(): continue
+            if not run_dir.is_dir():
+                continue
             for target_dir in run_dir.iterdir():
                 if target_dir.is_dir() and (target_dir / "results.csv").exists():
                     targets_found.add(target_dir.name)
-    
     targets_found = sorted(list(targets_found))
-    
+
     for target in targets_found:
         print(f"  Generating trajectory for {target}...")
         plt.figure(figsize=(12, 7))
-        
-        # Group results by model for THIS target
-        model_results = {}
+        model_results: dict[str, list[Path]] = {}
         for model_dir in exps_dir.iterdir():
-            if not model_dir.is_dir(): continue
+            if not model_dir.is_dir():
+                continue
             model_name = model_dir.name
             paths = []
             for run_dir in model_dir.iterdir():
@@ -208,183 +322,80 @@ def plot_figure_2_trajectory(exps_dir: Path, output_dir: Path, k: int = 10):
                     paths.append(csv)
             if paths:
                 model_results[model_name] = paths
+        if not model_results:
+            continue
 
-        if not model_results: continue
-        
         palette = sns.color_palette("husl", len(model_results))
-        
         for i, (model, csv_paths) in enumerate(model_results.items()):
             curves = []
-            max_len = 1000 
-            
             for csv in csv_paths:
                 df = pl.read_csv(csv)
                 scores = df["normalized_score"].to_list()
+                running = []
                 buffer = []
-                curr_curve = []
-                for s in scores:
-                    buffer.append(s)
-                    top_k = sorted(buffer, reverse=True)[:k]
-                    curr_curve.append(np.mean(top_k))
-                
-                if len(curr_curve) < max_len:
-                    last_val = curr_curve[-1] if curr_curve else 0.0
-                    curr_curve.extend([last_val] * (max_len - len(curr_curve)))
-                else:
-                    curr_curve = curr_curve[:max_len]
-                curves.append(curr_curve)
-                
-            curves = np.array(curves)
-            n = len(curves)
-            mean_curve = np.mean(curves, axis=0)
-            sem_curve = np.std(curves, axis=0, ddof=1) / np.sqrt(n) if n > 1 else np.zeros(max_len)
-            
-            t_crit = stats.t.ppf(0.95, df=max(1, n-1))
-            ci_half = t_crit * sem_curve
-            
-            x = np.arange(1, max_len + 1)
-            plt.plot(x, mean_curve, label=model, lw=2.5, color=palette[i])
-            plt.fill_between(x, mean_curve - ci_half, mean_curve + ci_half, alpha=0.2, color=palette[i])
-            
+                for score in scores:
+                    buffer.append(score)
+                    running.append(float(np.mean(sorted(buffer, reverse=True)[:k])))
+                if running:
+                    curves.append(running)
+            if not curves:
+                continue
+
+            min_len = min(len(curve) for curve in curves)
+            if min_len < 2:
+                continue
+            aligned = np.array([curve[:min_len] for curve in curves])
+            median_curve = np.median(aligned, axis=0)
+            q25 = np.percentile(aligned, 25, axis=0)
+            q75 = np.percentile(aligned, 75, axis=0)
+            x = np.arange(1, min_len + 1)
+            plt.plot(x, median_curve, label=model, lw=2.2, color=palette[i])
+            plt.fill_between(x, q25, q75, alpha=0.2, color=palette[i])
+
         plt.xlabel("Cumulative Oracle Calls")
         plt.ylabel(f"Running Avg Top-{k} Normalized Score")
-        plt.title(f"Optimization Trajectory: {target} (90% CI, k={k})")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.title(f"Optimization Trajectory: {target} (Median with IQR, k={k})")
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
-        plt.savefig(output_dir / f"fig2_trajectory_{target}.svg")
-        plt.savefig(output_dir / f"fig2_trajectory_{target}.png", dpi=300)
+        plt.savefig(output_dir / f"fig4_trajectory_{target}.svg")
+        plt.savefig(output_dir / f"fig4_trajectory_{target}.png", dpi=300)
         plt.close()
 
 
-def plot_figure_3_radar(macro_df: pl.DataFrame, output_dir: Path):
-    """Figure 3: Radar chart of macro-averaged metrics."""
-    setup_plotting()
-    
-    # Key metrics for radar
-    metrics_map = {
-        "avg_top_10_mean": "Docking (Top-10)",
-        "validity_mean": "Validity",
-        "novelty_mean": "Novelty",
-        "internal_diversity_mean": "Diversity",
-        "fragment_incorporation_mean": "Fragment",
-        "oracle_efficiency_80_mean": "Efficiency"
-    }
-    
-    # 1. Invert and normalize efficiency (assuming max 1000 oracle calls)
-    data_df = macro_df.select(["model"] + list(metrics_map.keys()))
-    if "oracle_efficiency_80_mean" in data_df.columns:
-        data_df = data_df.with_columns(
-            (1.0 - (pl.col("oracle_efficiency_80_mean").clip(0, 1000) / 1000.0)).alias("oracle_efficiency_80_mean")
-        )
-
-    # 2. Extract data for plotting
-    labels = list(metrics_map.values())
-    num_vars = len(labels)
-    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    angles += angles[:1]
-    
-    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
-    
-    # Color palette for models
-    models = data_df["model"].to_list()
-    palette = sns.color_palette("husl", len(models))
-    
-    for i, row in enumerate(data_df.to_pandas().itertuples()):
-        values = [getattr(row, m) for m in metrics_map.keys()]
-        values += values[:1]
-        ax.plot(angles, values, linewidth=2, label=row.model, color=palette[i])
-        ax.fill(angles, values, alpha=0.1, color=palette[i])
-        
-    ax.set_theta_offset(np.pi / 2)
-    ax.set_theta_direction(-1)
-    ax.set_thetagrids(np.degrees(angles[:-1]), labels)
-    
-    # Set radial limits and grid
-    ax.set_ylim(0, 1)
-    ax.set_rlabel_position(180 / num_vars)
-    
-    plt.title(f"Macro-Averaged Model Capability Profile", y=1.08, fontsize=18)
-    plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
-    
-    plt.tight_layout()
-    plt.savefig(output_dir / "fig3_radar_metrics.svg")
-    plt.savefig(output_dir / "fig3_radar_metrics.png", dpi=300)
-    plt.close()
-
-
-def plot_figure_4_heatmap(macro_df: pl.DataFrame, output_dir: Path):
-    """Figure 4: Heatmap of Model x Metric."""
-    cols_to_plot = [c for c in macro_df.columns if c.endswith("_mean")]
-    plot_df = macro_df.select(["model"] + cols_to_plot).to_pandas().set_index("model")
-    
-    # Strip "_mean" from col labels
-    plot_df.columns = [c.replace("_mean", "").replace("_", " ").capitalize() for c in plot_df.columns]
-    
-    # Select subset of most interesting metrics
-    interesting = ["Avg top 10", "Validity", "Novelty", "Internal diversity", "Scaffold diversity", "Mean qed", "Fraction lipinski", "Fraction pains free"]
-    cols = [c for c in interesting if c in plot_df.columns]
-    plot_df = plot_df[cols]
-    
-    # Normalize per column for color scale
-    norm_df = (plot_df - plot_df.min()) / (plot_df.max() - plot_df.min())
-    
-    plt.figure(figsize=(12, 6))
-    sns.heatmap(norm_df, annot=plot_df, fmt=".3f", cmap="YlGnBu", cbar_kws={'label': 'Normalized Performance'})
-    plt.title("Master Performance Heatmap")
-    plt.tight_layout()
-    plt.savefig(output_dir / "fig4_heatmap.svg")
-    plt.savefig(output_dir / "fig4_heatmap.png", dpi=300)
-    plt.close()
-
-
-def plot_figure_5_small_multiples(summary_df: pl.DataFrame, output_dir: Path):
-    """Figure 5: Per-target breakdown bar charts."""
-    plt.figure(figsize=(16, 10))
-    # Filter for standard metrics
-    plot_df = summary_df.select(["model", "target", "avg_top_10_mean", "avg_top_10_std"]).to_pandas()
-    
-    g = sns.FacetGrid(plot_df, col="target", col_wrap=3, height=4, aspect=1.2)
-    g.map_dataframe(sns.barplot, x="model", y="avg_top_10_mean", hue="model", palette="viridis", legend=False)
-    
-    # Adding error bars is tricky in facetgrid barplot, skipping for MVP or manual loop
-    
-    g.set_xticklabels(rotation=45)
-    g.set_titles("{col_name}")
-    plt.tight_layout()
-    plt.savefig(output_dir / "fig5_facet_targets.svg")
-    plt.savefig(output_dir / "fig5_facet_targets.png", dpi=300)
-    plt.close()
-
-
-def plot_figure_8_quality(macro_df: pl.DataFrame, output_dir: Path):
-    """Figure 8: Fraction Lipinski and PAINS-free."""
-    metrics = ["fraction_lipinski_mean", "fraction_pains_free_mean"]
-    if not all(m in macro_df.columns for m in metrics):
+def write_table_1_macro_summary(macro_df: pl.DataFrame, output_dir: Path):
+    """Table 1: macro summary grouped by generation/optimization/quality/runtime."""
+    preferred_cols = [
+        "model",
+        "validity_mean",
+        "uniqueness_mean",
+        "fragment_incorporation_mean",
+        "novelty_mean",
+        "nonidenticality_mean",
+        "effective_novelty_mean",
+        "avg_top_10_mean",
+        "avg_top_100_mean",
+        "mean_qed_novel_mean",
+        "mean_sa_novel_mean",
+        "fraction_lipinski_mean",
+        "fraction_pains_free_mean",
+        "avg_gen_time_per_mol_mean",
+        "avg_eval_time_per_mol_mean",
+        "avg_time_per_mol_mean",
+    ]
+    existing_cols = [c for c in preferred_cols if c in macro_df.columns]
+    if not existing_cols:
         return
-
-    plot_df = macro_df.select(["model"] + metrics).to_pandas().melt(id_vars="model")
-    plot_df["variable"] = plot_df["variable"].str.replace("_mean", "").str.replace("_", " ").str.capitalize()
-    
-    plt.figure(figsize=(10, 6))
-    sns.barplot(data=plot_df, x="model", y="value", hue="variable")
-    plt.title("Chemical Quality Comparison")
-    plt.ylabel("Fraction")
-    plt.ylim(0, 1.05)
-    plt.legend(title="Metric")
-    plt.tight_layout()
-    plt.savefig(output_dir / "fig8_quality_summary.svg")
-    plt.savefig(output_dir / "fig8_quality_summary.png", dpi=300)
-    plt.close()
+    macro_df.select(existing_cols).write_csv(output_dir / "table1_macro_summary.csv")
 
 
 # ─── Main Logic ──────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze FCGMB experimental results.")
+    parser = argparse.ArgumentParser(description="Analyze mockdock experimental results.")
     parser.add_argument("--exps-dir", type=Path, default=Path("exps"), help="Path to exps folder")
     parser.add_argument("--output-dir", type=Path, default=Path("output"), help="Path for aggregated outputs")
-    parser.add_argument("--scratch-dir", type=Path, default=None, help="FCGMB scratch dir")
+    parser.add_argument("--scratch-dir", type=Path, default=None, help="mockdock scratch dir")
     
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -411,23 +422,20 @@ def main():
     
     # 4. Figure generation
     fig_dir = args.output_dir / "figures"
-    print("Generating Figure 1 (Bars)...")
-    plot_figure_1_bars(summary_df, fig_dir)
+    print("Generating Figure 1 (Generation Metrics)...")
+    plot_figure_1_generation(full_df, fig_dir)
     
-    print("Generating Figure 2 (Trajectories)...")
-    plot_figure_2_trajectory(args.exps_dir, fig_dir)
+    print("Generating Figure 2 (Optimization Metrics)...")
+    plot_figure_2_optimization(full_df, fig_dir)
     
-    print("Generating Figure 3 (Radar)...")
-    plot_figure_3_radar(macro_df, fig_dir)
+    print("Generating Figure 3 (Quality Metrics)...")
+    plot_figure_3_quality(full_df, fig_dir)
     
-    print("Generating Figure 4 (Heatmap)...")
-    plot_figure_4_heatmap(macro_df, fig_dir)
+    print("Generating Figure 4 (Trajectories)...")
+    plot_figure_4_trajectory(args.exps_dir, fig_dir)
     
-    print("Generating Figure 5 (Small Multiples)...")
-    plot_figure_5_small_multiples(summary_df, fig_dir)
-    
-    print("Generating Figure 8 (Quality)...")
-    plot_figure_8_quality(macro_df, fig_dir)
+    print("Writing Table 1 (Macro Summary)...")
+    write_table_1_macro_summary(macro_df, args.output_dir)
     
     print(f"\nDone! Outputs saved to {args.output_dir}")
 

@@ -1,11 +1,11 @@
 """
-AceGen-AHC x FCGMB Benchmark Evaluation
+AceGen-AHC x mockdock Benchmark Evaluation
 =========================================
 Runs AceGen's AHC (Augmented Hill-Climbing) algorithm against the six
 FCGMB benchmarks.
 
-FCGMB-specific adaptations:
-  - Scoring via FCGMBOracle (docking-based, fragment-constrained).
+mockdock-specific adaptations:
+  - Scoring via MDOracle (docking-based, fragment-constrained).
   - Fragment conditioning: the benchmark's required fragment is converted to a
     PromptSMILES scaffold, forcing the model to generate fragment-containing
     molecules throughout training.
@@ -33,7 +33,7 @@ import torch
 import yaml
 from omegaconf import OmegaConf, open_dict
 
-from fcgmb import FCGMBOracle
+from mockdock import MDOracle
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,13 +50,13 @@ BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
 # ── Interface bridge ──────────────────────────────────────────────────────────
 
 
-class FCGMBTask:
-    """Adapts FCGMBOracle to the (smiles: list) -> list[float] interface
+class MDTask:
+    """Adapts MDOracle to the (smiles: list) -> list[float] interface
     that AceGen algorithm functions expect, with a .finished property."""
 
-    def __init__(self, oracle: FCGMBOracle):
+    def __init__(self, oracle: MDOracle):
         self.oracle = oracle
-        self.name = f"fcgmb_{oracle.benchmark_name}"
+        self.name = f"mockdock_{oracle.benchmark_name}"
 
     @property
     def finished(self) -> bool:
@@ -70,7 +70,7 @@ class FCGMBTask:
 # ── Initial compound warmup ───────────────────────────────────────────────────
 
 
-def warmup_oracle(oracle: FCGMBOracle, output_dir: pathlib.Path, n: int = 25) -> None:
+def warmup_oracle(oracle: MDOracle, output_dir: pathlib.Path, n: int = 25) -> None:
     """Pre-score a small set of initial compounds to warm up docking and
     establish baseline data.  Uses at most *n* oracle calls."""
     initial_df = oracle.get_initial_compounds()
@@ -145,7 +145,7 @@ def _build_cfg(
         base_cfg.total_smiles = budget
         base_cfg.log_dir = str(output_dir)
         base_cfg.save_dir = save_dir
-        base_cfg.experiment_name = f"fcgmb_{benchmark}"
+        base_cfg.experiment_name = f"mockdock_{benchmark}"
         base_cfg.agent_name = ALGORITHM
         base_cfg.logger_backend = None
 
@@ -181,7 +181,7 @@ def run_benchmark(
 
     benchmark_run_dir = run_parent / benchmark
     benchmark_run_dir.mkdir(parents=True, exist_ok=True)
-    oracle = FCGMBOracle(benchmark, budget=budget, run_dir=benchmark_run_dir)
+    oracle = MDOracle(benchmark, budget=budget, run_dir=benchmark_run_dir)
     log.info("Run directory: %s", oracle.run_dir)
 
     if n_warmup > 0:
@@ -208,7 +208,7 @@ def run_benchmark(
     else:
         log.warning(
             "fragment_smiles_with_dummies not set for %s — running without scaffold conditioning. "
-            "Add it to fcgmb/configs/%s.yaml to enable PromptSMILES.",
+            "Add it to mockdock/configs/%s.yaml to enable PromptSMILES.",
             benchmark,
             benchmark,
         )
@@ -219,7 +219,7 @@ def run_benchmark(
 
     set_seed(seed)
 
-    task = FCGMBTask(oracle)
+    task = MDTask(oracle)
     log.info("Starting %s RL loop …", ALGORITHM)
     try:
         run_fn(cfg, task)
@@ -279,7 +279,7 @@ def run_benchmark(
     help="Parent directory for all benchmark outputs. Defaults to <script_dir>/run_<timestamp>.",
 )
 def main(benchmarks, budget, seed, out, acegen_root, n_warmup, run_dir):
-    """Run AceGen-AHC against FCGMB benchmarks."""
+    """Run AceGen-AHC against mockdock benchmarks."""
     import datetime
 
     benchmarks = list(benchmarks) if benchmarks else BENCHMARKS

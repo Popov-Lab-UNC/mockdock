@@ -1,6 +1,6 @@
-# FCGMB Dataset Generation Pipeline
+# mockdock Dataset Generation Pipeline
 
-This pipeline generates the **FCGMB (Fragment-Constrained Generative Molecular Benchmark)** dataset. It mines ChEMBL and PDB to find co-crystallized ligands that have associated bioactivity data in ChEMBL documents, automatically labeling them as 'literature' or 'other'.
+This pipeline generates the **mockdock (Fragment-Constrained Generative Molecular Benchmark)** dataset. It mines ChEMBL and PDB to find co-crystallized ligands that have associated bioactivity data in ChEMBL documents, automatically labeling them as 'literature' or 'other'.
 
 ## 🚀 Key Features
 
@@ -13,7 +13,7 @@ This pipeline generates the **FCGMB (Fragment-Constrained Generative Molecular B
 ## 📂 Directory Structure
 
 *   `scripts/pipeline/`: Contains all scripts for **generating** the benchmark dataset.
-*   `fcgmb/`: The core python package for **running** the benchmarks (imports generated data).
+*   `src/mockdock/`: The core python package for **running** the benchmarks (imports generated data).
 *   `data/`: Working directory for intermediate and final outputs.
 
 ## 🛠️ Usage
@@ -112,4 +112,4 @@ python scripts/pipeline/map_pdb_ligands.py
 | `data/chembl_docking_benchmark.csv` | The master index of Target-PDB-Assay combinations. |
 | `data/mcs_results.csv` | Computed MCS SMARTs/SMILES for each assay. |
 | `data/chembl_cache/` | Directory containing raw bioactivity data CSVs, organized by `{target_id}/{doc_id}_{assay_id}.csv`. |
-| `generated_configs/` | Final YAML files to be deployed to `fcgmb/configs/` for use. |
+| `generated_configs/` | Final YAML files to be deployed to `src/mockdock/configs/` for use. |

@@ -35,8 +35,8 @@ jobs:
         run: uv run ruff check .
 
       - name: Type check (ty)
-        run: uv run ty check src/fcgmb
+        run: uv run ty check src/mockdock
         continue-on-error: true  # ty is still experimental
 
       - name: Run tests
-        run: uv run pytest --cov=src/fcgmb --cov-report=term-missing -q
+        run: uv run pytest --cov=src/mockdock --cov-report=term-missing -q

@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=prexsyn_fcgmb
+#SBATCH --job-name=prexsyn_mockdock
 #SBATCH --partition=volta-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=64G
-#SBATCH --time=2-00:00:00
+#SBATCH --time=4-00:00:00
 #SBATCH --output=prexsyn_%j.log
 #SBATCH --error=prexsyn_%j.err
 #SBATCH --mail-type=ALL
@@ -15,7 +15,9 @@
 module load autodock-gpu
 module load autogrid
 
-CONDA_PATH=$HOME/miniconda3/bin/conda
+# Canonical Longleaf path — $HOME is not always the same on compute vs login.
+MINICONDA_ROOT=/nas/longleaf/home/shuhang/miniconda3
+CONDA_PATH="${MINICONDA_ROOT}/bin/conda"
 eval "$($CONDA_PATH shell.bash hook)"
 conda activate prexsyn
 
@@ -47,7 +49,7 @@ FRAGMENT_CONDITION="--fragment-condition"
 BENCHMARKS=(DPP4 CHK1 ITK PEPCK TTK VEGFR2)
 
 echo "========================================================"
-echo " PrexSyn × FCGMB Evaluation"
+echo " PrexSyn × mockdock Evaluation"
 echo "========================================================"
 echo " Model          : ${PREXSYN_MODEL}"
 echo " Benchmarks     : ${BENCHMARKS[*]}"
@@ -89,7 +91,7 @@ for RUN_IDX in $(seq 1 "${NUM_RUNS}"); do
     echo " $(date)"
     echo "──────────────────────────────────────────────────────"
 
-    python -u run.py \
+    "${CONDA_PREFIX}/bin/python" -u run.py \
         --model             "${PREXSYN_MODEL}" \
         --budget            "${BUDGET}" \
         --num-runs          1 \
