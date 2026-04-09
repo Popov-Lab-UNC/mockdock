@@ -23,7 +23,9 @@ def test_compute_metrics_generates_expected_keys(tmp_path: Path, monkeypatch):
             return False
 
     monkeypatch.setattr(evaluator_mod, "BenchmarkLoader", _FakeLoader)
-    monkeypatch.setattr(evaluator_mod.MDEvaluator, "_build_pains_catalog", staticmethod(lambda: _NoPains()))
+    monkeypatch.setattr(
+        evaluator_mod.MDEvaluator, "_build_pains_catalog", staticmethod(lambda: _NoPains())
+    )
 
     df = pl.DataFrame(
         {
