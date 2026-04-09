@@ -72,7 +72,14 @@ norecursedirs = [
     "results",
     "scripts",
 ]
-addopts = "--tb=short"
+addopts = "--tb=short -m 'not integration and not slow'"
+markers = [
+    "unit: fast deterministic unit tests",
+    "integration: tests that exercise multiple components or external assets",
+    "slow: tests with high runtime cost",
+    "requires_vina: tests requiring the vina dependency/runtime",
+    "requires_receptor_tools: tests requiring receptor preparation executables",
+]
 
 [tool.coverage.run]
 source = ["src/mockdock"]
