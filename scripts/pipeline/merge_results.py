@@ -20,9 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description="Merge partial CSV results")
     parser.add_argument("--pattern", required=True, help="Glob pattern for input files")
     parser.add_argument("--output", required=True, help="Output merged CSV")
-    parser.add_argument(
-        "--dedup-cols", nargs="*", help="Columns to use for deduplication"
-    )
+    parser.add_argument("--dedup-cols", nargs="*", help="Columns to use for deduplication")
     args = parser.parse_args()
 
     merge_csv_files(args.pattern, args.output, args.dedup_cols)

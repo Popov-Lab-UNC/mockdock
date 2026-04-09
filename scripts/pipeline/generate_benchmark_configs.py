@@ -44,12 +44,8 @@ def is_valid_mcs(smiles: str) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Generate docking workflow configs")
-    parser.add_argument(
-        "--input", default="data/chembl_docking_benchmark.csv", help="Input CSV"
-    )
-    parser.add_argument(
-        "--output-dir", default="generated_configs", help="Output directory"
-    )
+    parser.add_argument("--input", default="data/chembl_docking_benchmark.csv", help="Input CSV")
+    parser.add_argument("--output-dir", default="generated_configs", help="Output directory")
     parser.add_argument(
         "--top-n",
         type=int,
@@ -68,12 +64,8 @@ def main():
         action="store_false",
         help="Don't require crystal ligand in assay",
     )
-    parser.add_argument(
-        "--max-resolution", type=float, default=3.0, help="Maximum resolution (Å)"
-    )
-    parser.add_argument(
-        "--min-compounds", type=int, default=20, help="Minimum compounds in assay"
-    )
+    parser.add_argument("--max-resolution", type=float, default=3.0, help="Maximum resolution (Å)")
+    parser.add_argument("--min-compounds", type=int, default=20, help="Minimum compounds in assay")
     args = parser.parse_args()
 
     # Load benchmark data
@@ -96,14 +88,10 @@ def main():
 
     if args.min_compounds:
         col = (
-            "n_compounds_in_assay"
-            if "n_compounds_in_assay" in df.columns
-            else "n_compounds_in_doc"
+            "n_compounds_in_assay" if "n_compounds_in_assay" in df.columns else "n_compounds_in_doc"
         )
         df = df[df[col] >= args.min_compounds]
-        print(
-            f"After min compounds filter (>= {args.min_compounds} on {col}): {len(df)}"
-        )
+        print(f"After min compounds filter (>= {args.min_compounds} on {col}): {len(df)}")
 
     # Load MCS results from separate file
     mcs_results_path = Path(args.input).parent / "mcs_results.csv"
@@ -190,9 +178,7 @@ def main():
                     f"# Document/Assay: {doc_id} / {assay_id} ({row['document_type']}, {n_compounds} compounds)\n"
                 )
             else:
-                f.write(
-                    f"# Document: {doc_id} ({row['document_type']}, {n_compounds} compounds)\n"
-                )
+                f.write(f"# Document: {doc_id} ({row['document_type']}, {n_compounds} compounds)\n")
             f.write(
                 f"# Crystal Ligand: {row['ligand_resname']} ({row['crystal_smiles'][:60]}...)\n"
             )

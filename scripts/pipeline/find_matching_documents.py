@@ -43,7 +43,8 @@ try:
     from mockdock.utils import standardize_smiles
 except ImportError:
     # Fallback to no-op if import fails
-    def standardize_smiles(s): return s
+    def standardize_smiles(s):
+        return s
 
 
 def check_api_status():
@@ -142,9 +143,7 @@ def fetch_assays_for_target(
                 # Save to cache
                 if cache_rows:
                     df_cache = pl.DataFrame(cache_rows)
-                    write_assay_cache(
-                        cache_dir, target_chembl_id, doc_id, assay_id, df_cache
-                    )
+                    write_assay_cache(cache_dir, target_chembl_id, doc_id, assay_id, df_cache)
 
                 unique_smiles = set(smiles_list)
                 results[(doc_id, assay_id)] = {
@@ -235,8 +234,7 @@ def fetch_assays_for_targets_sqlite(
 
                 src_id = (
                     assay_df["src_id"].iloc[0]
-                    if "src_id" in assay_df.columns
-                    and not assay_df["src_id"].isna().all()
+                    if "src_id" in assay_df.columns and not assay_df["src_id"].isna().all()
                     else None
                 )
                 if src_id == 1:
@@ -311,15 +309,9 @@ def find_matching_compounds(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Find ChEMBL documents matching crystal ligands"
-    )
-    parser.add_argument(
-        "--input", default="data/chembl_pdb_druglike.csv", help="Input CSV"
-    )
-    parser.add_argument(
-        "--output", default="data/chembl_docking_benchmark.csv", help="Output CSV"
-    )
+    parser = argparse.ArgumentParser(description="Find ChEMBL documents matching crystal ligands")
+    parser.add_argument("--input", default="data/chembl_pdb_druglike.csv", help="Input CSV")
+    parser.add_argument("--output", default="data/chembl_docking_benchmark.csv", help="Output CSV")
 
     parser.add_argument(
         "--similarity-threshold",
@@ -338,15 +330,11 @@ def main():
         type=float,
         default=0.0,
         help="Minimum pChEMBL range (max - min) required across compounds in an assay "
-             "(e.g. 1.0 requires at least a 10-fold potency spread). Default: 0.0 (no filter).",
+        "(e.g. 1.0 requires at least a 10-fold potency spread). Default: 0.0 (no filter).",
     )
-    parser.add_argument(
-        "--start", type=int, default=0, help="Start index (for parallelization)"
-    )
+    parser.add_argument("--start", type=int, default=0, help="Start index (for parallelization)")
     parser.add_argument("--end", type=int, default=None, help="End index")
-    parser.add_argument(
-        "--delay", type=float, default=0.5, help="Delay between ChEMBL API calls"
-    )
+    parser.add_argument("--delay", type=float, default=0.5, help="Delay between ChEMBL API calls")
     parser.add_argument(
         "--cache-dir", default="data/chembl_cache", help="ChEMBL data cache directory"
     )
@@ -462,9 +450,7 @@ def main():
 
             # Get activity stats
             pchembl_by_smiles = assay_data.get("pchembl_by_smiles", {})
-            per_smiles_medians = [
-                median(vals) for vals in pchembl_by_smiles.values() if vals
-            ]
+            per_smiles_medians = [median(vals) for vals in pchembl_by_smiles.values() if vals]
             median_pchembl = median(per_smiles_medians) if per_smiles_medians else None
             pchembl_range = (
                 max(per_smiles_medians) - min(per_smiles_medians)
@@ -522,9 +508,7 @@ def main():
 
     # Sort by resolution (best first) and similarity
     if len(df_out) > 0:
-        df_out = df_out.sort_values(
-            ["resolution", "best_similarity"], ascending=[True, False]
-        )
+        df_out = df_out.sort_values(["resolution", "best_similarity"], ascending=[True, False])
 
     # Handle partial runs
     if args.start > 0 or args.end:

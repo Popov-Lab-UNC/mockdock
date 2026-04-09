@@ -90,12 +90,8 @@ def summarize_run(run_dir: Path) -> bool:
     # Success rates (avoid division by zero)
     d2 = df["n_compounds_standardized"].fillna(0)
     dr = df["n_compounds_docked"].fillna(0)
-    df["success_rate_2d"] = np.where(
-        d2 > 0, df["n_compounds_matched_2d"] / d2 * 100, 0
-    ).round(2)
-    df["success_rate_rmsd"] = np.where(dr > 0, df["n_valid_poses"] / dr * 100, 0).round(
-        2
-    )
+    df["success_rate_2d"] = np.where(d2 > 0, df["n_compounds_matched_2d"] / d2 * 100, 0).round(2)
+    df["success_rate_rmsd"] = np.where(dr > 0, df["n_valid_poses"] / dr * 100, 0).round(2)
 
     # Compute correlation metrics from *_results.csv (or metrics.json if present)
     # Layout: run_dir/<target_id>_<pdb_id>/<doc_id>/<{prefix}_results.csv
@@ -103,20 +99,14 @@ def summarize_run(run_dir: Path) -> bool:
 
     def get_key(row):
         k = f"{row['target_id']}_{row['pdb_id']}_{row['doc_id']}"
-        if (
-            "assay_id" in df.columns
-            and pd.notna(row["assay_id"])
-            and row["assay_id"] != ""
-        ):
+        if "assay_id" in df.columns and pd.notna(row["assay_id"]) and row["assay_id"] != "":
             k += f"_{row['assay_id']}"
         return k
 
     df["workflow_key"] = df.apply(get_key, axis=1)
     metrics_by_key = {}
 
-    for mj in list(run_dir.glob("*/metrics.json")) + list(
-        run_dir.glob("*/*/metrics.json")
-    ):
+    for mj in list(run_dir.glob("*/metrics.json")) + list(run_dir.glob("*/*/metrics.json")):
         if "debug" in mj.parts:
             continue
         try:
@@ -164,9 +154,7 @@ def summarize_run(run_dir: Path) -> bool:
     df["best_any_spearman"] = df["workflow_key"].apply(
         lambda w: _get_metric(w, "best_any", "spearman")
     )
-    df["best_any_r2"] = df["workflow_key"].apply(
-        lambda w: _get_metric(w, "best_any", "r2")
-    )
+    df["best_any_r2"] = df["workflow_key"].apply(lambda w: _get_metric(w, "best_any", "r2"))
     df["rmsd_n_points"] = df["workflow_key"].apply(
         lambda w: _get_metric(w, "rmsd_constrained", "n_points")
     )
@@ -176,9 +164,7 @@ def summarize_run(run_dir: Path) -> bool:
     df["rmsd_spearman"] = df["workflow_key"].apply(
         lambda w: _get_metric(w, "rmsd_constrained", "spearman")
     )
-    df["rmsd_r2"] = df["workflow_key"].apply(
-        lambda w: _get_metric(w, "rmsd_constrained", "r2")
-    )
+    df["rmsd_r2"] = df["workflow_key"].apply(lambda w: _get_metric(w, "rmsd_constrained", "r2"))
 
     total = len(df)
     success = len(df[df["status"] == "SUCCESS"])
@@ -223,13 +209,9 @@ def main():
     else:
         # Assume parent of run_* directories
         run_dirs = sorted(path.glob("run_*/"))
-        run_dirs = [
-            d for d in run_dirs if d.is_dir() and (d / "benchmark_summary.csv").exists()
-        ]
+        run_dirs = [d for d in run_dirs if d.is_dir() and (d / "benchmark_summary.csv").exists()]
         if not run_dirs:
-            print(
-                f"Error: No run directories with benchmark_summary.csv found under {path}"
-            )
+            print(f"Error: No run directories with benchmark_summary.csv found under {path}")
             sys.exit(1)
         print(f"Found {len(run_dirs)} run(s) to summarize")
 

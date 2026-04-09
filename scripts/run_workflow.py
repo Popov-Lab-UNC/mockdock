@@ -169,7 +169,9 @@ def run_docking_workflow(
                 result.n_compounds_standardized = len(df)
                 result.n_compounds_deduplicated = len(df)
             else:
-                cache_dir = cast(Optional[str], config.get("chembl_cache_dir")) or os.environ.get("CHEMBL_CACHE_DIR")
+                cache_dir = cast(Optional[str], config.get("chembl_cache_dir")) or os.environ.get(
+                    "CHEMBL_CACHE_DIR"
+                )
                 cache_only = bool(config.get("chembl_cache_only", False))
                 df, stats = fetch_chembl_data(
                     target_id,
@@ -238,9 +240,9 @@ def run_docking_workflow(
 
         if not fld_path:
             fld_path = next(iter(grid_base_dir.glob("*.maps.fld")), None)
-        
+
         if fld_path is None:
-             raise FileNotFoundError(f"Grid file (.maps.fld) not found in {grid_base_dir}")
+            raise FileNotFoundError(f"Grid file (.maps.fld) not found in {grid_base_dir}")
 
         ref_corr = grid_base_dir / f"{pdb_id}_ligand_corrected.sdf"
         reference_ligand_path = (
@@ -297,7 +299,8 @@ def run_docking_workflow(
             valid_smiles = [
                 s
                 for s in all_smiles
-                if (m := Chem.MolFromSmiles(s)) is not None and check_2d_match(m, analyzer.fragment_mol)
+                if (m := Chem.MolFromSmiles(s)) is not None
+                and check_2d_match(m, analyzer.fragment_mol)
             ]
             print(f"   Compounds matching 2D fragment '{fragment_smiles}': {len(valid_smiles)}")
             result.n_compounds_matched_2d = len(valid_smiles)

@@ -10,6 +10,7 @@ Usage (Python API):
     ev = MDEvaluator("CHK1")
     metrics = ev.compute_metrics(Path("results.csv"))
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,27 +27,27 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 from .loader import BenchmarkLoader
 
 METRIC_DESCRIPTIONS = {
-    "validity":                 "Fraction of generated SMILES that parse into valid RDKit molecules.",
-    "uniqueness":               "Fraction of valid molecules that are structurally distinct.",
-    "internal_diversity":       "Average pairwise Tanimoto distance among unique valid molecules.",
-    "scaffold_diversity":       "Fraction of unique Murcko scaffolds among unique valid molecules.",
-    "mean_qed":                 "Mean quantitative estimate of drug-likeness (QED) of valid molecules.",
-    "mean_sa":                  "Mean synthetic accessibility score of valid molecules (1=easy, 10=hard).",
-    "fragment_incorporation":   "Fraction of unique valid molecules containing the required fragment substructure.",
-    "fraction_lipinski":        "Fraction of unique valid molecules passing all four Lipinski Ro5 criteria.",
-    "fraction_pains_free":      "Fraction of unique valid molecules not flagging any PAINS substructure.",
-    "novelty":                  "Fraction of unique valid molecules not in the model-visible initial compounds.",
-    "nonidenticality":          "Fraction of valid generated molecules that are not identical to their original input molecules.",
-    "effective_novelty":        "Fraction of valid generated molecules that are both novel and non-identical to their original input molecules.",
-    "snn":                      "Avg max Tanimoto similarity between generated and initial compounds.",
-    "mean_qed_novel":           "Mean QED of unique valid molecules that are novel against the model-visible set.",
-    "mean_sa_novel":            "Mean synthetic accessibility score of unique valid molecules that are novel against the model-visible set.",
-    "avg_top_1":                "Normalized docking score of the single best-scoring molecule.",
-    "avg_top_10":               "Mean normalized docking score of the 10 best-scoring molecules.",
-    "avg_top_100":              "Mean normalized docking score of the 100 best-scoring molecules.",
-    "auc_top_10":               "AUC of running top-10 avg score curve over cumulative oracle calls.",
-    "valid_pose_rate":          "Fraction of docked molecules with a pose within the RMSD threshold.",
-    "oracle_efficiency_80":     "Oracle calls to reach 80% of final top-10 score (fewer is better).",
+    "validity": "Fraction of generated SMILES that parse into valid RDKit molecules.",
+    "uniqueness": "Fraction of valid molecules that are structurally distinct.",
+    "internal_diversity": "Average pairwise Tanimoto distance among unique valid molecules.",
+    "scaffold_diversity": "Fraction of unique Murcko scaffolds among unique valid molecules.",
+    "mean_qed": "Mean quantitative estimate of drug-likeness (QED) of valid molecules.",
+    "mean_sa": "Mean synthetic accessibility score of valid molecules (1=easy, 10=hard).",
+    "fragment_incorporation": "Fraction of unique valid molecules containing the required fragment substructure.",
+    "fraction_lipinski": "Fraction of unique valid molecules passing all four Lipinski Ro5 criteria.",
+    "fraction_pains_free": "Fraction of unique valid molecules not flagging any PAINS substructure.",
+    "novelty": "Fraction of unique valid molecules not in the model-visible initial compounds.",
+    "nonidenticality": "Fraction of valid generated molecules that are not identical to their original input molecules.",
+    "effective_novelty": "Fraction of valid generated molecules that are both novel and non-identical to their original input molecules.",
+    "snn": "Avg max Tanimoto similarity between generated and initial compounds.",
+    "mean_qed_novel": "Mean QED of unique valid molecules that are novel against the model-visible set.",
+    "mean_sa_novel": "Mean synthetic accessibility score of unique valid molecules that are novel against the model-visible set.",
+    "avg_top_1": "Normalized docking score of the single best-scoring molecule.",
+    "avg_top_10": "Mean normalized docking score of the 10 best-scoring molecules.",
+    "avg_top_100": "Mean normalized docking score of the 100 best-scoring molecules.",
+    "auc_top_10": "AUC of running top-10 avg score curve over cumulative oracle calls.",
+    "valid_pose_rate": "Fraction of docked molecules with a pose within the RMSD threshold.",
+    "oracle_efficiency_80": "Oracle calls to reach 80% of final top-10 score (fewer is better).",
 }
 
 
@@ -76,7 +77,7 @@ class MDEvaluator:
             col = "canonical_smiles" if "canonical_smiles" in ref_smiles_df.columns else "smiles"
             ref_smiles = set(ref_smiles_df[col].to_list())
         ref_smiles_canonical = self._canonicalize_smiles_set(ref_smiles)
-        
+
         fragment_smiles = self._loader.fragment_smiles
 
         print(f"[{self.benchmark_name}] Computing metrics for {results_csv.name}...")
@@ -108,26 +109,29 @@ class MDEvaluator:
         metrics["uniqueness"] = len(unique_smiles) / max(len(valid_smiles), 1)
         metrics["internal_diversity"] = self._tanimoto_diversity(unique_smiles)
         metrics["scaffold_diversity"] = self._scaffold_diversity(unique_smiles)
-        metrics["mean_qed"] = float(np.mean([QED.qed(m) for m in unique_mols])) if unique_mols else 0.0
-        metrics["mean_sa"] = float(np.mean([self._sa_score(m) for m in unique_mols])) if unique_mols else 0.0
+        metrics["mean_qed"] = (
+            float(np.mean([QED.qed(m) for m in unique_mols])) if unique_mols else 0.0
+        )
+        metrics["mean_sa"] = (
+            float(np.mean([self._sa_score(m) for m in unique_mols])) if unique_mols else 0.0
+        )
         metrics["fragment_incorporation"] = self._fragment_rate(unique_smiles, fragment_smiles)
         metrics["fraction_lipinski"] = self._lipinski_fraction(unique_mols)
         metrics["fraction_pains_free"] = self._pains_free_fraction(unique_mols)
 
         # ─── Extrinsic Metrics ────────────────────────────────────────────────
         metrics["novelty"] = self._novelty(unique_smiles, ref_smiles_canonical)
-        metrics["nonidenticality"] = (
-            sum(1 for generated_canonical, original_canonical in valid_pairs if generated_canonical != original_canonical)
-            / max(len(valid_pairs), 1)
-        )
-        metrics["effective_novelty"] = (
-            sum(
-                1
-                for generated_canonical, original_canonical in valid_pairs
-                if (generated_canonical not in ref_smiles_canonical) and (generated_canonical != original_canonical)
-            )
-            / max(len(valid_pairs), 1)
-        )
+        metrics["nonidenticality"] = sum(
+            1
+            for generated_canonical, original_canonical in valid_pairs
+            if generated_canonical != original_canonical
+        ) / max(len(valid_pairs), 1)
+        metrics["effective_novelty"] = sum(
+            1
+            for generated_canonical, original_canonical in valid_pairs
+            if (generated_canonical not in ref_smiles_canonical)
+            and (generated_canonical != original_canonical)
+        ) / max(len(valid_pairs), 1)
         metrics["snn"] = self._snn(unique_smiles, list(ref_smiles_canonical))
         novel_unique_smiles = [s for s in unique_smiles if s not in ref_smiles_canonical]
         novel_unique_mols = [Chem.MolFromSmiles(s) for s in novel_unique_smiles]
@@ -135,7 +139,9 @@ class MDEvaluator:
             float(np.mean([QED.qed(m) for m in novel_unique_mols])) if novel_unique_mols else 0.0
         )
         metrics["mean_sa_novel"] = (
-            float(np.mean([self._sa_score(m) for m in novel_unique_mols])) if novel_unique_mols else 0.0
+            float(np.mean([self._sa_score(m) for m in novel_unique_mols]))
+            if novel_unique_mols
+            else 0.0
         )
 
         # ─── Docking Performance ──────────────────────────────────────────────
@@ -147,8 +153,8 @@ class MDEvaluator:
             metrics["avg_top_10"] = float(top.head(10)["normalized_score"].mean())
             metrics["avg_top_100"] = float(top.head(100)["normalized_score"].mean())
             metrics["auc_top_10"] = self._auc_top_k(df, k=10)
-            metrics["valid_pose_rate"] = (
-                len(scored_df.filter(pl.col("valid_pose_found"))) / len(scored_df)
+            metrics["valid_pose_rate"] = len(scored_df.filter(pl.col("valid_pose_found"))) / len(
+                scored_df
             )
             metrics["oracle_efficiency_80"] = self._oracle_efficiency(df, k=10, frac=0.80)
         else:
@@ -160,13 +166,13 @@ class MDEvaluator:
             metrics["oracle_efficiency_80"] = float(len(df))
 
         metrics["descriptions"] = METRIC_DESCRIPTIONS
-        
+
         if output_path is None:
             output_path = Path(results_csv).parent / "eval_metrics.json"
-        
+
         with open(output_path, "w") as f:
             json.dump(metrics, f, indent=2)
-            
+
         return metrics
 
     # ── helpers ───────────────────────────────────────────────────────
@@ -198,13 +204,13 @@ class MDEvaluator:
         if len(smiles_list) < 2:
             return 0.0
         from rdkit import DataStructs
-        
+
         mols = [Chem.MolFromSmiles(s) for s in smiles_list]
         fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in mols if m is not None]
-        
+
         if len(fps) < 2:
             return 0.0
-            
+
         n = len(fps)
         similarities = []
         # Sample if too many to avoid N^2 explosion (e.g. max 1000 molecules)
@@ -212,11 +218,11 @@ class MDEvaluator:
             indices = np.random.choice(n, 1000, replace=False)
             fps = [fps[i] for i in indices]
             n = 1000
-            
+
         for i in range(n):
             for j in range(i + 1, n):
                 similarities.append(DataStructs.TanimotoSimilarity(fps[i], fps[j]))
-        
+
         return float(1.0 - np.mean(similarities))
 
     @staticmethod
@@ -239,16 +245,16 @@ class MDEvaluator:
                 import sys
 
                 from rdkit.Chem import RDConfig
-                
-                contrib_path = os.path.join(RDConfig.RDContribDir, 'SA_Score')
+
+                contrib_path = os.path.join(RDConfig.RDContribDir, "SA_Score")
                 if contrib_path not in sys.path:
                     sys.path.append(contrib_path)
-                    
+
                 import sascorer
             except (ImportError, AttributeError):
                 # Fallback to direct import if it's already in path
                 import sascorer
-                
+
             return sascorer.calculateScore(mol)
         except (ImportError, Exception):
             return 0.0
@@ -262,7 +268,7 @@ class MDEvaluator:
             frag = Chem.MolFromSmiles(fragment_smiles)
         if frag is None:
             return 0.0
-            
+
         hits = 0
         for s in unique_smiles:
             m = Chem.MolFromSmiles(s)
@@ -274,13 +280,15 @@ class MDEvaluator:
     def _lipinski_fraction(mols: list[Chem.Mol]) -> float:
         if not mols:
             return 0.0
+
         def passes_ro5(m):
             return (
-                Descriptors.MolWt(m) <= 500 and
-                Descriptors.NumHDonors(m) <= 5 and
-                Descriptors.NumHAcceptors(m) <= 10 and
-                Descriptors.MolLogP(m) <= 5
+                Descriptors.MolWt(m) <= 500
+                and Descriptors.NumHDonors(m) <= 5
+                and Descriptors.NumHAcceptors(m) <= 10
+                and Descriptors.MolLogP(m) <= 5
             )
+
         count = sum(1 for m in mols if passes_ro5(m))
         return count / len(mols)
 
@@ -295,7 +303,7 @@ class MDEvaluator:
         if not generated:
             return 0.0
         if not reference:
-            return 1.0 # Everything is novel if reference is empty
+            return 1.0  # Everything is novel if reference is empty
         novel = sum(1 for s in generated if s not in reference)
         return novel / len(generated)
 
@@ -304,21 +312,25 @@ class MDEvaluator:
         if not generated or not reference:
             return 0.0
         from rdkit import DataStructs
-        
+
         gen_mols = [Chem.MolFromSmiles(s) for s in generated]
-        gen_fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in gen_mols if m is not None]
-        
+        gen_fps = [
+            AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in gen_mols if m is not None
+        ]
+
         ref_mols = [Chem.MolFromSmiles(s) for s in reference]
-        ref_fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in ref_mols if m is not None]
-        
+        ref_fps = [
+            AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in ref_mols if m is not None
+        ]
+
         if not gen_fps or not ref_fps:
             return 0.0
-            
+
         max_sims = []
         for g_fp in gen_fps:
             sims = DataStructs.BulkTanimotoSimilarity(g_fp, ref_fps)
             max_sims.append(max(sims))
-            
+
         return float(np.mean(max_sims))
 
     @staticmethod
@@ -330,18 +342,18 @@ class MDEvaluator:
         scores = df["normalized_score"].to_list()
         running_max_k = []
         buffer = []
-        
+
         for s in scores:
             buffer.append(s)
             # running top-k average
             top_k = sorted(buffer, reverse=True)[:k]
             running_max_k.append(np.mean(top_k))
-            
+
         # Cumulative oracle calls as X
         x = np.arange(1, len(running_max_k) + 1)
         # Normalize by X-range to get value in [0, 1] (since score is [0, 1])
         # Use np.trapezoid if available (NumPy 2.0+), fallback to deprecated np.trapz
-        trap_func = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+        trap_func = getattr(np, "trapezoid", getattr(np, "trapz", None))
         if trap_func is None:
             raise AttributeError("Neither np.trapezoid nor np.trapz found in NumPy.")
         auc = trap_func(running_max_k, x) / len(running_max_k)
@@ -353,12 +365,12 @@ class MDEvaluator:
         scores = df["normalized_score"].to_list()
         if not scores:
             return 0
-            
+
         final_top_k_val = np.mean(sorted(scores, reverse=True)[:k])
         target = frac * final_top_k_val
         if target <= 0:
             return 1
-            
+
         buffer = []
         for i, s in enumerate(scores):
             buffer.append(s)
@@ -370,15 +382,16 @@ class MDEvaluator:
 
 # ─── CLI Entry Point ─────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="mockdock Evaluator CLI")
     parser.add_argument("results_csv", type=Path, help="Path to results.csv")
     parser.add_argument("--benchmark", required=True, help="Benchmark name (e.g., CHK1)")
     parser.add_argument("--output", type=Path, default=None, help="Output JSON path")
     parser.add_argument("--scratch-dir", type=Path, default=None, help="mockdock scratch directory")
-    
+
     args = parser.parse_args()
-    
+
     evaluator = MDEvaluator(args.benchmark, scratch_dir=args.scratch_dir)
     evaluator.compute_metrics(args.results_csv, output_path=args.output)
     print(f"Metrics saved for {args.benchmark}")

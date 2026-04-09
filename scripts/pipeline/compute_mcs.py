@@ -39,7 +39,8 @@ try:
     from mockdock.data import standardize_smiles
 except ImportError:
     # Fallback to manual definition if everything fails
-    def standardize_smiles(s): return s
+    def standardize_smiles(s):
+        return s
 
 
 # Removed fetch functions since we now use the unified cache from step 4
@@ -228,9 +229,7 @@ def merge_mcs_results(mcs_results_csv: str, mapping_pattern: str, output_csv: st
 
 def main():
     parser = argparse.ArgumentParser(description="Compute MCS for benchmark documents")
-    parser.add_argument(
-        "--input", default="data/chembl_docking_benchmark.csv", help="Input CSV"
-    )
+    parser.add_argument("--input", default="data/chembl_docking_benchmark.csv", help="Input CSV")
     parser.add_argument(
         "--output", default="data/mcs_results.csv", help="Output CSV for MCS results"
     )
@@ -243,15 +242,11 @@ def main():
     parser.add_argument(
         "--timeout", type=int, default=10, help="Timeout in seconds for MCS computation"
     )
-    parser.add_argument(
-        "--delay", type=float, default=0.5, help="Delay (deprecated, no API calls)"
-    )
+    parser.add_argument("--delay", type=float, default=0.5, help="Delay (deprecated, no API calls)")
     parser.add_argument(
         "--cache-dir", default="data/chembl_cache", help="ChEMBL data cache directory"
     )
-    parser.add_argument(
-        "--start", type=int, default=0, help="Start index (for parallelization)"
-    )
+    parser.add_argument("--start", type=int, default=0, help="Start index (for parallelization)")
     parser.add_argument("--end", type=int, default=None, help="End index")
     parser.add_argument(
         "--merge",
@@ -263,9 +258,7 @@ def main():
         default="data/intermediate/mcs_results/chunk_*.csv",
         help="Glob pattern for mapping files (used with --merge)",
     )
-    parser.add_argument(
-        "--n-cpus", type=int, default=None, help="Number of CPUs to use"
-    )
+    parser.add_argument("--n-cpus", type=int, default=None, help="Number of CPUs to use")
     args = parser.parse_args()
 
     # Handle merge mode
@@ -325,9 +318,7 @@ def main():
     # Subset if specified
     if args.end:
         unique_pairs = unique_pairs.iloc[args.start : args.end]
-        print(
-            f"Processing subset: indices {args.start} to {args.end} ({len(unique_pairs)} pairs)"
-        )
+        print(f"Processing subset: indices {args.start} to {args.end} ({len(unique_pairs)} pairs)")
 
     # Load existing MCS results if they exist
     output_path = Path(args.output)
@@ -341,12 +332,8 @@ def main():
             ):
                 for _, row in existing_df.iterrows():
                     if pd.notna(row["mcs_smiles"]):
-                        existing_mcs.add(
-                            (row["document_chembl_id"], row["assay_chembl_id"])
-                        )
-                print(
-                    f"Loaded {len(existing_mcs)} existing MCS results from {output_path}"
-                )
+                        existing_mcs.add((row["document_chembl_id"], row["assay_chembl_id"]))
+                print(f"Loaded {len(existing_mcs)} existing MCS results from {output_path}")
         except Exception as e:
             print(f"  [!] Could not load existing MCS results: {e}")
 
@@ -356,9 +343,7 @@ def main():
     # Process each pair
     processed = 0
     skipped = 0
-    for _, row in tqdm(
-        unique_pairs.iterrows(), total=len(unique_pairs), desc="Processing assays"
-    ):
+    for _, row in tqdm(unique_pairs.iterrows(), total=len(unique_pairs), desc="Processing assays"):
         doc_id = row["document_chembl_id"]
         assay_id = row["assay_chembl_id"]
         target_id = row["target_chembl_id"]
@@ -369,13 +354,9 @@ def main():
             continue
 
         # Get crystal ligand SMILES for this entry
-        doc_rows = df[
-            (df["document_chembl_id"] == doc_id) & (df["assay_chembl_id"] == assay_id)
-        ]
+        doc_rows = df[(df["document_chembl_id"] == doc_id) & (df["assay_chembl_id"] == assay_id)]
         crystal_smiles = (
-            doc_rows["crystal_smiles"].iloc[0]
-            if "crystal_smiles" in doc_rows.columns
-            else None
+            doc_rows["crystal_smiles"].iloc[0] if "crystal_smiles" in doc_rows.columns else None
         )
 
         # Read compounds from cache
@@ -406,7 +387,7 @@ def main():
                     unique_standardized.add(s_std)
             except Exception:
                 continue
-        
+
         standardized = list(unique_standardized)
 
         if not standardized:
@@ -492,17 +473,13 @@ def main():
         if args.start > 0 or args.end:
             # For parallel runs, write a mapping file
             mapping_path = get_chunk_output_path(args.output, args.start, args.end)
-            mapping_df = new_df[
-                ["document_chembl_id", "assay_chembl_id", "mcs_smiles"]
-            ].copy()
+            mapping_df = new_df[["document_chembl_id", "assay_chembl_id", "mcs_smiles"]].copy()
             mapping_df.to_csv(mapping_path, index=False)
             print(f"\nMCS mapping saved to {mapping_path}")
             print(f"Run merge to combine all partial results into {args.output}")
         else:
             # For sequential runs, write full results CSV
-            combined_df = combined_df.sort_values(
-                ["document_chembl_id", "assay_chembl_id"]
-            )
+            combined_df = combined_df.sort_values(["document_chembl_id", "assay_chembl_id"])
             combined_df.to_csv(output_path, index=False)
             print(f"\nResults saved to {output_path}")
             print(f"Total assays with MCS: {combined_df['mcs_smiles'].notna().sum()}")

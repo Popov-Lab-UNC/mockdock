@@ -155,12 +155,7 @@ def _parse_entry_data(entry_data: dict) -> tuple:
                 resname = chem.get("id", "")
                 smiles = desc.get("SMILES_stereo") or desc.get("SMILES") or ""
 
-                if (
-                    resname
-                    and resname not in SKIP_LIGANDS
-                    and smiles
-                    and len(smiles) > 5
-                ):
+                if resname and resname not in SKIP_LIGANDS and smiles and len(smiles) > 5:
                     ligands.append(
                         {
                             "resname": resname,
@@ -178,9 +173,7 @@ def get_ligand_info_for_pdb(pdb_id: str) -> list:
     """Get ligand residue names and SMILES for a PDB using GraphQL."""
     query = _get_graphql_query(pdb_id)
     try:
-        r = requests.post(
-            "https://data.rcsb.org/graphql", json={"query": query}, timeout=30
-        )
+        r = requests.post("https://data.rcsb.org/graphql", json={"query": query}, timeout=30)
         if r.status_code != 200:
             return [], None
 
@@ -194,9 +187,7 @@ async def fetch_ligand_info_async(session, pdb_id: str):
     """Async version of get_ligand_info_for_pdb."""
     query = _get_graphql_query(pdb_id)
     try:
-        async with session.post(
-            "https://data.rcsb.org/graphql", json={"query": query}
-        ) as response:
+        async with session.post("https://data.rcsb.org/graphql", json={"query": query}) as response:
             if response.status != 200:
                 return [], None
 
@@ -223,18 +214,10 @@ def get_ligand_info_for_pdbs(pdb_ids: list) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description="Map ChEMBL targets to PDB structures")
-    parser.add_argument(
-        "--input", default="data/chembl_targets.csv", help="Input targets CSV"
-    )
-    parser.add_argument(
-        "--output", default="data/chembl_pdb_map.csv", help="Output CSV path"
-    )
-    parser.add_argument(
-        "--start", type=int, default=0, help="Start index (for parallelization)"
-    )
-    parser.add_argument(
-        "--end", type=int, default=None, help="End index (for parallelization)"
-    )
+    parser.add_argument("--input", default="data/chembl_targets.csv", help="Input targets CSV")
+    parser.add_argument("--output", default="data/chembl_pdb_map.csv", help="Output CSV path")
+    parser.add_argument("--start", type=int, default=0, help="Start index (for parallelization)")
+    parser.add_argument("--end", type=int, default=None, help="End index (for parallelization)")
     parser.add_argument(
         "--delay", type=float, default=0.1, help="Delay between API calls (seconds)"
     )

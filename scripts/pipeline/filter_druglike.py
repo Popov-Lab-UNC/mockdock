@@ -61,12 +61,8 @@ def is_druglike(smiles: str) -> bool:
 def main():
     parser = argparse.ArgumentParser(description="Filter to drug-like ligands")
     parser.add_argument("--input", default="data/chembl_pdb_map.csv", help="Input CSV")
-    parser.add_argument(
-        "--output", default="data/chembl_pdb_druglike.csv", help="Output CSV"
-    )
-    parser.add_argument(
-        "--merge-chunks", nargs="*", help="Merge multiple chunk files first"
-    )
+    parser.add_argument("--output", default="data/chembl_pdb_druglike.csv", help="Output CSV")
+    parser.add_argument("--merge-chunks", nargs="*", help="Merge multiple chunk files first")
     args = parser.parse_args()
 
     # Merge chunks if specified

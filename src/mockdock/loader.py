@@ -3,6 +3,7 @@
 Shared loader for mockdock benchmark config and bioactivity data.
 Used by both MDOracle and MDEvaluator.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -62,7 +63,7 @@ class BenchmarkLoader:
             p = config_dir / f"{stem}.yaml"
             if p.exists():
                 return p
-        
+
         # Fallback to local configs/ directory if not in package
         local_config_dir = Path("configs")
         if local_config_dir.exists():
@@ -72,9 +73,7 @@ class BenchmarkLoader:
                     return p
 
         available = [f.stem for f in config_dir.glob("*.yaml")]
-        raise FileNotFoundError(
-            f"Benchmark config '{name}' not found. Available: {available}"
-        )
+        raise FileNotFoundError(f"Benchmark config '{name}' not found. Available: {available}")
 
     @classmethod
     def list_benchmarks(cls) -> list[str]:
@@ -121,7 +120,7 @@ class BenchmarkLoader:
 
         act_col = "pchembl_value"
         pvals = df.get_column(act_col).to_numpy()
-        
+
         # Use the empirical 25th percentile as the activity threshold (lower bioactivity)
         threshold = float(np.quantile(pvals, 0.25)) if pvals.size > 0 else 0.0
 

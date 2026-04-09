@@ -22,9 +22,7 @@ def check_chembl_api():
     try:
         from chembl_webresource_client.new_client import new_client
 
-        print(
-            "Testing chembl_webresource_client with a simple query (Target: CHEMBL240)..."
-        )
+        print("Testing chembl_webresource_client with a simple query (Target: CHEMBL240)...")
         target = new_client.target.filter(target_chembl_id="CHEMBL240").only(
             "target_chembl_id", "pref_name"
         )

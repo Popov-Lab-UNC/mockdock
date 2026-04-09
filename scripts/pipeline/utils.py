@@ -24,9 +24,7 @@ def get_chunk_output_path(base_output_path: str, start: int, end: int) -> Path:
     return intermediate_dir / f"chunk_{start}_{end}.csv"
 
 
-def merge_csv_files(
-    pattern: str, output_path: str, dedup_cols: Optional[list[str]] = None
-) -> None:
+def merge_csv_files(pattern: str, output_path: str, dedup_cols: Optional[list[str]] = None) -> None:
     """
     Merge CSV files matching a pattern into a single output file.
 
@@ -61,9 +59,7 @@ def merge_csv_files(
     if dedup_cols:
         before = len(df_merged)
         df_merged = df_merged.drop_duplicates(subset=dedup_cols)
-        print(
-            f"After deduplication: {len(df_merged)} (removed {before - len(df_merged)})"
-        )
+        print(f"After deduplication: {len(df_merged)} (removed {before - len(df_merged)})")
 
     df_merged.to_csv(output_path, index=False)
     print(f"Saved merged results to {output_path}")

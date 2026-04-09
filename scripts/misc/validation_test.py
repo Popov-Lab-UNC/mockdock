@@ -100,9 +100,7 @@ def run_validation(
         to_run = all_available
 
     if not to_run:
-        print(
-            "[ERROR] No benchmark configs found. Check mockdock/configs/ or local configs/."
-        )
+        print("[ERROR] No benchmark configs found. Check mockdock/configs/ or local configs/.")
         sys.exit(1)
 
     invalid = [b for b in to_run if b not in all_available]
@@ -133,13 +131,9 @@ def run_validation(
                 if not initial_df.is_empty():
                     # Keep only the relevant columns for display
                     display_cols = [
-                        c
-                        for c in ["canonical_smiles", "pchembl_value"]
-                        if c in initial_df.columns
+                        c for c in ["canonical_smiles", "pchembl_value"] if c in initial_df.columns
                     ]
-                    print(
-                        f"\n--- Lower 25% compounds for {bm_name} ({len(initial_df)}) ---"
-                    )
+                    print(f"\n--- Lower 25% compounds for {bm_name} ({len(initial_df)}) ---")
                     print(initial_df.select(display_cols))
                     out_initial = output_dir / f"initial_compounds_{bm_name}.csv"
                     initial_df.write_csv(out_initial)

@@ -201,7 +201,7 @@ class MDOracle:
         initial_df = self._loader.get_initial_compounds()
         if initial_df.is_empty():
             return initial_df
-        
+
         has_score = "score" in initial_df.columns
         print(
             f"[mockdock] Prepared {len(initial_df)} initial compounds"
@@ -217,7 +217,7 @@ class MDOracle:
         validation_df = self._loader.get_validation_compounds()
         if validation_df.is_empty():
             return validation_df
-        
+
         print(f"[mockdock] Prepared {len(validation_df)} validation compounds")
         return validation_df
 
@@ -240,9 +240,7 @@ class MDOracle:
         valid_tasks, skipped_results = self._filter_smiles(process_smiles)
 
         for smi in out_of_budget_smiles:
-            skipped_results.append(
-                self._create_skipped_result(smi, "budget_exhausted", smi)
-            )
+            skipped_results.append(self._create_skipped_result(smi, "budget_exhausted", smi))
 
         final_scores = {smi: -1.5 for smi in smiles_list}
 
@@ -254,14 +252,12 @@ class MDOracle:
                 # preserving order of valid_tasks
                 process_canonicals = [t[0] for t in valid_tasks]
                 docking_tasks = self._prepare_ligands(process_canonicals, temp_path)
-                
+
                 # Run docking (accepts list[dict], returns list[dict])
                 docking_raw_results = self._run_docking(docking_tasks)
 
                 # 4. Analysis
-                scores_dict, batch_results = self._analyze_results(
-                    valid_tasks, docking_raw_results
-                )
+                scores_dict, batch_results = self._analyze_results(valid_tasks, docking_raw_results)
                 final_scores.update(scores_dict)
 
                 # 5. Finalize round
@@ -274,8 +270,8 @@ class MDOracle:
         else:
             self.budget_used += len(process_smiles)
             print(
-                 f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
-                 f"(0 passed 2D filter) (budget {self.budget_used}/{self.max_budget})"
+                f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
+                f"(0 passed 2D filter) (budget {self.budget_used}/{self.max_budget})"
             )
             self._update_results_df(skipped_results)
 
@@ -304,7 +300,9 @@ class MDOracle:
 
         return valid_tasks, skipped_results
 
-    def _create_skipped_result(self, smiles: str, reason: str, original_smiles: Optional[str] = None) -> dict:
+    def _create_skipped_result(
+        self, smiles: str, reason: str, original_smiles: Optional[str] = None
+    ) -> dict:
         return {
             "smiles": smiles,
             "original_smiles": original_smiles or smiles,
@@ -336,10 +334,10 @@ class MDOracle:
         t0 = time.time()
         batch_results = []
         final_scores_list = []
-        
+
         for task_idx, (canonical, original) in enumerate(process_tasks):
             task_results = raw_results[task_idx]
-            
+
             best_valid, valid_pose_found, best_any, best_dlg, best_pose_idx = (
                 self._filter_poses_for_molecule(canonical, task_results)
             )
@@ -355,9 +353,7 @@ class MDOracle:
             best_norm = -1.5
             # With require_pose_rmsd, reward only if a pose exists under the RMSD cap.
             rmsd_reward_ok = (not self._loader.require_pose_rmsd) or (
-                skip_reason != "failed_rmsd"
-                and valid_pose_found
-                and math.isfinite(best_valid)
+                skip_reason != "failed_rmsd" and valid_pose_found and math.isfinite(best_valid)
             )
             if (
                 rmsd_reward_ok
@@ -370,9 +366,7 @@ class MDOracle:
                 if abs(denom) > 1e-6:
                     best_norm = (self._loader.low_score - best_valid) / denom
                 else:
-                    best_norm = (
-                        1.0 if best_valid <= self._loader.high_score else -1.5
-                    )
+                    best_norm = 1.0 if best_valid <= self._loader.high_score else -1.5
 
             if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
                 best_norm = -1.5
@@ -394,7 +388,7 @@ class MDOracle:
             )
 
         self._total_analysis_time += time.time() - t0
-        # Return dict of original -> score. 
+        # Return dict of original -> score.
         # Note: if input had duplicates, the last score for that SMILES will be in the dict.
         # This is usually what models expect.
         return dict(final_scores_list), batch_results
@@ -549,9 +543,7 @@ class MDOracle:
             "total_gen_time": round(total_generation_time, 2),
             "avg_gen_time_per_mol": round(avg_generation_time, 4),
             "total_eval_time": round(
-                self._total_prep_time
-                + self._total_dock_time
-                + self._total_analysis_time,
+                self._total_prep_time + self._total_dock_time + self._total_analysis_time,
                 2,
             ),
             "avg_eval_time_per_mol": round(avg_oracle_time_per_mol, 4),
@@ -790,15 +782,11 @@ class MDOracle:
         # - n_molecules_success: skip_reason is null and valid_pose_found (docked; if
         #   require_pose_rmsd, passed the fragment RMSD gate).
         sr = pl.col("skip_reason")
-        success_df = self.results_df.filter(
-            sr.is_null() & pl.col("valid_pose_found")
-        )
+        success_df = self.results_df.filter(sr.is_null() & pl.col("valid_pose_found"))
         n_total = len(self.results_df)
         n_success = len(success_df)
         # Skip reasons are set in _filter_smiles/_analyze_results via _create_skipped_result
-        n_skipped_2d = len(
-            self.results_df.filter(pl.col("skip_reason") == "failed_2d_match")
-        )
+        n_skipped_2d = len(self.results_df.filter(pl.col("skip_reason") == "failed_2d_match"))
         n_invalid = len(self.results_df.filter(pl.col("skip_reason") == "invalid_molecule"))
         n_budget_exhausted = len(
             self.results_df.filter(pl.col("skip_reason") == "budget_exhausted")

@@ -72,7 +72,7 @@ class LigandPreparer:
                 try:
                     # Add hydrogens appropriate for the specific tautomer/protonation state
                     mol_state = Chem.AddHs(mol_state)
-                    
+
                     params = rdDistGeom.ETKDGv3()
                     params.randomSeed = 42
                     params.useSmallRingTorsions = True
@@ -89,7 +89,12 @@ class LigandPreparer:
                     # Energy Minimization using MMFF94 force field
                     try:
                         if rdForceFieldHelpers.MMFFHasAllMoleculeParams(mol_state):
-                            rdForceFieldHelpers.MMFFOptimizeMolecule(mol_state, mmffVariant='MMFF94s', maxIters=200, nonBondedThresh=100.0)
+                            rdForceFieldHelpers.MMFFOptimizeMolecule(
+                                mol_state,
+                                mmffVariant="MMFF94s",
+                                maxIters=200,
+                                nonBondedThresh=100.0,
+                            )
                         else:
                             rdForceFieldHelpers.UFFOptimizeMolecule(mol_state, maxIters=200)
                     except Exception as e:
@@ -110,7 +115,7 @@ class LigandPreparer:
 
                     if state_counter >= 32:
                         break
-                        
+
                 except Exception as e:
                     print(f"Processing failed for a state of {smiles}: {e}")
                     continue

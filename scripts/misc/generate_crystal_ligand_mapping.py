@@ -152,8 +152,7 @@ def main() -> None:
         type=float,
         default=0.99,
         help=(
-            "Minimum Tanimoto similarity required to trust cache-based ID mapping "
-            "(default: 0.99)."
+            "Minimum Tanimoto similarity required to trust cache-based ID mapping (default: 0.99)."
         ),
     )
     args = parser.parse_args()
@@ -216,8 +215,7 @@ def main() -> None:
                         # RCSB can miss ChEMBL cross-references for some ligands.
                         chembl_id = best_cache_id
                         cache_message = (
-                            f" [cache fallback below threshold: {best_cache_id} "
-                            f"sim={best_sim:.3f}]"
+                            f" [cache fallback below threshold: {best_cache_id} sim={best_sim:.3f}]"
                         )
                     else:
                         cache_message = (
@@ -230,11 +228,13 @@ def main() -> None:
             print(f"  [SKIP] {benchmark_name}: no ChEMBL ID for ligand {ligand_resname}")
             continue
 
-        rows.append({
-            "system_key": system_key,
-            "molecule_chembl_id": chembl_id,
-            "label": "Crystal ligand",
-        })
+        rows.append(
+            {
+                "system_key": system_key,
+                "molecule_chembl_id": chembl_id,
+                "label": "Crystal ligand",
+            }
+        )
         print(f"  [OK]   {benchmark_name}: {ligand_resname} -> {chembl_id}{cache_message}")
 
     if not rows:

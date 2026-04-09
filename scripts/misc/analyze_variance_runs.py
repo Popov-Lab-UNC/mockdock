@@ -16,6 +16,7 @@ def _get_pactivity(df: pl.DataFrame, config_path: Path):
         raise RuntimeError("Missing pchembl_value; cannot compute pActivity.")
     return df.get_column("pchembl_value").to_numpy(), "pActivity (ChEMBL pValue)"
 
+
 PALETTE = {
     "periwinkle": "#B8B8FF",
     "light_green": "#90EE90",
@@ -90,8 +91,7 @@ def _iter_results(run_dir: Path) -> list[tuple[str, Path]]:
 
 def _valid_score_mask(df: pl.DataFrame, score_cols: list[str]) -> pl.Expr:
     exprs = [
-        (pl.col(c).is_not_null()) & (pl.col(c).is_finite()) & (pl.col(c) < 900)
-        for c in score_cols
+        (pl.col(c).is_not_null()) & (pl.col(c).is_finite()) & (pl.col(c) < 900) for c in score_cols
     ]
     return pl.fold(pl.lit(True), lambda acc, x: acc & x, exprs)
 
@@ -104,9 +104,7 @@ def _short_system_label(system_key: str) -> str:
     return system_key
 
 
-def _compute_system_correlations(
-    df: pl.DataFrame, config_path: Path
-) -> tuple[float, float]:
+def _compute_system_correlations(df: pl.DataFrame, config_path: Path) -> tuple[float, float]:
     if df.is_empty() or "docking_score" not in df.columns:
         return float("nan"), float("nan")
     p_activities, _ = _get_pactivity(df, config_path)
@@ -178,9 +176,7 @@ def plot_run_barplot(runs_dir: Path, config_dir: Path, output_dir: Path) -> Path
     set_publication_style()
     plt.figure(figsize=(12, 6))
     if system_stats:
-        sorted_stats = sorted(
-            system_stats, key=lambda r: r["spearman_mean"], reverse=True
-        )
+        sorted_stats = sorted(system_stats, key=lambda r: r["spearman_mean"], reverse=True)
         x = np.arange(len(sorted_stats))
         means = [r["spearman_mean"] for r in sorted_stats]
         stds = [r["spearman_std"] for r in sorted_stats]
@@ -262,9 +258,7 @@ def plot_system_variance(
             if merged is None:
                 merged = subset
             else:
-                merged = merged.join(
-                    subset.drop("pchembl_value"), on=id_col, how="inner"
-                )
+                merged = merged.join(subset.drop("pchembl_value"), on=id_col, how="inner")
 
         if merged is None or merged.is_empty():
             continue

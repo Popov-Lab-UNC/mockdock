@@ -106,7 +106,9 @@ def enrich_metrics(metrics_path: Path, sidecar_name: str) -> tuple[bool, str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Add generation/evaluation timing to exps metrics.json files.")
+    parser = argparse.ArgumentParser(
+        description="Add generation/evaluation timing to exps metrics.json files."
+    )
     parser.add_argument("--exps-dir", type=Path, default=Path("exps"), help="Path to exps folder")
     parser.add_argument(
         "--generation-sidecar",
@@ -133,4 +135,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

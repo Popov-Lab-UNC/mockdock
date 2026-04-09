@@ -15,9 +15,7 @@ from tqdm import tqdm
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch ChEMBL human protein targets")
-    parser.add_argument(
-        "--output", default="data/chembl_targets.csv", help="Output CSV path"
-    )
+    parser.add_argument("--output", default="data/chembl_targets.csv", help="Output CSV path")
     parser.add_argument(
         "--chembl-sqlite",
         default=None,
@@ -38,9 +36,7 @@ def main():
         raise FileNotFoundError(f"ChEMBL SQLite DB not found: {sqlite_path}")
 
     if sqlite_path:
-        print(
-            f"Fetching Human Single Protein Targets from local ChEMBL SQLite: {sqlite_path}"
-        )
+        print(f"Fetching Human Single Protein Targets from local ChEMBL SQLite: {sqlite_path}")
         import sqlite3
 
         query = """
@@ -64,9 +60,9 @@ def main():
 
         print("Fetching Human Single Protein Targets from ChEMBL API...")
         target_api = new_client.target
-        targets = target_api.filter(
-            organism="Homo sapiens", target_type="SINGLE PROTEIN"
-        ).only("target_chembl_id", "pref_name", "target_components")
+        targets = target_api.filter(organism="Homo sapiens", target_type="SINGLE PROTEIN").only(
+            "target_chembl_id", "pref_name", "target_components"
+        )
 
         target_list = []
         for t in tqdm(targets, desc="Processing Targets"):

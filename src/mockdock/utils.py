@@ -76,8 +76,6 @@ def resolve_backend(
 # ── RDKit chemistry utilities ─────────────────────────────────────────────────
 
 
-
-
 def standardize_smiles(smiles: str) -> Optional[str]:
     """Strip salts, neutralize, and return a canonical SMILES string.
 

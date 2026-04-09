@@ -4,6 +4,7 @@
 Aggregates mockdock experiment results across models, targets, and seeds.
 Generates master CSVs and publication-quality figures.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,6 +20,7 @@ try:
     from mockdock import MDEvaluator
 except ImportError:
     import sys
+
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
     from mockdock import MDEvaluator
 
@@ -28,7 +30,19 @@ def setup_plotting():
     sns.set_context("paper", font_scale=1.4)
     sns.set_style("ticks")
     plt.rcParams["font.family"] = "sans-serif"
-    plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Bitstream Vera Sans", "Computer Modern Sans Serif", "Lucida Grande", "Verdana", "Geneva", "Lucid", "Arial", "Helvetica", "Avant Garde", "sans-serif"]
+    plt.rcParams["font.sans-serif"] = [
+        "DejaVu Sans",
+        "Bitstream Vera Sans",
+        "Computer Modern Sans Serif",
+        "Lucida Grande",
+        "Verdana",
+        "Geneva",
+        "Lucid",
+        "Arial",
+        "Helvetica",
+        "Avant Garde",
+        "sans-serif",
+    ]
     plt.rcParams["svg.fonttype"] = "none"
     plt.rcParams["axes.spines.top"] = False
     plt.rcParams["axes.spines.right"] = False
@@ -45,41 +59,45 @@ def discover_results(exps_dir: Path) -> list[tuple[str, str, str, Path]]:
         if not model_dir.is_dir():
             continue
         model_name = model_dir.name
-        
+
         for run_dir in model_dir.iterdir():
-            if not run_dir.is_dir() or not (run_dir.name.startswith("run_") or run_dir.name.startswith("202")):
+            if not run_dir.is_dir() or not (
+                run_dir.name.startswith("run_") or run_dir.name.startswith("202")
+            ):
                 continue
             # Some run directories might be named by timestamp, others have a suffix like _r01
             seed_id = run_dir.name
-            
+
             for target_dir in run_dir.iterdir():
                 if not target_dir.is_dir():
                     continue
                 target_name = target_dir.name
-                
+
                 csv_path = target_dir / "results.csv"
                 if csv_path.exists():
                     results.append((model_name, seed_id, target_name, csv_path))
-    
+
     return results
 
 
-def process_all(results_list: list[tuple[str, str, str, Path]], scratch_dir: Path = None) -> pl.DataFrame:
+def process_all(
+    results_list: list[tuple[str, str, str, Path]], scratch_dir: Path = None
+) -> pl.DataFrame:
     """
     Process each results.csv through MDEvaluator.
     Returns a master DataFrame with all metrics.
     """
     all_data = []
-    
+
     # Cache for unique evaluator instances
     evaluators = {}
-    
+
     for model, seed, target, csv_path in results_list:
         print(f"Evaluating {model} | {target} | {seed}...")
-        
+
         if target not in evaluators:
             evaluators[target] = MDEvaluator(target, scratch_dir=scratch_dir)
-            
+
         try:
             # Check if metrics already computed to save time
             metrics_json = csv_path.parent / "eval_metrics.json"
@@ -88,7 +106,7 @@ def process_all(results_list: list[tuple[str, str, str, Path]], scratch_dir: Pat
                     metrics = json.load(f)
             else:
                 metrics = evaluators[target].compute_metrics(csv_path)
-            
+
             # Optional runtime metadata from oracle-side metrics.json
             runtime_path = csv_path.parent / "metrics.json"
             runtime_metrics = _read_runtime_metrics(runtime_path)
@@ -104,11 +122,11 @@ def process_all(results_list: list[tuple[str, str, str, Path]], scratch_dir: Pat
                 if k != "descriptions" and not isinstance(v, dict):
                     row[k] = v
             row.update(runtime_metrics)
-            
+
             all_data.append(row)
         except Exception as e:
             print(f"  Error processing {csv_path}: {e}")
-            
+
     return pl.DataFrame(all_data)
 
 
@@ -149,27 +167,28 @@ def compute_aggregates(df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Compute mean and std across seeds, and macro-average across targets."""
     # 1. Summary by (model, target) - aggregating over seeds
     metric_cols = [c for c in df.columns if c not in ["model", "seed", "target"]]
-    
+
     agg_exprs = []
     for c in metric_cols:
         agg_exprs.append(pl.mean(c).alias(f"{c}_mean"))
         agg_exprs.append(pl.std(c).alias(f"{c}_std"))
-        
+
     summary_df = df.group_by(["model", "target"]).agg(agg_exprs).sort(["model", "target"])
-    
+
     # 2. Macro-average across targets for each model
     macro_agg_exprs = []
     for c in metric_cols:
         macro_agg_exprs.append(pl.mean(f"{c}_mean").alias(f"{c}_mean"))
-        # std of the means across targets? Or mean of the stds? 
+        # std of the means across targets? Or mean of the stds?
         # Usually macro-average just reports mean across targets.
-    
+
     macro_df = summary_df.group_by("model").agg(macro_agg_exprs).sort("model")
-    
+
     return summary_df, macro_df
 
 
 # ─── Plotting Functions ─────────────────────────────────────────────
+
 
 def _plot_metric_panels(
     full_df: pl.DataFrame,
@@ -180,7 +199,9 @@ def _plot_metric_panels(
 ):
     """Shared panel plot helper: one panel per metric with benchmark-wise comparisons."""
     setup_plotting()
-    available = [(metric, label) for metric, label in metrics_map.items() if metric in full_df.columns]
+    available = [
+        (metric, label) for metric, label in metrics_map.items() if metric in full_df.columns
+    ]
     if not available:
         return
 
@@ -220,7 +241,13 @@ def _plot_metric_panels(
 
     handles, labels = axes_flat[0].get_legend_handles_labels()
     if handles:
-        fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.02), ncol=min(6, len(labels)))
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.02),
+            ncol=min(6, len(labels)),
+        )
     fig.suptitle(figure_title, y=1.06, fontsize=18)
     fig.tight_layout()
     fig.savefig(output_path_stem.with_suffix(".svg"))
@@ -390,22 +417,25 @@ def write_table_1_macro_summary(macro_df: pl.DataFrame, output_dir: Path):
 
 # ─── Main Logic ──────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze mockdock experimental results.")
     parser.add_argument("--exps-dir", type=Path, default=Path("exps"), help="Path to exps folder")
-    parser.add_argument("--output-dir", type=Path, default=Path("output"), help="Path for aggregated outputs")
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("output"), help="Path for aggregated outputs"
+    )
     parser.add_argument("--scratch-dir", type=Path, default=None, help="mockdock scratch dir")
-    
+
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "figures").mkdir(parents=True, exist_ok=True)
-    
+
     setup_plotting()
-    
+
     # 1. Discover
     results_list = discover_results(args.exps_dir)
     print(f"Discovered {len(results_list)} results files.")
-    
+
     if not results_list:
         print("No results to analyze.")
         return
@@ -413,29 +443,29 @@ def main():
     # 2. Process
     full_df = process_all(results_list, scratch_dir=args.scratch_dir)
     full_df.write_csv(args.output_dir / "metrics_all.csv")
-    
+
     # 3. Aggregate
     summary_df, macro_df = compute_aggregates(full_df)
     summary_df.write_csv(args.output_dir / "metrics_summary.csv")
     macro_df.write_csv(args.output_dir / "metrics_summary_macro.csv")
-    
+
     # 4. Figure generation
     fig_dir = args.output_dir / "figures"
     print("Generating Figure 1 (Generation Metrics)...")
     plot_figure_1_generation(full_df, fig_dir)
-    
+
     print("Generating Figure 2 (Optimization Metrics)...")
     plot_figure_2_optimization(full_df, fig_dir)
-    
+
     print("Generating Figure 3 (Quality Metrics)...")
     plot_figure_3_quality(full_df, fig_dir)
-    
+
     print("Generating Figure 4 (Trajectories)...")
     plot_figure_4_trajectory(args.exps_dir, fig_dir)
-    
+
     print("Writing Table 1 (Macro Summary)...")
     write_table_1_macro_summary(macro_df, args.output_dir)
-    
+
     print(f"\nDone! Outputs saved to {args.output_dir}")
 
 

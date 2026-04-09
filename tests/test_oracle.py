@@ -37,17 +37,13 @@ class TestMDOracleCaching(unittest.TestCase):
             }
         )
 
-        oracle = MDOracle(
-            benchmark_name=self.benchmark_name, scratch_dir=self.scratch_dir
-        )
+        oracle = MDOracle(benchmark_name=self.benchmark_name, scratch_dir=self.scratch_dir)
 
         # 1. Test Fetch (file doesn't exist)
         mock_fetch.return_value = mock_df
 
         # Ensure file does not exist
-        cache_file = (
-            self.scratch_dir / "bioactivity_data" / f"{self.benchmark_name}_chembl.csv"
-        )
+        cache_file = self.scratch_dir / "bioactivity_data" / f"{self.benchmark_name}_chembl.csv"
         if cache_file.exists():
             cache_file.unlink()
 
@@ -70,16 +66,12 @@ class TestMDOracleCaching(unittest.TestCase):
         self.assertTrue(df.equals(df2))
 
         # 3. Test File Cache (new oracle instance, file exists)
-        oracle2 = MDOracle(
-            benchmark_name=self.benchmark_name, scratch_dir=self.scratch_dir
-        )
+        oracle2 = MDOracle(benchmark_name=self.benchmark_name, scratch_dir=self.scratch_dir)
         mock_read_csv.return_value = mock_df
 
         df3, _, _ = oracle2._get_full_data_and_threshold()
 
-        self.assertTrue(
-            mock_read_csv.called, "Should read from file if exists and not in memory"
-        )
+        self.assertTrue(mock_read_csv.called, "Should read from file if exists and not in memory")
         self.assertFalse(mock_fetch.called, "Should not fetch if file exists")
         self.assertIsNotNone(
             oracle2._chembl_data, "Should populate memory cache after reading file"

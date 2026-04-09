@@ -55,9 +55,7 @@ def _load_benchmark_config(benchmark_name: str) -> dict:
         return yaml.safe_load(f)
 
 
-def _find_results_csv(
-    run_dir: Path, target_id: str, pdb_id: str, doc_id: str
-) -> Path | None:
+def _find_results_csv(run_dir: Path, target_id: str, pdb_id: str, doc_id: str) -> Path | None:
     """Locate the per-compound results CSV inside a single variance run folder.
 
     Expected layout::
@@ -94,17 +92,12 @@ def process_benchmark(benchmark_name: str) -> None:
         run_dir = VARIANCE_RUNS_DIR / f"run_{run_idx}"
         results_csv = _find_results_csv(run_dir, target_id, pdb_id, doc_id)
         if results_csv is None:
-            print(
-                f"  [WARN] {benchmark_name}: no results CSV in run_{run_idx}, skipping."
-            )
+            print(f"  [WARN] {benchmark_name}: no results CSV in run_{run_idx}, skipping.")
             continue
 
         run_df = pl.read_csv(results_csv)
         # Keep only chembl ID and docking score; tag the run number
-        if (
-            "molecule_chembl_id" not in run_df.columns
-            or "docking_score" not in run_df.columns
-        ):
+        if "molecule_chembl_id" not in run_df.columns or "docking_score" not in run_df.columns:
             print(
                 f"  [WARN] {benchmark_name}: run_{run_idx} CSV missing expected columns, skipping."
             )
@@ -139,9 +132,7 @@ def process_benchmark(benchmark_name: str) -> None:
 
     high_score = float(with_scores["mean_docking_score"].min())
     if "pchembl_value" not in with_scores.columns:
-        print(
-            f"  [WARN] {benchmark_name}: pchembl_value missing; using mean for low_score."
-        )
+        print(f"  [WARN] {benchmark_name}: pchembl_value missing; using mean for low_score.")
         low_score = float(with_scores["mean_docking_score"].mean())
     else:
         # Lower quantile = bottom 25% by pactivity (least active compounds)
