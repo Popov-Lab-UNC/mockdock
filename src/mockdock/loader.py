@@ -6,7 +6,6 @@ Used by both MDOracle and MDEvaluator.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import polars as pl
@@ -24,7 +23,7 @@ class BenchmarkLoader:
     def __init__(
         self,
         benchmark_name: str,
-        scratch_dir: Optional[Path] = None,
+        scratch_dir: Path | None = None,
     ):
         self.benchmark_name = benchmark_name
         _pkg = Path(__file__).parent
@@ -40,18 +39,18 @@ class BenchmarkLoader:
 
         self.pdb_id: str = raw["pdb_id"]
         self.target_id: str = raw.get("target_id", "")
-        self.doc_id: Optional[str] = raw.get("doc_id")
+        self.doc_id: str | None = raw.get("doc_id")
         self.fragment_smiles: str = raw["fragment_smiles"]
-        self.fragment_smiles_with_dummies: Optional[str] = raw.get("fragment_smiles_with_dummies")
+        self.fragment_smiles_with_dummies: str | None = raw.get("fragment_smiles_with_dummies")
         self.rmsd_threshold: float = raw.get("rmsd_threshold", 2.0)
-        self.low_score: Optional[float] = raw.get("low_score")
-        self.high_score: Optional[float] = raw.get("high_score")
-        self.ligand_resname: Optional[str] = raw.get("ligand_resname")
+        self.low_score: float | None = raw.get("low_score")
+        self.high_score: float | None = raw.get("high_score")
+        self.ligand_resname: str | None = raw.get("ligand_resname")
         self.require_fragment_match: bool = raw.get("require_fragment_match", True)
         self.require_pose_rmsd: bool = raw.get("require_pose_rmsd", True)
 
-        self._chembl_data: Optional[pl.DataFrame] = None
-        self._threshold: Optional[float] = None
+        self._chembl_data: pl.DataFrame | None = None
+        self._threshold: float | None = None
 
     # ── Config helpers ────────────────────────────────────────────────
 

@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 # Third-party imports
-import numpy as np
 import polars as pl
-import yaml
 
 # Third-party imports (yaml used for results.yaml output)
 import yaml as _yaml_module

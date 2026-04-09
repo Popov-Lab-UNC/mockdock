@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -85,7 +84,7 @@ def process_all(results_list: list[tuple[str, str, str, Path]], scratch_dir: Pat
             # Check if metrics already computed to save time
             metrics_json = csv_path.parent / "eval_metrics.json"
             if metrics_json.exists():
-                with open(metrics_json, "r") as f:
+                with open(metrics_json) as f:
                     metrics = json.load(f)
             else:
                 metrics = evaluators[target].compute_metrics(csv_path)
@@ -118,7 +117,7 @@ def _read_runtime_metrics(metrics_json_path: Path) -> dict:
     if not metrics_json_path.exists():
         return {}
     try:
-        with open(metrics_json_path, "r") as f:
+        with open(metrics_json_path) as f:
             payload = json.load(f)
     except Exception:
         return {}

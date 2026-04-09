@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import polars as pl
@@ -59,12 +58,12 @@ class MDEvaluator:
     is instantiated, making this lightweight and safe to run on a login node.
     """
 
-    def __init__(self, benchmark_name: str, scratch_dir: Optional[Path] = None):
+    def __init__(self, benchmark_name: str, scratch_dir: Path | None = None):
         self.benchmark_name = benchmark_name
         self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
         self._pains_catalog = self._build_pains_catalog()
 
-    def compute_metrics(self, results_csv: Path, output_path: Optional[Path] = None) -> dict:
+    def compute_metrics(self, results_csv: Path, output_path: Path | None = None) -> dict:
         """Compute all metrics for one results.csv file and optionally write JSON."""
         if not results_csv.exists():
             raise FileNotFoundError(f"Results CSV not found: {results_csv}")
@@ -149,7 +148,7 @@ class MDEvaluator:
             metrics["avg_top_100"] = float(top.head(100)["normalized_score"].mean())
             metrics["auc_top_10"] = self._auc_top_k(df, k=10)
             metrics["valid_pose_rate"] = (
-                len(scored_df.filter(pl.col("valid_pose_found") == True)) / len(scored_df)
+                len(scored_df.filter(pl.col("valid_pose_found"))) / len(scored_df)
             )
             metrics["oracle_efficiency_80"] = self._oracle_efficiency(df, k=10, frac=0.80)
         else:
@@ -173,7 +172,7 @@ class MDEvaluator:
     # ── helpers ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _canonicalize_smiles(smiles: str) -> Optional[str]:
+    def _canonicalize_smiles(smiles: str) -> str | None:
         mol = Chem.MolFromSmiles(str(smiles))
         if mol is None:
             return None

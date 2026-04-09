@@ -3,10 +3,10 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import yaml
 import numpy as np
 import polars as pl
 import seaborn as sns
+import yaml
 from scipy.stats import pearsonr, spearmanr
 
 

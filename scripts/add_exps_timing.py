@@ -26,7 +26,7 @@ def discover_metrics(exps_dir: Path) -> list[Path]:
 
 
 def load_json(path: Path) -> dict:
-    with open(path, "r") as f:
+    with open(path) as f:
         return json.load(f)
 
 
