@@ -228,7 +228,7 @@ class MDOracle:
         self._generation_round += 1
         if self.budget_used >= self.max_budget:
             print("[mockdock] Oracle budget exhausted.")
-            return {smi: 0.0 for smi in smiles_list}
+            return {smi: -1.5 for smi in smiles_list}
 
         self._ensure_components()
 
@@ -246,7 +246,7 @@ class MDOracle:
                 self._create_skipped_result(smi, "budget_exhausted", smi)
             )
 
-        final_scores = {smi: 0.0 for smi in smiles_list}
+        final_scores = {smi: -1.5 for smi in smiles_list}
 
         if valid_tasks:
             # 3. Preparation and Docking
@@ -311,7 +311,7 @@ class MDOracle:
             "smiles": smiles,
             "original_smiles": original_smiles or smiles,
             "docking_score": float("nan"),
-            "normalized_score": 0.0,
+            "normalized_score": -1.5,
             "valid_pose_found": False,
             "dlg_path": None,
             "best_any_score": float("nan"),
@@ -354,7 +354,7 @@ class MDOracle:
             elif math.isnan(best_valid) and self._loader.require_pose_rmsd:
                 skip_reason = "failed_rmsd"
 
-            best_norm = 0.0
+            best_norm = -1.5
             # With require_pose_rmsd, reward only if a pose exists under the RMSD cap.
             rmsd_reward_ok = (not self._loader.require_pose_rmsd) or (
                 skip_reason != "failed_rmsd"
@@ -373,11 +373,11 @@ class MDOracle:
                     best_norm = (self._loader.low_score - best_valid) / denom
                 else:
                     best_norm = (
-                        1.0 if best_valid <= self._loader.high_score else 0.0
+                        1.0 if best_valid <= self._loader.high_score else -1.5
                     )
 
             if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
-                best_norm = 0.0
+                best_norm = -1.5
 
             final_scores_list.append((original, best_norm))
             batch_results.append(

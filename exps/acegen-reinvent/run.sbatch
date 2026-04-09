@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=reinvent_fcgmb
-#SBATCH --partition=volta-gpu
+#SBATCH --partition=a100-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
