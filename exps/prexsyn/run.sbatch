@@ -4,7 +4,7 @@
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=64G
+#SBATCH --mem=16G
 #SBATCH --time=3-00:00:00
 #SBATCH --output=prexsyn_%j.log
 #SBATCH --error=prexsyn_%j.err

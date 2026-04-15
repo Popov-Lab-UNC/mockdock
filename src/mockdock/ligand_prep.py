@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Optional
 
 from meeko import MoleculePreparation, PDBQTWriterLegacy
+
+from .utils import effective_cpu_count
 from molscrub import Scrub
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
@@ -26,7 +28,7 @@ class LigandPreparer:
         ph_high: float = 8.4,
         generate_isomers: bool = True,
     ):
-        self.n_cpus = n_cpus or multiprocessing.cpu_count()
+        self.n_cpus = n_cpus or effective_cpu_count()
         self.ph_low = ph_low
         self.ph_high = ph_high
         self.generate_isomers = generate_isomers

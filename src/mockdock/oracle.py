@@ -1,7 +1,6 @@
 # Standard library imports
 import json
 import math
-import multiprocessing
 import tempfile
 import time
 from pathlib import Path
@@ -22,6 +21,7 @@ from .loader import BenchmarkLoader
 from .utils import (
     check_2d_match,
     detect_gpus,
+    effective_cpu_count,
     resolve_backend,
     standardize_smiles,
 )
@@ -70,7 +70,7 @@ class MDOracle:
         self.budget_used = 0
         self._generation_round = 0
         self._pdb_id: Optional[str] = None  # set after config load below
-        self.n_cpus = n_cpus or multiprocessing.cpu_count()
+        self.n_cpus = n_cpus or effective_cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else detect_gpus()
         self.results_df = pl.DataFrame()
         self._yaml_results: list[dict] = []  # accumulates all results for YAML output
@@ -226,6 +226,12 @@ class MDOracle:
         self._generation_round += 1
         if self.budget_used >= self.max_budget:
             print("[mockdock] Oracle budget exhausted.")
+            # Keep complete accounting: even after budget exhaustion, record
+            # every model-emitted SMILES so results.csv remains a full audit log.
+            exhausted_rows = [
+                self._create_skipped_result(smi, "budget_exhausted", smi) for smi in smiles_list
+            ]
+            self._update_results_df(exhausted_rows)
             return {smi: -1.5 for smi in smiles_list}
 
         self._ensure_components()
@@ -690,9 +696,12 @@ class MDOracle:
         if not new_results:
             return
 
-        # Stamp every row with the current generation round
-        for row in new_results:
+        # Stamp every row with the current generation round and a global
+        # generation index (monotonic across the full run).
+        start_idx = len(self.results_df) + 1
+        for i, row in enumerate(new_results):
             row.setdefault("generation_round", self._generation_round)
+            row.setdefault("generation_index", start_idx + i)
 
         # Stable schema for all result batches
         schema = {
@@ -707,6 +716,7 @@ class MDOracle:
             "skip_reason": pl.Utf8,
             "n_conformers": pl.Int64,
             "generation_round": pl.Int64,
+            "generation_index": pl.Int64,
         }
 
         new_df = pl.DataFrame(new_results, schema=schema)
@@ -761,6 +771,7 @@ class MDOracle:
                 "normalized_score": _clean(r.get("normalized_score")),
                 "docking_score": _clean(r.get("docking_score")),
                 "generation_round": r.get("generation_round"),
+                "generation_index": r.get("generation_index"),
                 "valid_pose_found": r.get("valid_pose_found"),
                 "skip_reason": r.get("skip_reason"),
             }

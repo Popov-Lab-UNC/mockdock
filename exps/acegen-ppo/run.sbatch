@@ -8,6 +8,8 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=ppo_%j.log
 #SBATCH --error=ppo_%j.err
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=shuhang@unc.edu
 
 # ── Environment ───────────────────────────────────────────────────────────────
 module load autodock-gpu

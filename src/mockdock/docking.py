@@ -9,6 +9,8 @@ from typing import Optional, Union
 
 from rdkit import RDLogger
 
+from .utils import effective_cpu_count
+
 # Silence RDKit noise
 RDLogger.DisableLog("rdApp.*")
 
@@ -27,7 +29,7 @@ class DockingOracle(ABC):
     ):
         self.receptor_file = Path(receptor_file).resolve()
         self.n_poses = n_poses
-        self.n_cpus = n_cpus or multiprocessing.cpu_count()
+        self.n_cpus = n_cpus or effective_cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else 1
         self.save_dir = Path(save_dir) if save_dir else None
 
@@ -128,7 +130,7 @@ class AutoDockGPUOracle(DockingOracle):
 
             # Run ADGPU
             env = os.environ.copy()
-            n_threads = min(8, multiprocessing.cpu_count())
+            n_threads = min(8, effective_cpu_count())
             env.update(
                 {
                     "OMP_NUM_THREADS": str(n_threads),

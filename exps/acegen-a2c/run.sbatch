@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=a2c_fcgmb
-#SBATCH --partition=a100-gpu
+#SBATCH --partition=l40-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
@@ -8,6 +8,8 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=a2c_%j.log
 #SBATCH --error=a2c_%j.err
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=shuhang@unc.edu
 
 # ── Environment ───────────────────────────────────────────────────────────────
 module load autodock-gpu

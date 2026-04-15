@@ -227,7 +227,9 @@ class Task:
         self.md_oracle = MDOracle(benchmark_name, budget=budget, run_dir=run_dir)
 
         # PrexSyn-compatible oracle wrapping MDOracle
-        self.oracle_fn: OracleProtocol = CachedOracle(MDOracleAdapter(self.md_oracle))
+        # Do not cache MDOracle calls here: every generated molecule should be
+        # explicitly scored against the oracle and consume budget.
+        self.oracle_fn: OracleProtocol = MDOracleAdapter(self.md_oracle)
         self.constraint_fn: OracleProtocol = CachedOracle(_get_null_oracle())
 
         self.step_strategy = FingerprintGenetic(
@@ -326,6 +328,7 @@ class Task:
                         constraint_fn=self.constraint_fn,
                         cond_query=cond_query,
                         time_limit=time_limit,
+                        stop_condition=lambda: self.md_oracle.status != "active",
                     )
                     tracker: OptimTracker = optimizer.run()
                     df_result = tracker.get_dataframe()

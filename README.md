@@ -1,4 +1,8 @@
-# mockdock
+# MOCKDOCK
+
+<p align="center">
+  <img src="assets/Mock_Dock_Duck.svg" alt="MockDock banner" width="900" />
+</p>
 
 A docking-based benchmarking package for chemical language models (CLMs) for fragment-constrained molecular generation. 
 

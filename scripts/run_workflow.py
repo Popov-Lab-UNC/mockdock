@@ -37,6 +37,7 @@ from mockdock.receptor import ReceptorPreparer
 from mockdock.utils import (
     check_2d_match,
     detect_gpus,
+    effective_cpu_count,
     plot_docking_results,
     resolve_backend,
 )
@@ -251,7 +252,7 @@ def run_docking_workflow(
 
         try:
             # 1. Hardware and Backend Resolution
-            actual_n_cpus = n_cpus or multiprocessing.cpu_count()
+            actual_n_cpus = n_cpus or effective_cpu_count()
             actual_n_gpus = n_gpus if n_gpus is not None else detect_gpus()
 
             adgpu_exe = config.get("adgpu_executable", "adgpu")

@@ -1,5 +1,6 @@
 # Standard library imports
 import asyncio
+import multiprocessing
 import os
 import shutil
 import subprocess
@@ -36,6 +37,31 @@ def detect_gpus() -> int:
     except (subprocess.SubprocessError, FileNotFoundError):
         pass
     return 0
+
+
+def effective_cpu_count() -> int:
+    """Return CPUs this job may use (Slurm / Linux cgroup aware).
+
+    ``multiprocessing.cpu_count()`` often reports every logical CPU on the host
+    (for example 128) even when Slurm grants ``--cpus-per-task=2``. Mockdock uses
+    this value for ``multiprocessing.Pool`` sizing, so the raw host count can
+    spawn far too many workers and trigger OOM.
+    """
+    raw = os.environ.get("SLURM_CPUS_PER_TASK")
+    if raw:
+        try:
+            n = int(raw)
+            if n > 0:
+                return n
+        except ValueError:
+            pass
+    try:
+        aff = os.sched_getaffinity(0)
+        if aff:
+            return max(1, len(aff))
+    except (AttributeError, OSError):
+        pass
+    return max(1, multiprocessing.cpu_count())
 
 
 def resolve_backend(
