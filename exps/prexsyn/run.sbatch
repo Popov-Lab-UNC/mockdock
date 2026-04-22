@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=prexsyn_mockdock
-#SBATCH --partition=a100-gpu
+#SBATCH --partition=l40-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
@@ -16,34 +16,28 @@ module load autodock-gpu
 module load autogrid
 
 # Canonical Longleaf path — $HOME is not always the same on compute vs login.
-MINICONDA_ROOT=/nas/longleaf/home/shuhang/miniconda3
-CONDA_PATH="${MINICONDA_ROOT}/bin/conda"
-eval "$($CONDA_PATH shell.bash hook)"
-conda activate prexsyn
+VENV_PATH="/work/users/s/h/shuhang/prexsyn/.venv"
+source "${VENV_PATH}/bin/activate"
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 export PYTHONPATH=$PYTHONPATH:/work/users/s/h/shuhang/prexsyn
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR=/work/users/s/h/shuhang/benchmark/exps/prexsyn
-PREXSYN_MODEL=/work/users/s/h/shuhang/prexsyn/data/trained_models/v1_converted.yaml
+PREXSYN_MODEL=/work/users/s/h/shuhang/prexsyn/data/trained_models/enamine2310_rxn115_202511.yml
 OUT_DIR=${SCRIPT_DIR}/outputs
 
 # ── Parameters ────────────────────────────────────────────────────────────────
 # budget        : max oracle (docking) calls per benchmark
 # num_runs      : independent optimization runs per benchmark (increase for stats)
-# num_init      : molecules sampled during initialisation
-# bottleneck    : elite population size fed to FingerprintGenetic each step
+# num_init      : population size for random initialization
+# bottleneck    : elite population size for genetic selection each step
 # time_limit    : per-run wall-clock cap in seconds (empty = no limit)
 BUDGET=1000
 NUM_RUNS=5
 NUM_INIT=25
 BOTTLENECK=50
 TIME_LIMIT=""
-
-# Set to "--fragment-condition" to enable soft BRICS fragment bias in PrexSyn.
-# Leave empty ("") for unconditioned generation (oracle still enforces fragment).
-FRAGMENT_CONDITION="--fragment-condition"
 
 # ── Benchmarks ────────────────────────────────────────────────────────────────
 BENCHMARKS=(DPP4 CHK1 ITK PEPCK TTK VEGFR2)
@@ -58,7 +52,6 @@ echo " Num runs       : ${NUM_RUNS}"
 echo " Init samples   : ${NUM_INIT}"
 echo " Bottleneck     : ${BOTTLENECK}"
 echo " Time limit     : ${TIME_LIMIT:-none}"
-echo " Fragment cond. : ${FRAGMENT_CONDITION:-off}"
 echo " Output dir     : ${OUT_DIR}"
 echo " SLURM job ID   : ${SLURM_JOB_ID}"
 echo "========================================================"
@@ -91,7 +84,7 @@ for RUN_IDX in $(seq 1 "${NUM_RUNS}"); do
     echo " $(date)"
     echo "──────────────────────────────────────────────────────"
 
-    "${CONDA_PREFIX}/bin/python" -u run.py \
+    python -u run.py \
         --model             "${PREXSYN_MODEL}" \
         --budget            "${BUDGET}" \
         --num-runs          1 \
@@ -100,7 +93,6 @@ for RUN_IDX in $(seq 1 "${NUM_RUNS}"); do
         --out               "${OUT_DIR}" \
         --run-dir           "${RUN_PARENT}" \
         ${TIME_LIMIT_FLAG} \
-        ${FRAGMENT_CONDITION} \
         $(for b in "${BENCHMARKS[@]}"; do printf -- "--benchmark %q " "$b"; done)
 
     echo ""

@@ -17,15 +17,13 @@ def test_compute_metrics_generates_expected_keys(tmp_path: Path, monkeypatch):
         def get_initial_compounds():
             return pl.DataFrame({"canonical_smiles": ["CC"]})
 
-    class _NoPains:
+    class _PassAllFilters:
         @staticmethod
-        def HasMatch(_):
-            return False
+        def evaluate(mol):
+            return {"pass": True, "rules_hit": [], "mw": 200, "logp": 2.0}
 
     monkeypatch.setattr(evaluator_mod, "BenchmarkLoader", _FakeLoader)
-    monkeypatch.setattr(
-        evaluator_mod.MDEvaluator, "_build_pains_catalog", staticmethod(lambda: _NoPains())
-    )
+    monkeypatch.setattr(evaluator_mod, "MDFilters", lambda **kwargs: _PassAllFilters())
 
     df = pl.DataFrame(
         {
@@ -45,3 +43,9 @@ def test_compute_metrics_generates_expected_keys(tmp_path: Path, monkeypatch):
     assert "avg_top_1" in out
     assert "valid_pose_rate" in out
     assert out["avg_top_1"] >= out["avg_top_10"]
+    
+    # Check filtered metrics
+    assert "avg_top_1_filtered" in out
+    assert "avg_top_10_filtered" in out
+    assert "auc_top_10_filtered" in out
+    assert "fraction_medchem_pass" in out

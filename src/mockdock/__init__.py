@@ -2,6 +2,7 @@ from .analysis import DockingAnalyzer
 from .data import fetch_chembl_data
 from .docking import AutoDockGPUOracle, AutoDockVinaOracle, DockingOracle
 from .evaluator import MDEvaluator
+from .filters import MDFilters
 from .ligand_prep import LigandPreparer
 from .loader import BenchmarkLoader
 from .oracle import MDOracle
@@ -47,4 +48,5 @@ __all__ = [
     "resolve_backend",
     "standardize_smiles",
     "check_2d_match",
+    "MDFilters",
 ]

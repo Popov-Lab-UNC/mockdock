@@ -24,6 +24,7 @@ from rdkit.Chem import QED, AllChem, Descriptors
 from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
+from .filters import MDFilters
 from .loader import BenchmarkLoader
 
 METRIC_DESCRIPTIONS = {
@@ -46,8 +47,13 @@ METRIC_DESCRIPTIONS = {
     "avg_top_10": "Mean normalized docking score of the 10 best-scoring molecules.",
     "avg_top_100": "Mean normalized docking score of the 100 best-scoring molecules.",
     "auc_top_10": "AUC of running top-10 avg score curve over cumulative oracle calls.",
+    "avg_top_1_filtered": "Normalized docking score of the best molecule passing MedChem filters.",
+    "avg_top_10_filtered": "Mean normalized docking score of the 10 best molecules passing MedChem filters.",
+    "avg_top_100_filtered": "Mean normalized docking score of the 100 best molecules passing MedChem filters.",
+    "auc_top_10_filtered": "AUC of running top-10 avg score curve for MedChem-passing molecules.",
     "valid_pose_rate": "Fraction of docked molecules with a pose within the RMSD threshold.",
     "oracle_efficiency_80": "Oracle calls to reach 80% of final top-10 score (fewer is better).",
+    "fraction_medchem_pass": "Fraction of unique valid molecules passing structural alerts (PAINS, BMS) and physchem bounds.",
 }
 
 
@@ -62,7 +68,7 @@ class MDEvaluator:
     def __init__(self, benchmark_name: str, scratch_dir: Path | None = None):
         self.benchmark_name = benchmark_name
         self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
-        self._pains_catalog = self._build_pains_catalog()
+        self._filters = MDFilters(active_rulesets=["PAINS", "BMS"])
 
     def compute_metrics(self, results_csv: Path, output_path: Path | None = None) -> dict:
         """Compute all metrics for one results.csv file and optionally write JSON."""
@@ -116,8 +122,19 @@ class MDEvaluator:
             float(np.mean([self._sa_score(m) for m in unique_mols])) if unique_mols else 0.0
         )
         metrics["fragment_incorporation"] = self._fragment_rate(unique_smiles, fragment_smiles)
+
+        # MedChem Filtering
+        filter_results = [self._filters.evaluate(m) for m in unique_mols]
+        metrics["fraction_medchem_pass"] = sum(1 for r in filter_results if r["pass"]) / max(
+            len(unique_mols), 1
+        )
+        metrics["fraction_pains_free"] = sum(
+            1 for r in filter_results if "PAINS" not in r["rules_hit"]
+        ) / max(len(unique_mols), 1)
+        metrics["fraction_bms_free"] = sum(
+            1 for r in filter_results if "BMS" not in r["rules_hit"]
+        ) / max(len(unique_mols), 1)
         metrics["fraction_lipinski"] = self._lipinski_fraction(unique_mols)
-        metrics["fraction_pains_free"] = self._pains_free_fraction(unique_mols)
 
         # ─── Extrinsic Metrics ────────────────────────────────────────────────
         metrics["novelty"] = self._novelty(unique_smiles, ref_smiles_canonical)
@@ -157,11 +174,40 @@ class MDEvaluator:
                 scored_df
             )
             metrics["oracle_efficiency_80"] = self._oracle_efficiency(df, k=10, frac=0.80)
+
+            # Filtered scores
+            # We need to map SMILES to passing status
+            passing_smiles = {
+                s for s, r in zip(unique_smiles, filter_results) if r["pass"]
+            }
+            # Note: unique_smiles was calculated from valid_smiles which comes from df[smiles_col]
+            # We can use pl.Series.is_in()
+            filtered_scored_df = scored_df.filter(pl.col(smiles_col).is_in(list(passing_smiles)))
+            
+            if not filtered_scored_df.is_empty():
+                top_f = filtered_scored_df.sort("normalized_score", descending=True)
+                metrics["avg_top_1_filtered"] = float(top_f.head(1)["normalized_score"].mean())
+                metrics["avg_top_10_filtered"] = float(top_f.head(10)["normalized_score"].mean())
+                metrics["avg_top_100_filtered"] = float(top_f.head(100)["normalized_score"].mean())
+                
+                # For AUC, we need a version of df where non-passing molecules have their score masked or filtered
+                # Usually we want the AUC of the search *among* passing molecules.
+                # If a non-passing molecule is found, it shouldn't contribute to the top-k buffer for filtered AUC.
+                metrics["auc_top_10_filtered"] = self._auc_top_k(df, k=10, passing_smiles=passing_smiles)
+            else:
+                metrics["avg_top_1_filtered"] = 0.0
+                metrics["avg_top_10_filtered"] = 0.0
+                metrics["avg_top_100_filtered"] = 0.0
+                metrics["auc_top_10_filtered"] = 0.0
         else:
             metrics["avg_top_1"] = 0.0
             metrics["avg_top_10"] = 0.0
             metrics["avg_top_100"] = 0.0
             metrics["auc_top_10"] = 0.0
+            metrics["avg_top_1_filtered"] = 0.0
+            metrics["avg_top_10_filtered"] = 0.0
+            metrics["avg_top_100_filtered"] = 0.0
+            metrics["auc_top_10_filtered"] = 0.0
             metrics["valid_pose_rate"] = 0.0
             metrics["oracle_efficiency_80"] = float(len(df))
 
@@ -192,12 +238,6 @@ class MDEvaluator:
             if c is not None:
                 canonical.add(c)
         return canonical
-
-    @staticmethod
-    def _build_pains_catalog() -> FilterCatalog:
-        params = FilterCatalogParams()
-        params.AddCatalog(FilterCatalogParams.FilterCatalogs.PAINS)
-        return FilterCatalog(params)
 
     @staticmethod
     def _tanimoto_diversity(smiles_list: list[str]) -> float:
@@ -292,12 +332,6 @@ class MDEvaluator:
         count = sum(1 for m in mols if passes_ro5(m))
         return count / len(mols)
 
-    def _pains_free_fraction(self, mols: list[Chem.Mol]) -> float:
-        if not mols:
-            return 0.0
-        count = sum(1 for m in mols if not self._pains_catalog.HasMatch(m))
-        return count / len(mols)
-
     @staticmethod
     def _novelty(generated: list[str], reference: set[str]) -> float:
         if not generated:
@@ -334,20 +368,30 @@ class MDEvaluator:
         return float(np.mean(max_sims))
 
     @staticmethod
-    def _auc_top_k(df: pl.DataFrame, k: int = 10) -> float:
+    def _auc_top_k(df: pl.DataFrame, k: int = 10, passing_smiles: set[str] | None = None) -> float:
         """
         Compute AUC of the running top-k average normalized score.
         X-axis = cumulative oracle calls (row order).
+        
+        If passing_smiles is provided, only molecules in that set contribute to the buffer.
         """
+        smiles_col = "smiles" if "smiles" in df.columns else "original_smiles"
         scores = df["normalized_score"].to_list()
+        smiles = df[smiles_col].to_list()
+        
         running_max_k = []
         buffer = []
 
-        for s in scores:
-            buffer.append(s)
+        for s, sm in zip(scores, smiles):
+            if passing_smiles is None or sm in passing_smiles:
+                buffer.append(s)
+            
             # running top-k average
-            top_k = sorted(buffer, reverse=True)[:k]
-            running_max_k.append(np.mean(top_k))
+            if buffer:
+                top_k = sorted(buffer, reverse=True)[:k]
+                running_max_k.append(np.mean(top_k))
+            else:
+                running_max_k.append(0.0)
 
         # Cumulative oracle calls as X
         x = np.arange(1, len(running_max_k) + 1)

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ppod_fcgmb
-#SBATCH --partition=a100-gpu
+#SBATCH --partition=l40-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
@@ -15,8 +15,6 @@
 module load autodock-gpu
 module load autogrid
 
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate py312
 source /work/users/s/h/shuhang/acegen-open/.venv/bin/activate
 
 # ── Paths ─────────────────────────────────────────────────────────────────────

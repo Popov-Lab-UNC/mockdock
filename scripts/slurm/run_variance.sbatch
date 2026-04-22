@@ -12,8 +12,6 @@
 
 module load autodock-gpu
 module load autogrid
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate cctbx
 source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
 
 python /work/users/s/h/shuhang/benchmark/scripts/run_variance.py --config-dir /work/users/s/h/shuhang/benchmark/top_30_configs --iterations 5 --output-dir variance_runs

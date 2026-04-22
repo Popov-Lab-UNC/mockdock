@@ -1,21 +1,30 @@
 """
 PrexSyn × mockdock Benchmark Evaluation
 ======================================
-Evaluates PrexSyn on mockdock docking benchmarks using an exposed
-generate → score → update loop that mirrors the structure of
-prexsyn/scripts/benchmarks/optim.py as closely as possible.
+Evaluates PrexSyn on mockdock docking benchmarks using the current PrexSyn
+API: AllInOneLoader → MoleculeProjector → fingerprint genetic algorithm
+(shortcuts/genetic.py).
 
-Key differences from prexsyn's autodock_Mpro_7gaw task:
-  - Oracle is MDOracle (6 targets) rather than a bundled AutoDock oracle.
-  - The oracle call (score_with_oracle) is factored out so that the
-    SMILES list passed to and scores returned from MDOracle are visible.
-  - num_runs defaults to 1 (docking is expensive; increase for statistics).
+The optimization loop is implemented here (not delegated to a black-box
+Optimizer) so we have full visibility into every oracle call.
+
+Anti-cheat measures (vs the old Optimizer-based version):
+  1. Budget is charged for *every* molecule generated, including duplicates
+     that PrexSyn's own population-level dedup would otherwise make free.
+  2. The loop runs until the oracle budget is exhausted — no early stopping
+     at score 1.0 or any other internal convergence criterion.
 """
 
+from __future__ import annotations
+
+import datetime
+import heapq
 import logging
 import pathlib
 import sys
-from typing import cast
+import time
+from collections.abc import Sequence
+from typing import Optional
 
 import click
 import numpy as np
@@ -23,179 +32,247 @@ import pandas as pd
 import torch
 from rdkit import Chem
 
-from prexsyn.applications.optim import Optimizer
-from prexsyn.applications.optim.step import FingerprintGenetic
-from prexsyn.applications.optim.tracker import OptimTracker
-from prexsyn.factories import load_model
-from prexsyn.factories.facade import Facade
-from prexsyn.models.prexsyn import PrexSyn
-from prexsyn.properties import PropertySet
-from prexsyn.queries import Query
-from prexsyn.utils.oracles import CachedOracle, OracleProtocol
+from prexsyn.shortcuts import AllInOneLoader, MoleculeProjector
+from prexsyn.shortcuts.genetic import EmbryoSet, History, Population, evolve, hatch, initialize
+
+from prexsyn_engine.chemistry import Molecule
+from prexsyn_engine.chemspace import Synthesis
 
 from mockdock import MDOracle
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Queries  (identical to prexsyn/scripts/benchmarks/optim.py)
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-def query_lipinski(ps: PropertySet, pn: str = "rdkit_descriptor_upper_bound") -> Query:
-    p = ps[pn]
-    return (
-        p.lt("amw", 500.0)
-        & p.lt("CrippenClogP", 5.0)
-        & p.lt("lipinskiHBD", 4)
-        & p.lt("lipinskiHBA", 9)
-        & p.lt("NumRotatableBonds", 9)
-        & p.lt("tpsa", 140.0)
-    )
-
-
-def query_fragment(ps: PropertySet, fragment_smiles: str) -> Query:
-    """
-    Soft BRICS-based fragment conditioning query.
-    Biases PrexSyn toward generating molecules that decompose into
-    fragments resembling the benchmark fragment.
-    Hard enforcement is always applied by MDOracle regardless.
-    """
-    fragment_mol = Chem.MolFromSmiles(fragment_smiles)
-    if fragment_mol is None:
-        raise ValueError(f"Invalid fragment SMILES: {fragment_smiles}")
-    return ps["brics"].has(fragment_mol)
-
-
-def query_initial_context(ps: PropertySet, ref_mols: list[Chem.Mol]) -> Query | None:
-    """
-    Build an ECFP4 reference query from benchmark-provided initial compounds.
-    """
-    if not ref_mols:
-        return None
-    ecfp = ps["ecfp4"]
-    query: Query | None = None
-    for mol in ref_mols:
-        q = ecfp.eq(mol)
-        query = q if query is None else (query | q)
-    return query
-
-
-def _pick_column(columns: list[str], candidates: list[str]) -> str | None:
-    for cand in candidates:
-        if cand in columns:
-            return cand
-    return None
-
-
-def _extract_initial_context_mols(
-    oracle: MDOracle,
-    max_refs: int,
-) -> list[Chem.Mol]:
-    """
-    Select representative initial compounds as PrexSyn context references.
-    """
-    initial_df = oracle.get_initial_compounds()
-    if initial_df.is_empty():
-        return []
-
-    cols = initial_df.columns
-    smiles_col = _pick_column(cols, ["canonical_smiles", "smiles", "SMILES"])
-    score_col = _pick_column(cols, ["pchembl_value", "activity", "score"])
-    if smiles_col is None:
-        return []
-
-    rows = initial_df.select(
-        [smiles_col] + ([score_col] if score_col is not None else [])
-    ).iter_rows(named=True)
-
-    fragment_mol = Chem.MolFromSmiles(oracle.fragment_smiles)
-    seen: set[str] = set()
-    candidates: list[tuple[float, Chem.Mol]] = []
-    for row in rows:
-        smi_raw = row.get(smiles_col)
-        if smi_raw is None:
-            continue
-        smi = str(smi_raw)
-        if smi in seen:
-            continue
-        seen.add(smi)
-
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            continue
-        if fragment_mol is not None and not mol.HasSubstructMatch(fragment_mol):
-            continue
-
-        score = row.get(score_col) if score_col is not None else 0.0
-        try:
-            val = float(score) if score is not None else 0.0
-        except Exception:
-            val = 0.0
-        candidates.append((val, mol))
-
-    if not candidates:
-        return []
-
-    # Use strongest references from the provided initial pool.
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return [mol for _, mol in candidates[:max_refs]]
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# AUC-Top10  (identical to prexsyn/scripts/benchmarks/optim.py)
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-def auc_top10_from_df(df: pd.DataFrame, max_evals: int) -> float:
-    import heapq
-
-    scores: list[float] = df["score"].tolist()
-    top10: list[float] = []
-    moving_top10_avg: list[float] = []
-    for score in scores:
-        heapq.heappush(top10, score)
-        if len(top10) > 10:
-            heapq.heappop(top10)
-        moving_top10_avg.append(sum(top10) / len(top10) if top10 else 0.0)
-    if len(moving_top10_avg) < max_evals:
-        moving_top10_avg += [moving_top10_avg[-1]] * (max_evals - len(moving_top10_avg))
-    return float(np.mean(moving_top10_avg[:max_evals]))
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# MDOracle adapter
+# Oracle adapter with anti-cheat deduplication tracking
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 class MDOracleAdapter:
     """
-    Wraps MDOracle so it satisfies OracleProtocol (Chem.Mol → float).
+    Wraps MDOracle to satisfy the `_FitnessFunction` protocol expected by
+    prexsyn.shortcuts.genetic: takes a list of (Synthesis, Molecule) and
+    returns an np.ndarray of fitness scores in [0, 1] (or negative).
 
-    The score() call is made visible here: SMILES are extracted from
-    the molecule(s), passed to oracle.score(), and the dict result is
-    unpacked back into floats.
+    Anti-cheat: every SMILES the adapter has ever yielded a score for is
+    cached in `_seen`.  When the model re-generates a molecule it already
+    evaluated, we return the cached score but still charge one budget unit
+    for it — exactly the same cost as a novel molecule.
+
+    This prevents PrexSyn's population-level dedup from giving repeated
+    molecules a free ride through the budget counter.
     """
 
     def __init__(self, oracle: MDOracle) -> None:
         self._oracle = oracle
+        self._seen: dict[str, float] = {}
 
-    def __call__(self, mol: Chem.Mol | list[Chem.Mol]) -> float | list[float]:
-        if isinstance(mol, list):
-            smiles_list = [Chem.MolToSmiles(m) for m in mol]
-            # ── Explicit call to MDOracle ──────────────────────────────────
-            score_map: dict[str, float] = self._oracle.score(smiles_list)
-            return [float(score_map.get(smi, 0.0)) for smi in smiles_list]
-        else:
-            smi = Chem.MolToSmiles(mol)
-            score_map = self._oracle.score([smi])
-            return float(score_map.get(smi, 0.0))
+    @property
+    def budget_used(self) -> int:
+        return self._oracle.budget_used
+
+    @property
+    def budget_exhausted(self) -> bool:
+        return self._oracle.budget_used >= self._oracle.max_budget
+
+    def __call__(
+        self,
+        phenotypes: Sequence[tuple[Synthesis, Molecule]],
+    ) -> np.ndarray:
+        """Score phenotypes, charging budget for every molecule including repeats."""
+        smiles_list = [mol.smiles() for _, mol in phenotypes]
+        scores = self._charge_and_cache(smiles_list)
+        return np.array([scores[smi] for smi in smiles_list], dtype=np.float32)
+
+    def _charge_and_cache(self, smiles_list: list[str]) -> dict[str, float]:
+        novel: list[str] = []
+        repeated: list[str] = []
+        for smi in smiles_list:
+            (repeated if smi in self._seen else novel).append(smi)
+
+        result: dict[str, float] = {}
+
+        # Score novel molecules through the real oracle (consumes budget normally)
+        if novel:
+            score_map = self._oracle.score(novel)
+            result.update(score_map)
+            for smi, sc in score_map.items():
+                self._seen[smi] = sc
+
+        # Handle repeats: use cached score but charge budget
+        if repeated:
+            n = len(repeated)
+            self._oracle.budget_used = min(
+                self._oracle.budget_used + n, self._oracle.max_budget
+            )
+            print(
+                f"[prexsyn-adapter] {n} repeated SMILES charged to budget "
+                f"(budget now {self._oracle.budget_used}/{self._oracle.max_budget})"
+            )
+            for smi in repeated:
+                result[smi] = self._seen[smi]
+
+        return result
 
     def __repr__(self) -> str:
-        return f"MDOracle({self._oracle.benchmark_name})"
+        return f"MDOracleAdapter({self._oracle.benchmark_name})"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Task  (mirrors prexsyn/scripts/benchmarks/optim.py Task)
+# AUC-Top10 metric (used for per-run summary)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def auc_top10_from_scores(all_scores: list[float], max_evals: int) -> float:
+    top10: list[float] = []
+    moving_avg: list[float] = []
+    for score in all_scores:
+        heapq.heappush(top10, score)
+        if len(top10) > 10:
+            heapq.heappop(top10)
+        moving_avg.append(sum(top10) / len(top10) if top10 else 0.0)
+    if len(moving_avg) < max_evals:
+        last = moving_avg[-1] if moving_avg else 0.0
+        moving_avg += [last] * (max_evals - len(moving_avg))
+    return float(np.mean(moving_avg[:max_evals]))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Single optimization run
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def initialize_from_context(
+    smiles_list: list[str],
+    size: int,
+    projector: MoleculeProjector,
+    fn,
+) -> tuple[Population, History]:
+    """Initialize genetic algorithm context using specific mockdock baseline SMILES."""
+    mols = [Molecule.from_smiles(s) for s in smiles_list]
+    base_genotypes = projector.descriptor_function(mols)
+
+    n_seeds = len(base_genotypes)
+    target_size = size * 2
+
+    # Sample to form embryos
+    indices = np.random.choice(n_seeds, size=target_size, replace=True)
+    seed_genotypes = base_genotypes[indices]
+    
+    # Apply a light 1% mutation rate for diversity
+    mutate_mask = np.random.rand(*seed_genotypes.shape) < 0.01
+    new_genotypes = np.where(mutate_mask, ~seed_genotypes, seed_genotypes)
+
+    embryos = EmbryoSet(
+        genotypes=new_genotypes,
+        unique_identifiers=np.arange(target_size),
+        parents=np.full((target_size, 2), -1),
+    )
+
+    population = hatch(embryos, projector, projector.descriptor_function, fn)
+    history = History()
+    history.add_population(population)
+    return population, history
+
+
+def run_optimization(
+    loader: AllInOneLoader,
+    adapter: MDOracleAdapter,
+    budget: int,
+    num_init_samples: int,
+    bottleneck_size: int,
+    bottleneck_temperature: float,
+    descriptor: str,
+    num_samples_per_query: int,
+    logger: logging.Logger,
+    time_limit: Optional[int] = None,
+) -> tuple[pd.DataFrame, float]:
+    """
+    Run one optimization episode.
+
+    Returns:
+        (tracker_df, auc_top10)  — results DataFrame and scalar AUC-Top10 metric.
+    """
+    model = loader.model().to("cuda")
+    detokenizer = loader.detokenizer()
+
+    projector = MoleculeProjector(
+        model=model,
+        detokenizer=detokenizer,
+        descriptor=descriptor,
+        num_samples=num_samples_per_query,
+    )
+
+    # Fitness function: wraps the oracle adapter  
+    fitness_fn = adapter
+
+    initial_context_df = adapter._oracle.get_initial_compounds()
+    initial_smiles = initial_context_df["canonical_smiles"].to_list()
+    
+    logger.info(f"Initializing population (size={num_init_samples}) from {len(initial_smiles)} mockdock baseline molecules...")
+    t_start = time.time()
+    population, history = initialize_from_context(
+        smiles_list=initial_smiles,
+        size=num_init_samples,
+        projector=projector,
+        fn=fitness_fn,
+    )
+
+    # Tracker: list of (smiles, score) in generation order
+    tracker_rows: list[dict] = []
+    all_scores: list[float] = []
+    step = 0
+
+    def _record_population(ppl: Population, gen: int) -> None:
+        for (_, mol), fit in zip(ppl.phenotypes, ppl.fitnesses):
+            smi = mol.smiles()
+            tracker_rows.append({
+                "smiles": smi,
+                "score": float(fit),
+                "step": gen,
+            })
+            all_scores.append(float(fit))
+
+    _record_population(population, step)
+
+    logger.info(
+        f"Init complete. Budget used: {adapter.budget_used}/{budget}. "
+        f"Best score: {float(population.fitnesses.max()):.4f}"
+    )
+
+    # ── Main optimization loop ────────────────────────────────────────────
+    # Runs until budget exhausted. No early stopping at any score threshold.
+    while not adapter.budget_exhausted:
+        elapsed = time.time() - t_start
+        if time_limit is not None and elapsed >= time_limit:
+            logger.info(f"Time limit ({time_limit}s) reached. Stopping.")
+            break
+
+        step += 1
+        evolve(
+            ppl=population,
+            history=history,
+            projector=projector,
+            fitness_fn=fitness_fn,
+            k=bottleneck_size,
+            t=bottleneck_temperature,
+        )
+        _record_population(population, step)
+
+        best = float(population.fitnesses.max())
+        auc = auc_top10_from_scores(all_scores, budget)
+        logger.info(
+            f"Step {step:4d}: budget={adapter.budget_used}/{budget}, "
+            f"best={best:.4f}, auc_top10={auc:.4f}"
+        )
+
+    # ── Build results DataFrame ───────────────────────────────────────────
+    df = pd.DataFrame(tracker_rows)
+    auc_top10 = auc_top10_from_scores(all_scores, budget)
+    logger.info(f"Run complete. AUC-Top10({budget//1000}k)={auc_top10:.4f}")
+    return df, auc_top10
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Task (one benchmark, potentially multiple independent runs)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -205,44 +282,30 @@ class Task:
         benchmark_name: str,
         budget: int = 1000,
         num_runs: int = 1,
-        constraint_name: str = "null",
         bottleneck_size: int = 50,
         bottleneck_temperature: float = 0.5,
-        num_init_samples: int = 500,
-        use_fragment_condition: bool = False,
-        use_initial_context: bool = True,
-        initial_context_refs: int = 8,
+        num_init_samples: int = 25,
+        descriptor: str = "ecfp4",
+        num_samples_per_query: int = 32,
         run_dir: pathlib.Path | None = None,
     ) -> None:
-        super().__init__()
         self.benchmark_name = benchmark_name
         self.budget = budget
         self.num_runs = num_runs
         self.num_init_samples = num_init_samples
-        self.use_fragment_condition = use_fragment_condition
-        self.use_initial_context = use_initial_context
-        self.initial_context_refs = initial_context_refs
+        self.bottleneck_size = bottleneck_size
+        self.bottleneck_temperature = bottleneck_temperature
+        self.descriptor = descriptor
+        self.num_samples_per_query = num_samples_per_query
 
-        # MDOracle — one instance shared across all runs (tracks total budget)
         self.md_oracle = MDOracle(benchmark_name, budget=budget, run_dir=run_dir)
-
-        # PrexSyn-compatible oracle wrapping MDOracle
-        # Do not cache MDOracle calls here: every generated molecule should be
-        # explicitly scored against the oracle and consume budget.
-        self.oracle_fn: OracleProtocol = MDOracleAdapter(self.md_oracle)
-        self.constraint_fn: OracleProtocol = CachedOracle(_get_null_oracle())
-
-        self.step_strategy = FingerprintGenetic(
-            bottleneck_size=bottleneck_size,
-            bottleneck_temperature=bottleneck_temperature,
-        )
+        self.adapter = MDOracleAdapter(self.md_oracle)
 
     def run(
         self,
-        facade: Facade,
-        model: PrexSyn,
+        loader: AllInOneLoader,
         out_root: pathlib.Path,
-        time_limit: int | None = None,
+        time_limit: Optional[int] = None,
     ) -> None:
         task_dir = self.md_oracle.run_dir
         task_dir.mkdir(parents=True, exist_ok=True)
@@ -258,127 +321,75 @@ class Task:
         logger.info(f"PDB ID      : {self.md_oracle.pdb_id}")
         logger.info(f"Budget      : {self.budget}")
         logger.info(f"Num runs    : {self.num_runs}")
-        logger.info(f"Frag. cond. : {self.use_fragment_condition}")
-        logger.info(
-            f"Init ctx    : {self.use_initial_context} (refs={self.initial_context_refs})"
-        )
-        logger.info(f"Run dir     : {self.md_oracle.run_dir}")
-
-        cond_parts: list[Query] = []
-        if self.use_fragment_condition:
-            try:
-                frag_query = query_fragment(
-                    facade.property_set, self.md_oracle.fragment_smiles
-                )
-                cond_parts.append(frag_query)
-                logger.info(f"Fragment query enabled: {frag_query}")
-            except Exception as e:
-                logger.warning(f"Could not build fragment query ({e}). Skipping.")
-
-        if self.use_initial_context:
-            try:
-                ref_mols = _extract_initial_context_mols(
-                    self.md_oracle, self.initial_context_refs
-                )
-                ctx_query = query_initial_context(facade.property_set, ref_mols)
-                if ctx_query is not None:
-                    cond_parts.append(ctx_query)
-                    logger.info(
-                        f"Initial-compound context enabled with {len(ref_mols)} refs."
-                    )
-                else:
-                    logger.warning(
-                        "No valid initial-compound references found for context."
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"Could not build initial-compound context ({e}). Skipping."
-                )
-
-        cond_query: Query | None = None
-        if cond_parts:
-            cond_query = cond_parts[0]
-            for q in cond_parts[1:]:
-                cond_query = cond_query & q
+        logger.info(f"Descriptor  : {self.descriptor}")
+        logger.info(f"Bottleneck  : {self.bottleneck_size}")
+        logger.info(f"Run dir     : {task_dir}")
 
         auc_top10_all: list[float] = []
-        df_result_all: list[pd.DataFrame] = []
+        total_time_accum = 0.0
 
         try:
             for run_id in range(1, self.num_runs + 1):
-                logger.info(
-                    f"Running task: {self.benchmark_name}, run {run_id}/{self.num_runs}"
-                )
+                logger.info(f"Run {run_id}/{self.num_runs} starting...")
                 result_path = task_dir / f"run_{run_id:02d}.df.pkl"
 
                 if result_path.exists():
                     logger.info(f"Skipping existing run: {result_path}")
-                    df_result = cast(pd.DataFrame, pd.read_pickle(result_path))
-                    auc_top10 = auc_top10_from_df(df_result, self.budget)
-                    df_result_all.append(df_result)
-                else:
-                    optimizer = Optimizer(
-                        facade=facade,
-                        model=model,
-                        init_query=query_lipinski(facade.property_set),
-                        num_init_samples=self.num_init_samples,
-                        max_evals=self.budget,
-                        step_strategy=self.step_strategy,
-                        oracle_fn=self.oracle_fn,
-                        constraint_fn=self.constraint_fn,
-                        cond_query=cond_query,
-                        time_limit=time_limit,
-                        stop_condition=lambda: self.md_oracle.status != "active",
+                    df_result = pd.read_pickle(result_path)
+                    auc_top10 = auc_top10_from_scores(
+                        df_result["score"].tolist(), self.budget
                     )
-                    tracker: OptimTracker = optimizer.run()
-                    df_result = tracker.get_dataframe()
-                    auc_top10 = tracker.auc_top10(self.budget)
+                else:
+                    # Reset oracle budget for each independent run
+                    self.md_oracle.budget_used = 0
+                    self.adapter._seen.clear()
+
+                    t0 = time.time()
+                    df_result, auc_top10 = run_optimization(
+                        loader=loader,
+                        adapter=self.adapter,
+                        budget=self.budget,
+                        num_init_samples=self.num_init_samples,
+                        bottleneck_size=self.bottleneck_size,
+                        bottleneck_temperature=self.bottleneck_temperature,
+                        descriptor=self.descriptor,
+                        num_samples_per_query=self.num_samples_per_query,
+                        logger=logger,
+                        time_limit=time_limit,
+                    )
+                    total_time_accum += time.time() - t0
                     df_result.to_pickle(result_path)
-                    df_result_all.append(df_result)
 
                 auc_top10_all.append(auc_top10)
                 logger.info(
-                    f"Run {run_id}/{self.num_runs}, "
-                    f"AUC-Top10({self.budget / 1000:.0f}k): {auc_top10:.4f}, "
-                    f"Rounds: {self.md_oracle.generation_round}"
+                    f"Run {run_id}/{self.num_runs}: "
+                    f"AUC-Top10({self.budget // 1000}k)={auc_top10:.4f}"
                 )
         finally:
-            # Save oracle results and run artifacts even if interrupted
             self.md_oracle.results_df.write_csv(task_dir / "oracle_results.csv")
             try:
                 self.md_oracle.export_top_poses(n=10)
             except Exception as exc:
                 logger.warning(f"Could not export top poses: {exc}")
-            self.md_oracle.save_metrics(extra={"model": "prexsyn"})
+            total_oracle_time = self.md_oracle._total_prep_time + self.md_oracle._total_dock_time + self.md_oracle._total_analysis_time
+            total_gen_time_sec = max(0.0, total_time_accum - total_oracle_time)
+            self.md_oracle.save_metrics(extra={
+                "model": "prexsyn",
+                "total_generation_time_sec": total_gen_time_sec,
+                "n_generated_ligands": max(1, len(self.md_oracle.results_df))
+            })
 
         logger.info("==== Summary ====")
         logger.info(f"Oracle: {self.benchmark_name}")
         logger.info(f"- Runs: {len(auc_top10_all)}")
-        logger.info(
-            f"- AUC-Top10: {np.mean(auc_top10_all):.3f} ± {np.std(auc_top10_all):.3f}"
-        )
-        logger.info(f"- Budget used: {self.md_oracle.budget_used} / {self.budget}")
-        logger.info(f"- Rounds: {self.md_oracle.generation_round}")
+        if auc_top10_all:
+            logger.info(
+                f"- AUC-Top10: {np.mean(auc_top10_all):.3f} ± {np.std(auc_top10_all):.3f}"
+            )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Null oracle helper
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-def _get_null_oracle() -> OracleProtocol:
-    """Returns 0.0 for every molecule (no constraint)."""
-
-    def _null(mol: Chem.Mol | list[Chem.Mol]) -> float | list[float]:
-        if isinstance(mol, list):
-            return [0.0] * len(mol)
-        return 0.0
-
-    return _null  # type: ignore[return-value]
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# CLI  (mirrors prexsyn/scripts/benchmarks/optim.py)
+# CLI
 # ──────────────────────────────────────────────────────────────────────────────
 
 BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
@@ -389,7 +400,7 @@ BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
     "--model",
     "model_path",
     type=click.Path(exists=True, path_type=pathlib.Path),
-    default="./data/trained_models/v1_converted.yaml",
+    default="./data/trained_models/enamine2310_rxn115_202511.yml",
     show_default=True,
     help="Path to PrexSyn model .yaml (checkpoint .ckpt must be alongside it).",
 )
@@ -405,7 +416,7 @@ BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
     type=int,
     default=1000,
     show_default=True,
-    help="Total oracle scoring budget per benchmark (number of molecules docked).",
+    help="Total oracle scoring budget per benchmark (number of molecules).",
 )
 @click.option(
     "--num-runs",
@@ -417,45 +428,43 @@ BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
 @click.option(
     "--num-init-samples",
     type=int,
-    default=500,
+    default=25,
     show_default=True,
-    help="Number of molecules sampled during initialization.",
+    help="Population size for random initialization.",
 )
 @click.option(
     "--bottleneck-size",
     type=int,
     default=50,
     show_default=True,
-    help="Elite population size passed to FingerprintGenetic each step.",
+    help="Elite population size for genetic selection each step.",
+)
+@click.option(
+    "--bottleneck-temperature",
+    type=float,
+    default=0.5,
+    show_default=True,
+    help="Softmax temperature for parent selection.",
+)
+@click.option(
+    "--num-samples-per-query",
+    type=int,
+    default=32,
+    show_default=True,
+    help="Number of PrexSyn samples generated per fingerprint query.",
+)
+@click.option(
+    "--descriptor",
+    type=str,
+    default="ecfp4",
+    show_default=True,
+    help="Molecular descriptor to use for PrexSyn conditioning (e.g. 'ecfp4').",
 )
 @click.option(
     "--time-limit",
     type=int,
     default=None,
     help="Wall-clock time limit per run in seconds (optional).",
-)
-@click.option(
-    "--fragment-condition",
-    is_flag=True,
-    default=False,
-    help=(
-        "Enable soft BRICS fragment conditioning. Biases PrexSyn toward "
-        "the benchmark fragment during generation. Hard enforcement is always "
-        "applied by MDOracle regardless."
-    ),
-)
-@click.option(
-    "--initial-context/--no-initial-context",
-    default=True,
-    show_default=True,
-    help="Use benchmark initial compounds to build PrexSyn ECFP context query.",
-)
-@click.option(
-    "--initial-context-refs",
-    type=int,
-    default=8,
-    show_default=True,
-    help="Number of initial compounds used as ECFP context references.",
 )
 @click.option(
     "selected_benchmarks",
@@ -471,7 +480,7 @@ BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
     "run_dir",
     type=click.Path(path_type=pathlib.Path),
     default=None,
-    help="Parent directory for all benchmark run outputs. Defaults to <script_dir>/run_<timestamp>.",
+    help="Parent directory for all benchmark run outputs.",
 )
 def main(
     model_path: pathlib.Path,
@@ -480,22 +489,18 @@ def main(
     num_runs: int,
     num_init_samples: int,
     bottleneck_size: int,
-    time_limit: int | None,
-    fragment_condition: bool,
-    initial_context: bool,
-    initial_context_refs: int,
+    bottleneck_temperature: float,
+    num_samples_per_query: int,
+    descriptor: str,
+    time_limit: Optional[int],
     selected_benchmarks: tuple[str, ...],
-    run_dir: pathlib.Path | None,
+    run_dir: Optional[pathlib.Path],
 ) -> None:
-    import datetime
-
     torch.set_grad_enabled(False)
-    facade, model = load_model(model_path, train=False)
-    model = model.to("cuda")
+
+    loader = AllInOneLoader(model_path)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create a single timestamped parent directory shared across all benchmarks.
-    # Layout: run_<timestamp>/<BENCHMARK>/poses/, results_full.csv, results.yaml, …
     script_dir = pathlib.Path(__file__).resolve().parent
     if run_dir is not None:
         run_parent = run_dir
@@ -513,16 +518,16 @@ def main(
             num_runs=num_runs,
             num_init_samples=num_init_samples,
             bottleneck_size=bottleneck_size,
-            use_fragment_condition=fragment_condition,
-            use_initial_context=initial_context,
-            initial_context_refs=initial_context_refs,
+            bottleneck_temperature=bottleneck_temperature,
+            descriptor=descriptor,
+            num_samples_per_query=num_samples_per_query,
             run_dir=run_parent / name,
         )
         for name in benchmarks
     ]
 
     for task in tasks:
-        task.run(facade, model, output_dir, time_limit=time_limit)
+        task.run(loader, output_dir, time_limit=time_limit)
 
 
 if __name__ == "__main__":

@@ -229,11 +229,19 @@ def run_benchmark(
 
     set_seed(seed)
 
+    import time
+
     task = MDTask(oracle)
     log.info("Starting %s RL loop …", ALGORITHM)
+    t0 = time.time()
     try:
         run_fn(cfg, task)
     finally:
+        total_time = time.time() - t0
+        oracle_time = oracle._total_prep_time + oracle._total_dock_time + oracle._total_analysis_time
+        total_gen_time_sec = max(0.0, total_time - oracle_time)
+        n_gen = max(1, len(oracle.results_df))
+        
         try:
             oracle.export_top_poses(n=10)
         except Exception as exc:
@@ -242,6 +250,8 @@ def run_benchmark(
             extra={
                 "model": f"acegen-{ALGORITHM}",
                 "seed": seed,
+                "total_generation_time_sec": total_gen_time_sec,
+                "n_generated_ligands": n_gen,
             }
         )
         log.info(

@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=reinvent_fcgmb
-#SBATCH --partition=a100-gpu
+#SBATCH --partition=l40-gpu
 #SBATCH --qos=gpu_access
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
-#SBATCH --time=2-00:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=reinvent_%j.log
 #SBATCH --error=reinvent_%j.err
 #SBATCH --mail-type=ALL
@@ -15,8 +15,6 @@
 module load autodock-gpu
 module load autogrid
 
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate py312
 source /work/users/s/h/shuhang/acegen-open/.venv/bin/activate
 
 # ── Paths ─────────────────────────────────────────────────────────────────────

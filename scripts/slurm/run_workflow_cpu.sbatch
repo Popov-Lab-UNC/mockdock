@@ -11,8 +11,6 @@
 #SBATCH --mail-user=shuhang@unc.edu
 
 module load autogrid
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate cctbx
 source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
 
 cd /work/users/s/h/shuhang/benchmark

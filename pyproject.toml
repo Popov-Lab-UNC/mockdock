@@ -37,7 +37,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-mockdock = ["configs/*.yaml", "grids/**/*", "bioactivity_data/*.csv"]
+mockdock = ["configs/*.yaml", "grids/**/*", "bioactivity_data/*.csv", "data/*.csv"]
 
 [tool.ruff]
 line-length = 100

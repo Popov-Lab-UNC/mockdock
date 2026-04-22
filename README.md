@@ -105,11 +105,19 @@ Computes standardized metrics for a finished run. It is lightweight and does not
 | `internal_diversity` | Average pairwise Tanimoto distance among unique valid molecules. |
 | `scaffold_diversity` | Fraction of unique Murcko scaffolds among unique valid molecules. |
 | `mean_qed` | Mean drug-likeness (QED) of valid molecules. |
+| `mean_qed_novel` | Mean drug-likeness (QED) of valid novel molecules. |
+| `mean_sa_novel` | Mean synthetic accessibility score of valid novel molecules. |
+| `fraction_medchem_pass` | Fraction of unique valid molecules passing structural alerts and physchem bounds. |
+| `fraction_pains_free` | Fraction of unique valid molecules not flagging any PAINS substructure. |
+| `fraction_bms_free` | Fraction of unique valid molecules not flagging any BMS substructure. |
+| `fraction_lipinski` | Fraction of unique valid molecules passing all four Lipinski Ro5 criteria. |
 | `fragment_incorporation`| Fraction of molecules containing the required 2D fragment. |
 | `novelty` | Fraction of molecules not present in the initial ChEMBL set. |
 | `effective_novelty` | Novel molecules that are also non-identical to their parents. |
 | `avg_top_10` | Mean normalized docking score of the top 10 molecules. |
+| `avg_top_10_filtered`| Mean normalized docking score of the top 10 molecules passing MedChem filters. |
 | `auc_top_10` | Area under the running top-10 score curve (optimization speed). |
+| `auc_top_10_filtered`| Area under the running top-10 score curve for MedChem-passing molecules. |
 | `oracle_efficiency_80` | Calls required to reach 80% of final top-10 score. |
 
 ## Scoring & Constraints
@@ -132,16 +140,22 @@ oracle._loader.require_pose_rmsd = False      # Reward best score, ignore pose R
 The `scripts/` directory contains tools for large-scale analysis:
 
 *   **`analyze_experiments.py`**: Aggregates results across multiple models, benchmarks, and seeds. It generates:
-    *   `metrics_summary.csv`: Aggregated metrics for every model/target.
-    *   Publication-quality figures (Performance panels, Optimization trajectories).
+    *   `metrics_summary.csv` and `metrics_summary_macro.csv`: Aggregated metrics.
+    *   Publication-quality figures (Figure 1: Generation Metrics, Figure 2: Optimization Metrics, Figure 3: Quality Metrics, Figure 4: Trajectories).
 *   **`run_variance.py`**: Runs multiple seeds of a benchmark to assess stability.
+*   **`run_workflow.py`**: Standalone CLI to run the docking workflow for specific protein-ligand benchmarks.
 
 Usage:
 ```bash
 python scripts/analyze_experiments.py --exps-dir exps/ --output-dir analysis_results/
 ```
 
-## Project Structure
+## Project Structure & Caching
+
+mockdock distinguishes between persistent global assets and session-specific results:
+
+*   **Global Cache (`scratch_dir`)**: Defaults to `~/.mockdock/`. Stores pre-built AutoGrid maps and ChEMBL data.
+*   **Run Directory (`run_dir`)**: Defaults to `./run_<timestamp>/`. Contains outputs specific to the current session (results CSVs, docked poses, metrics).
 
 ```
 mockdock/
@@ -152,31 +166,12 @@ mockdock/
 │   ├── oracle.py          # Main MDOracle class
 │   ├── evaluator.py       # Post-hoc MDEvaluator
 │   ├── docking.py         # Backend engines (Vina/AD-GPU)
+│   ├── filters.py         # MedChem filtering (PAINS, BMS, etc.)
 │   └── ... 
 ├── scripts/
-│   ├── analyze_experiments.py
+│   ├── analyze_experiments.py # Generates paper figures
 │   ├── run_workflow.py    # Standalone CLI workflow
 │   └── run_variance.py    # Stability testing
 ├── tests/                 # Pytest suite
 └── pyproject.toml         # Dependencies and project metadata
-```
-
-## Caching & Storage
-
-mockdock distinguishes between persistent global assets and session-specific results:
-
-*   **Global Cache (`scratch_dir`)**: Defaults to `~/.mockdock/`. This is used to store persistent data that can be reused across multiple runs, such as pre-built AutoGrid maps and cleaned ChEMBL bioactivity CSVs.
-*   **Run Directory (`run_dir`)**: Defaults to `./run_<timestamp>/` in your current working directory. This contains all outputs specific to the current session:
-    *   `results.csv`: Full list of scored SMILES (including those that failed the 2D filter).
-    *   `results.yaml`: Human-readable summary of top-scoring molecules.
-    *   `poses/`: Directory containing docked pose files.
-    *   `metrics.json`: Per-run timing, budget usage, and efficiency statistics.
-    *   `<benchmark>_top_10_poses.sdf`: SDF file containing the top 10 poses.
-
-## Development
-
-```bash
-uv sync --dev
-uv run pytest                          # Run tests
-uv run ruff format .                   # Format code
 ```

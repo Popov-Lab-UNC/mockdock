@@ -15,8 +15,6 @@
 module load autodock-gpu
 module load autogrid
 
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate py312
 source /work/users/s/h/shuhang/acegen-open/.venv/bin/activate
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
