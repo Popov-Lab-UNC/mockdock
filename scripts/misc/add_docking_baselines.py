@@ -149,12 +149,12 @@ def process_benchmark(benchmark_name: str) -> None:
     # ── Compute scores ───────────────────────────────────────────────────────
     denom = low_score - high_score
     if abs(denom) > 1e-6:
-        merged = merged.with_columns(
-            ((pl.lit(low_score) - pl.col("mean_docking_score")) / denom).alias("norm_score")
-        ).with_columns(
-            pl.col("norm_score").clip(0.0, 1.0).alias("reward_score")
-        ).with_columns(
-            pl.col("reward_score").alias("score")
+        merged = (
+            merged.with_columns(
+                ((pl.lit(low_score) - pl.col("mean_docking_score")) / denom).alias("norm_score")
+            )
+            .with_columns(pl.col("norm_score").clip(0.0, 1.0).alias("reward_score"))
+            .with_columns(pl.col("reward_score").alias("score"))
         )
     else:
         merged = merged.with_columns(

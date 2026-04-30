@@ -187,23 +187,23 @@ class MDEvaluator:
 
             # Filtered scores
             # We need to map SMILES to passing status
-            passing_smiles = {
-                s for s, r in zip(unique_smiles, filter_results) if r["pass"]
-            }
+            passing_smiles = {s for s, r in zip(unique_smiles, filter_results) if r["pass"]}
             # Note: unique_smiles was calculated from valid_smiles which comes from df[smiles_col]
             # We can use pl.Series.is_in()
             filtered_scored_df = scored_df.filter(pl.col(smiles_col).is_in(list(passing_smiles)))
-            
+
             if not filtered_scored_df.is_empty():
                 top_f = filtered_scored_df.sort("reward_score", descending=True)
                 metrics["avg_top_1_filtered"] = float(top_f.head(1)["reward_score"].mean())
                 metrics["avg_top_10_filtered"] = float(top_f.head(10)["reward_score"].mean())
                 metrics["avg_top_100_filtered"] = float(top_f.head(100)["reward_score"].mean())
-                
+
                 # For AUC, we need a version of df where non-passing molecules have their score masked or filtered
                 # Usually we want the AUC of the search *among* passing molecules.
                 # If a non-passing molecule is found, it shouldn't contribute to the top-k buffer for filtered AUC.
-                metrics["auc_top_10_filtered"] = self._auc_top_k(df, k=10, passing_smiles=passing_smiles)
+                metrics["auc_top_10_filtered"] = self._auc_top_k(
+                    df, k=10, passing_smiles=passing_smiles
+                )
             else:
                 metrics["avg_top_1_filtered"] = 0.0
                 metrics["avg_top_10_filtered"] = 0.0
@@ -386,7 +386,7 @@ class MDEvaluator:
         """
         Compute AUC of the running top-k average reward score.
         X-axis = cumulative oracle calls (row order).
-        
+
         If passing_smiles is provided, only molecules in that set contribute to the buffer.
         """
         scores = df["reward_score"].to_list()
@@ -396,14 +396,14 @@ class MDEvaluator:
             smiles = df["original_smiles"].to_list()
         else:
             smiles = [None] * len(scores)
-        
+
         running_max_k = []
         buffer = []
 
         for s, sm in zip(scores, smiles):
             if passing_smiles is None or sm in passing_smiles:
                 buffer.append(s)
-            
+
             # running top-k average
             if buffer:
                 top_k = sorted(buffer, reverse=True)[:k]
