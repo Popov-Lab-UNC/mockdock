@@ -3,11 +3,11 @@ from pathlib import Path
 from typing import Optional
 
 from meeko import MoleculePreparation, PDBQTWriterLegacy
-
-from .utils import effective_cpu_count
 from molscrub import Scrub
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
+
+from .utils import effective_cpu_count
 
 # Silence RDKit noise
 RDLogger.DisableLog("rdApp.*")

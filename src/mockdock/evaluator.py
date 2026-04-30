@@ -21,7 +21,6 @@ import numpy as np
 import polars as pl
 from rdkit import Chem
 from rdkit.Chem import QED, AllChem, Descriptors
-from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from .filters import MDFilters

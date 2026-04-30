@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import pytest
 from rdkit import Chem
-from mockdock.loader import BenchmarkLoader
+
 from mockdock.filters import MDFilters
+from mockdock.loader import BenchmarkLoader
 
 BENCHMARKS = ["CHK1", "DPP4", "ITK", "PEPCK", "TTK", "VEGFR2"]
 

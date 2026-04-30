@@ -6,7 +6,6 @@ from pathlib import Path
 
 from rdkit import Chem
 from rdkit.Chem import Descriptors
-from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
 
 
 class MDFilters:
@@ -33,7 +32,7 @@ class MDFilters:
     def _build_catalog(self) -> list:
         rules = []
         if self.data_path.exists():
-            with open(self.data_path, "r") as f:
+            with open(self.data_path) as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     rs_name = row["rule_set_name"].strip()

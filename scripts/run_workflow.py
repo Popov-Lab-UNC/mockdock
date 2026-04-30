@@ -5,7 +5,6 @@ Relocated from legacy workflow module to allow cleaner package structure.
 """
 
 # Standard library imports
-import multiprocessing
 import os
 import sys
 import tempfile

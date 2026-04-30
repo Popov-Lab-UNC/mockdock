@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from rdkit import Chem
+
 from mockdock.filters import MDFilters
 
 
