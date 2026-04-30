@@ -43,16 +43,20 @@ METRIC_DESCRIPTIONS = {
     "snn": "Avg max Tanimoto similarity between generated and initial compounds.",
     "mean_qed_novel": "Mean QED of unique valid molecules that are novel against the model-visible set.",
     "mean_sa_novel": "Mean synthetic accessibility score of unique valid molecules that are novel against the model-visible set.",
-    "avg_top_1": "Normalized docking score of the single best-scoring molecule.",
-    "avg_top_10": "Mean normalized docking score of the 10 best-scoring molecules.",
-    "avg_top_100": "Mean normalized docking score of the 100 best-scoring molecules.",
-    "auc_top_10": "AUC of running top-10 avg score curve over cumulative oracle calls.",
-    "avg_top_1_filtered": "Normalized docking score of the best molecule passing MedChem filters.",
-    "avg_top_10_filtered": "Mean normalized docking score of the 10 best molecules passing MedChem filters.",
-    "avg_top_100_filtered": "Mean normalized docking score of the 100 best molecules passing MedChem filters.",
-    "auc_top_10_filtered": "AUC of running top-10 avg score curve for MedChem-passing molecules.",
+    "avg_top_1": "Reward score of the single best-scoring molecule.",
+    "avg_top_10": "Mean reward score of the 10 best-scoring molecules.",
+    "avg_top_100": "Mean reward score of the 100 best-scoring molecules.",
+    "auc_top_10": "AUC of running top-10 reward curve over cumulative oracle calls.",
+    "avg_top_1_norm": "Uncapped normalized score of the single best-scoring molecule.",
+    "avg_top_10_norm": "Mean uncapped normalized score of the 10 best-scoring molecules.",
+    "avg_top_100_norm": "Mean uncapped normalized score of the 100 best-scoring molecules.",
+    "avg_top_1_filtered": "Reward score of the best molecule passing MedChem filters.",
+    "avg_top_10_filtered": "Mean reward score of the 10 best molecules passing MedChem filters.",
+    "avg_top_100_filtered": "Mean reward score of the 100 best molecules passing MedChem filters.",
+    "auc_top_10_filtered": "AUC of running top-10 reward curve for MedChem-passing molecules.",
     "valid_pose_rate": "Fraction of docked molecules with a pose within the RMSD threshold.",
     "oracle_efficiency_80": "Oracle calls to reach 80% of final top-10 score (fewer is better).",
+    "oracle_efficiency_100": "Oracle calls to first reach a top-10 reward of 1.0.",
     "fraction_medchem_pass": "Fraction of unique valid molecules passing structural alerts (PAINS, BMS) and physchem bounds.",
 }
 
@@ -164,16 +168,22 @@ class MDEvaluator:
         # ─── Docking Performance ──────────────────────────────────────────────
         scored_df = df.filter(pl.col("skip_reason").is_null())
         if not scored_df.is_empty():
-            # Normalized score: high is good (reward)
-            top = scored_df.sort("normalized_score", descending=True)
-            metrics["avg_top_1"] = float(top.head(1)["normalized_score"].mean())
-            metrics["avg_top_10"] = float(top.head(10)["normalized_score"].mean())
-            metrics["avg_top_100"] = float(top.head(100)["normalized_score"].mean())
+            # Reward score is the bounded optimization target; norm_score is uncapped.
+            top = scored_df.sort("reward_score", descending=True)
+            metrics["avg_top_1"] = float(top.head(1)["reward_score"].mean())
+            metrics["avg_top_10"] = float(top.head(10)["reward_score"].mean())
+            metrics["avg_top_100"] = float(top.head(100)["reward_score"].mean())
+            metrics["avg_top_1_norm"] = float(top.head(1)["norm_score"].mean())
+            metrics["avg_top_10_norm"] = float(top.head(10)["norm_score"].mean())
+            metrics["avg_top_100_norm"] = float(top.head(100)["norm_score"].mean())
             metrics["auc_top_10"] = self._auc_top_k(df, k=10)
             metrics["valid_pose_rate"] = len(scored_df.filter(pl.col("valid_pose_found"))) / len(
                 scored_df
             )
             metrics["oracle_efficiency_80"] = self._oracle_efficiency(df, k=10, frac=0.80)
+            metrics["oracle_efficiency_100"] = self._oracle_calls_to_threshold(
+                df, k=10, threshold=1.0
+            )
 
             # Filtered scores
             # We need to map SMILES to passing status
@@ -185,10 +195,10 @@ class MDEvaluator:
             filtered_scored_df = scored_df.filter(pl.col(smiles_col).is_in(list(passing_smiles)))
             
             if not filtered_scored_df.is_empty():
-                top_f = filtered_scored_df.sort("normalized_score", descending=True)
-                metrics["avg_top_1_filtered"] = float(top_f.head(1)["normalized_score"].mean())
-                metrics["avg_top_10_filtered"] = float(top_f.head(10)["normalized_score"].mean())
-                metrics["avg_top_100_filtered"] = float(top_f.head(100)["normalized_score"].mean())
+                top_f = filtered_scored_df.sort("reward_score", descending=True)
+                metrics["avg_top_1_filtered"] = float(top_f.head(1)["reward_score"].mean())
+                metrics["avg_top_10_filtered"] = float(top_f.head(10)["reward_score"].mean())
+                metrics["avg_top_100_filtered"] = float(top_f.head(100)["reward_score"].mean())
                 
                 # For AUC, we need a version of df where non-passing molecules have their score masked or filtered
                 # Usually we want the AUC of the search *among* passing molecules.
@@ -203,6 +213,9 @@ class MDEvaluator:
             metrics["avg_top_1"] = 0.0
             metrics["avg_top_10"] = 0.0
             metrics["avg_top_100"] = 0.0
+            metrics["avg_top_1_norm"] = 0.0
+            metrics["avg_top_10_norm"] = 0.0
+            metrics["avg_top_100_norm"] = 0.0
             metrics["auc_top_10"] = 0.0
             metrics["avg_top_1_filtered"] = 0.0
             metrics["avg_top_10_filtered"] = 0.0
@@ -210,6 +223,7 @@ class MDEvaluator:
             metrics["auc_top_10_filtered"] = 0.0
             metrics["valid_pose_rate"] = 0.0
             metrics["oracle_efficiency_80"] = float(len(df))
+            metrics["oracle_efficiency_100"] = float(len(df))
 
         metrics["descriptions"] = METRIC_DESCRIPTIONS
 
@@ -370,14 +384,18 @@ class MDEvaluator:
     @staticmethod
     def _auc_top_k(df: pl.DataFrame, k: int = 10, passing_smiles: set[str] | None = None) -> float:
         """
-        Compute AUC of the running top-k average normalized score.
+        Compute AUC of the running top-k average reward score.
         X-axis = cumulative oracle calls (row order).
         
         If passing_smiles is provided, only molecules in that set contribute to the buffer.
         """
-        smiles_col = "smiles" if "smiles" in df.columns else "original_smiles"
-        scores = df["normalized_score"].to_list()
-        smiles = df[smiles_col].to_list()
+        scores = df["reward_score"].to_list()
+        if "smiles" in df.columns:
+            smiles = df["smiles"].to_list()
+        elif "original_smiles" in df.columns:
+            smiles = df["original_smiles"].to_list()
+        else:
+            smiles = [None] * len(scores)
         
         running_max_k = []
         buffer = []
@@ -406,7 +424,7 @@ class MDEvaluator:
     @staticmethod
     def _oracle_efficiency(df: pl.DataFrame, k: int = 10, frac: float = 0.80) -> int:
         """Calls to reach frac of final top-k score."""
-        scores = df["normalized_score"].to_list()
+        scores = df["reward_score"].to_list()
         if not scores:
             return 0
 
@@ -420,6 +438,21 @@ class MDEvaluator:
             buffer.append(s)
             current_top_k = np.mean(sorted(buffer, reverse=True)[:k])
             if current_top_k >= target:
+                return i + 1
+        return len(scores)
+
+    @staticmethod
+    def _oracle_calls_to_threshold(df: pl.DataFrame, k: int = 10, threshold: float = 1.0) -> int:
+        """Calls to first reach an absolute running top-k reward threshold."""
+        scores = df["reward_score"].to_list()
+        if not scores:
+            return 0
+
+        buffer = []
+        for i, s in enumerate(scores):
+            buffer.append(s)
+            current_top_k = np.mean(sorted(buffer, reverse=True)[:k])
+            if current_top_k >= threshold:
                 return i + 1
         return len(scores)
 

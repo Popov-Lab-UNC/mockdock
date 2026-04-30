@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
-#SBATCH --time=2-00:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=a2c_%j.log
 #SBATCH --error=a2c_%j.err
 #SBATCH --mail-type=ALL

@@ -16,6 +16,7 @@ from rdkit import Chem
 # Local imports
 from .analysis import DockingAnalyzer
 from .docking import AutoDockGPUOracle, AutoDockVinaOracle
+from .filters import MDFilters
 from .ligand_prep import LigandPreparer
 from .loader import BenchmarkLoader
 from .utils import (
@@ -92,6 +93,7 @@ class MDOracle:
 
         # ── Load config & bioactivity ──────────────────────────────────
         self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
+        self._filters = MDFilters(active_rulesets=["PAINS", "BMS"])
 
         # ── Directory layout (all private) ────────────────────────────
         # scratch_dir: persistent CACHE for pre-built receptor grids.
@@ -157,6 +159,7 @@ class MDOracle:
             "rmsd_threshold": self._loader.rmsd_threshold,
             "require_fragment_match": self._loader.require_fragment_match,
             "require_pose_rmsd": self._loader.require_pose_rmsd,
+            "filter_during_optimization": self._loader.filter_during_optimization,
             "low_score": self._loader.low_score,
             "high_score": self._loader.high_score,
         }
@@ -270,14 +273,14 @@ class MDOracle:
                 self.budget_used += len(process_smiles)
                 print(
                     f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
-                    f"({len(valid_tasks)} passed 2D filter) (budget {self.budget_used}/{self.max_budget})"
+                    f"({len(valid_tasks)} passed pre-dock filters) (budget {self.budget_used}/{self.max_budget})"
                 )
                 self._update_results_df(skipped_results + batch_results)
         else:
             self.budget_used += len(process_smiles)
             print(
                 f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
-                f"(0 passed 2D filter) (budget {self.budget_used}/{self.max_budget})"
+                f"(0 passed pre-dock filters) (budget {self.budget_used}/{self.max_budget})"
             )
             self._update_results_df(skipped_results)
 
@@ -301,6 +304,10 @@ class MDOracle:
                 skipped_results.append(
                     self._create_skipped_result(canonical, "failed_2d_match", smi)
                 )
+            elif self._loader.filter_during_optimization and not self._filters.passes(mol):
+                skipped_results.append(
+                    self._create_skipped_result(canonical, "failed_medchem_filter", smi)
+                )
             else:
                 valid_tasks.append((canonical, smi))
 
@@ -313,7 +320,8 @@ class MDOracle:
             "smiles": smiles,
             "original_smiles": original_smiles or smiles,
             "docking_score": float("nan"),
-            "normalized_score": -1.5,
+            "norm_score": 0.0,
+            "reward_score": 0.0,
             "valid_pose_found": False,
             "dlg_path": None,
             "best_any_score": float("nan"),
@@ -356,7 +364,7 @@ class MDOracle:
             elif math.isnan(best_valid) and self._loader.require_pose_rmsd:
                 skip_reason = "failed_rmsd"
 
-            best_norm = -1.5
+            norm_score = 0.0
             # With require_pose_rmsd, reward only if a pose exists under the RMSD cap.
             rmsd_reward_ok = (not self._loader.require_pose_rmsd) or (
                 skip_reason != "failed_rmsd" and valid_pose_found and math.isfinite(best_valid)
@@ -370,20 +378,22 @@ class MDOracle:
             ):
                 denom = self._loader.low_score - self._loader.high_score
                 if abs(denom) > 1e-6:
-                    best_norm = (self._loader.low_score - best_valid) / denom
+                    norm_score = (self._loader.low_score - best_valid) / denom
                 else:
-                    best_norm = 1.0 if best_valid <= self._loader.high_score else -1.5
+                    norm_score = 1.0 if best_valid <= self._loader.high_score else 0.0
 
             if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
-                best_norm = -1.5
+                norm_score = 0.0
 
-            final_scores_list.append((original, best_norm))
+            reward_score = min(max(norm_score, 0.0), 1.0)
+            final_scores_list.append((original, reward_score))
             batch_results.append(
                 {
                     "smiles": canonical,
                     "original_smiles": original,
                     "docking_score": best_valid,
-                    "normalized_score": best_norm,
+                    "norm_score": norm_score,
+                    "reward_score": reward_score,
                     "valid_pose_found": valid_pose_found,
                     "dlg_path": best_dlg,
                     "pose_index": best_pose_idx,
@@ -458,7 +468,7 @@ class MDOracle:
 
         top_df = (
             self.results_df.filter(pl.col("skip_reason").is_null())
-            .sort("normalized_score", descending=True)
+            .sort("reward_score", descending=True)
             .head(n)
         )
         self._ensure_components()
@@ -492,7 +502,7 @@ class MDOracle:
         else:
             df = (
                 self.results_df.filter(pl.col("skip_reason").is_null())
-                .sort("normalized_score", descending=True)
+                .sort("reward_score", descending=True)
                 .head(top_n)
             )
 
@@ -509,7 +519,8 @@ class MDOracle:
                     best = rdkit_mols[0]
                     best.SetProp("SMILES", row["smiles"])
                     best.SetProp("docking_score", str(row["docking_score"]))
-                    best.SetProp("normalized_score", str(row["normalized_score"]))
+                    best.SetProp("norm_score", str(row.get("norm_score", "")))
+                    best.SetProp("reward_score", str(row.get("reward_score", "")))
                     mols.append(best)
             except Exception as e:
                 print(f"[mockdock] fetch_poses: could not read {pose_file}: {e}")
@@ -702,13 +713,16 @@ class MDOracle:
         for i, row in enumerate(new_results):
             row.setdefault("generation_round", self._generation_round)
             row.setdefault("generation_index", start_idx + i)
+            row.setdefault("reward_score", 0.0)
+            row.setdefault("norm_score", row["reward_score"])
 
         # Stable schema for all result batches
         schema = {
             "smiles": pl.Utf8,
             "original_smiles": pl.Utf8,
             "docking_score": pl.Float64,
-            "normalized_score": pl.Float64,
+            "norm_score": pl.Float64,
+            "reward_score": pl.Float64,
             "valid_pose_found": pl.Boolean,
             "dlg_path": pl.Utf8,
             "pose_index": pl.Int64,
@@ -740,7 +754,7 @@ class MDOracle:
           results.csv  — ALL scored SMILES in generation order (including
                               2D-mismatched/skipped), so post-hoc novelty/uniqueness
                               analysis works without any data loss.
-          results.yaml      — Same data sorted by normalized_score DESC, human-readable.
+          results.yaml      — Same data sorted by reward_score DESC, human-readable.
           status.json       — Summary counters / best scores for live monitoring
                               (see n_molecules_attempted vs budget_used in code comments).
         """
@@ -751,10 +765,10 @@ class MDOracle:
         live_csv = self._run_dir / "results.csv"
         self.results_df.write_csv(live_csv)
 
-        # ── YAML (all SMILES, sorted by normalized_score DESC) ──────────
+        # ── YAML (all SMILES, sorted by reward_score DESC) ──────────
         sorted_results = sorted(
             self._yaml_results,
-            key=lambda r: r.get("normalized_score") or 0.0,
+            key=lambda r: r.get("reward_score") or 0.0,
             reverse=True,
         )
 
@@ -768,7 +782,8 @@ class MDOracle:
             {
                 "smiles": r["smiles"],
                 "original_smiles": r.get("original_smiles"),
-                "normalized_score": _clean(r.get("normalized_score")),
+                "reward_score": _clean(r.get("reward_score")),
+                "norm_score": _clean(r.get("norm_score")),
                 "docking_score": _clean(r.get("docking_score")),
                 "generation_round": r.get("generation_round"),
                 "generation_index": r.get("generation_index"),
@@ -789,7 +804,7 @@ class MDOracle:
 
         # ── Status JSON (summary for live monitoring) ────────────────────
         # - budget_used: oracle calls (includes invalid / 2D-fail / budget_exhausted rows).
-        # - n_molecules_attempted: passed validity + 2D fragment match (sent to docking).
+        # - n_molecules_attempted: passed all pre-dock filters (sent to docking).
         # - n_molecules_success: skip_reason is null and valid_pose_found (docked; if
         #   require_pose_rmsd, passed the fragment RMSD gate).
         sr = pl.col("skip_reason")
@@ -798,13 +813,17 @@ class MDOracle:
         n_success = len(success_df)
         # Skip reasons are set in _filter_smiles/_analyze_results via _create_skipped_result
         n_skipped_2d = len(self.results_df.filter(pl.col("skip_reason") == "failed_2d_match"))
+        n_skipped_filter = len(
+            self.results_df.filter(pl.col("skip_reason") == "failed_medchem_filter")
+        )
         n_invalid = len(self.results_df.filter(pl.col("skip_reason") == "invalid_molecule"))
         n_budget_exhausted = len(
             self.results_df.filter(pl.col("skip_reason") == "budget_exhausted")
         )
-        # Molecules that passed validity + 2D match (everything except pre-dock skips)
-        n_attempted = n_total - n_invalid - n_skipped_2d - n_budget_exhausted
-        best_score = float(success_df["normalized_score"].max()) if n_success > 0 else 0.0
+        # Molecules that passed pre-dock filtering (everything except pre-dock skips)
+        n_attempted = n_total - n_invalid - n_skipped_2d - n_skipped_filter - n_budget_exhausted
+        best_reward = float(success_df["reward_score"].max()) if n_success > 0 else 0.0
+        best_norm = float(success_df["norm_score"].max()) if n_success > 0 else 0.0
         best_docking = float(success_df["docking_score"].min()) if n_success > 0 else float("nan")
 
         def _json_clean(v):
@@ -820,9 +839,11 @@ class MDOracle:
             "n_molecules_total": n_total,
             "n_molecules_invalid": n_invalid,
             "n_molecules_skipped_2d": n_skipped_2d,
+            "n_molecules_skipped_filter": n_skipped_filter,
             "n_molecules_attempted": n_attempted,
             "n_molecules_success": n_success,
-            "best_normalized_score": best_score,
+            "best_reward_score": best_reward,
+            "best_norm_score": best_norm,
             "best_docking_score": best_docking,
         }
         status = {k: _json_clean(v) for k, v in status.items()}

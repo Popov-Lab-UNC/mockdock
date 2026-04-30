@@ -380,7 +380,8 @@ class DockingAnalyzer:
                 smi = row["smiles"]
                 chosen_mol.SetProp("SMILES", smi)
                 chosen_mol.SetProp("docking_score", str(row[score_col]))
-                chosen_mol.SetProp("normalized_score", str(row.get("normalized_score", "")))
+                chosen_mol.SetProp("norm_score", str(row.get("norm_score", "")))
+                chosen_mol.SetProp("reward_score", str(row.get("reward_score", "")))
                 chosen_mol.SetProp("dlg_path", str(row[dlg_col]))
                 chosen_mol.SetProp("score_type", score_col)
                 if chosen_rmsd is not None and math.isfinite(chosen_rmsd):

@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """add_docking_baselines.py – Phase 2 one-time helper.
 
-Reads the five variance runs (variance_runs/run_1 … run_5) and computes a
+Reads the variance runs and computes a
 mean docking score for each compound across the repeats.  The result is
 written back into the six canonical bioactivity CSVs
-(mockdock/bioactivity_data/<benchmark>.csv) as two new columns:
+(mockdock/bioactivity_data/<benchmark>.csv) as three score columns:
 
   mean_docking_score  – raw mean docking score in kcal/mol (lower = better)
-  score               – normalised score using each benchmark's low_score /
-                        high_score calibration points. Formula:
+  norm_score          – uncapped normalised score using each benchmark's
+                        low_score / high_score calibration points. Formula:
                         (low_score - mean_docking_score) / (low_score - high_score).
                         Can be negative or exceed 1.0 when mean_docking_score
                         falls outside the calibration range.
+  reward_score        – norm_score clipped to [0, 1], used as the RL reward.
+  score               – backward-compatible alias of reward_score.
 
-low_score and high_score are computed from the variance run data: high_score =
-best (min) mean_docking_score observed; low_score = mean of mean_docking_scores
-for compounds in the lower quantile by pactivity (pchembl_value). These values
-are written back into the benchmark YAML configs (mockdock/configs/<benchmark>.yaml).
+low_score and high_score are computed from the variance run data: high_score is
+the best (minimum) mean_docking_score observed; low_score is the worst (maximum)
+mean_docking_score observed. These values are written back into the benchmark
+YAML configs (mockdock/configs/<benchmark>.yaml).
 
 Run once from the benchmark root::
 
@@ -27,6 +29,7 @@ The script is idempotent: if the columns already exist they are overwritten.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -37,12 +40,15 @@ import yaml
 # Paths
 # ---------------------------------------------------------------------------
 
-BENCHMARK_ROOT = Path(__file__).resolve().parent
-VARIANCE_RUNS_DIR = BENCHMARK_ROOT / "variance_runs"
+BENCHMARK_ROOT = Path(__file__).resolve().parents[2]
+VARIANCE_RUNS_DIR = Path(
+    os.environ.get(
+        "MOCKDOCK_VARIANCE_RUNS_DIR",
+        BENCHMARK_ROOT.parent / "mockdock_data" / "variance_runs",
+    )
+)
 BIOACTIVITY_DIR = BENCHMARK_ROOT / "src" / "mockdock" / "bioactivity_data"
 CONFIGS_DIR = BENCHMARK_ROOT / "src" / "mockdock" / "configs"
-
-N_RUNS = 5  # variance_runs/run_1 … run_5
 
 
 # Map each canonical benchmark name to its (target_id, pdb_id, doc_id, assay_id)
@@ -88,18 +94,18 @@ def process_benchmark(benchmark_name: str) -> None:
 
     # ── Collect per-compound docking scores from all variance runs ──────────
     all_run_frames: list[pl.DataFrame] = []
-    for run_idx in range(1, N_RUNS + 1):
-        run_dir = VARIANCE_RUNS_DIR / f"run_{run_idx}"
+    run_dirs = sorted(p for p in VARIANCE_RUNS_DIR.glob("run_*") if p.is_dir())
+    for run_idx, run_dir in enumerate(run_dirs, start=1):
         results_csv = _find_results_csv(run_dir, target_id, pdb_id, doc_id)
         if results_csv is None:
-            print(f"  [WARN] {benchmark_name}: no results CSV in run_{run_idx}, skipping.")
+            print(f"  [WARN] {benchmark_name}: no results CSV in {run_dir.name}, skipping.")
             continue
 
         run_df = pl.read_csv(results_csv)
         # Keep only chembl ID and docking score; tag the run number
         if "molecule_chembl_id" not in run_df.columns or "docking_score" not in run_df.columns:
             print(
-                f"  [WARN] {benchmark_name}: run_{run_idx} CSV missing expected columns, skipping."
+                f"  [WARN] {benchmark_name}: {run_dir.name} CSV missing expected columns, skipping."
             )
             continue
         run_df = run_df.select(["molecule_chembl_id", "docking_score"]).with_columns(
@@ -116,32 +122,22 @@ def process_benchmark(benchmark_name: str) -> None:
         pl.col("docking_score").mean().alias("mean_docking_score")
     )
 
-    # ── Read bioactivity CSV and join (needed for pactivity-based low_score) ─
+    # ── Read bioactivity CSV and join ────────────────────────────────────────
     bio_df = pl.read_csv(csv_path)
-    for col in ["mean_docking_score", "score"]:
+    for col in ["mean_docking_score", "norm_score", "reward_score", "score"]:
         if col in bio_df.columns:
             bio_df = bio_df.drop(col)
     merged = bio_df.join(mean_scores, on="molecule_chembl_id", how="left")
 
     # ── Compute low_score and high_score from variance run data ──────────────
-    # high_score = best (min) mean_docking_score; low_score = mean for lower quantile by pactivity
+    # high_score = best (min) mean_docking_score; low_score = worst (max) mean_docking_score.
     with_scores = merged.filter(pl.col("mean_docking_score").is_not_null())
     if with_scores.is_empty():
         print(f"  [SKIP] {benchmark_name}: no compounds with variance run data.")
         return
 
     high_score = float(with_scores["mean_docking_score"].min())
-    if "pchembl_value" not in with_scores.columns:
-        print(f"  [WARN] {benchmark_name}: pchembl_value missing; using mean for low_score.")
-        low_score = float(with_scores["mean_docking_score"].mean())
-    else:
-        # Lower quantile = bottom 25% by pactivity (least active compounds)
-        q25 = float(with_scores["pchembl_value"].quantile(0.25))
-        lower_quantile = with_scores.filter(pl.col("pchembl_value") <= q25)
-        if lower_quantile.is_empty():
-            low_score = float(with_scores["mean_docking_score"].mean())
-        else:
-            low_score = float(lower_quantile["mean_docking_score"].mean())
+    low_score = float(with_scores["mean_docking_score"].max())
 
     # Write calibration values back to YAML config
     cfg["low_score"] = round(low_score, 3)
@@ -150,14 +146,22 @@ def process_benchmark(benchmark_name: str) -> None:
     with open(config_path, "w") as f:
         yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
 
-    # ── Compute normalised score ─────────────────────────────────────────────
+    # ── Compute scores ───────────────────────────────────────────────────────
     denom = low_score - high_score
     if abs(denom) > 1e-6:
         merged = merged.with_columns(
-            ((pl.lit(low_score) - pl.col("mean_docking_score")) / denom).alias("score")
+            ((pl.lit(low_score) - pl.col("mean_docking_score")) / denom).alias("norm_score")
+        ).with_columns(
+            pl.col("norm_score").clip(0.0, 1.0).alias("reward_score")
+        ).with_columns(
+            pl.col("reward_score").alias("score")
         )
     else:
-        merged = merged.with_columns(pl.lit(None, dtype=pl.Float64).alias("score"))
+        merged = merged.with_columns(
+            pl.lit(None, dtype=pl.Float64).alias("norm_score"),
+            pl.lit(None, dtype=pl.Float64).alias("reward_score"),
+            pl.lit(None, dtype=pl.Float64).alias("score"),
+        )
 
     # ── Write back ───────────────────────────────────────────────────────────
     merged.write_csv(csv_path)

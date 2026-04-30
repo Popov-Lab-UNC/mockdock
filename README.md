@@ -46,7 +46,7 @@ initial_df = oracle.get_initial_compounds()
 fragment_smiles = oracle.fragment_smiles
 
 # 2. Score a list of SMILES
-# Returns {smiles: normalized_score}
+# Returns {smiles: reward_score}; results_df also records docking_score and norm_score.
 scores = oracle.score(["CCO", "CCC"])
 
 # 3. Inspect results
@@ -65,7 +65,7 @@ from pathlib import Path
 evaluator = MDEvaluator("CHK1")
 metrics = evaluator.compute_metrics(Path("run_20240408_120000/results.csv"))
 
-print(metrics["avg_top_10"])  # Mean normalized score of top 10 compounds
+print(metrics["avg_top_10"])  # Mean reward score of top 10 compounds
 print(metrics["novelty"])     # Fraction of compounds not in the initial set
 ```
 
@@ -114,18 +114,25 @@ Computes standardized metrics for a finished run. It is lightweight and does not
 | `fragment_incorporation`| Fraction of molecules containing the required 2D fragment. |
 | `novelty` | Fraction of molecules not present in the initial ChEMBL set. |
 | `effective_novelty` | Novel molecules that are also non-identical to their parents. |
-| `avg_top_10` | Mean normalized docking score of the top 10 molecules. |
-| `avg_top_10_filtered`| Mean normalized docking score of the top 10 molecules passing MedChem filters. |
+| `avg_top_10` | Mean reward score of the top 10 molecules. |
+| `avg_top_10_norm` | Mean uncapped normalized score of the top 10 molecules. |
+| `avg_top_10_filtered`| Mean reward score of the top 10 molecules passing MedChem filters. |
 | `auc_top_10` | Area under the running top-10 score curve (optimization speed). |
 | `auc_top_10_filtered`| Area under the running top-10 score curve for MedChem-passing molecules. |
 | `oracle_efficiency_80` | Calls required to reach 80% of final top-10 score. |
+| `oracle_efficiency_100` | Calls required for the running top-10 reward to reach 1.0. |
 
 ## Scoring & Constraints
 
-`MDOracle.score()` returns a normalized value in **[0.0, 1.0+]**:
+`MDOracle.score()` returns the bounded `reward_score` in **[0.0, 1.0]**:
 1.  **2D Fragment Check**: Molecules must contain the benchmark fragment. If not, they score `0.0`.
 2.  **3D RMSD Check**: Valid docking poses must overlay the crystal fragment within a threshold (default: 2.0 Å).
-3.  **Normalization**: Raw docking energies are scaled between a target-specific `low_score` (0.0) and `high_score` (1.0) derived from ChEMBL bioactivity.
+3.  **Normalization**: Raw docking energies are scaled between a target-specific `low_score` (0.0; worst mean docking score in the original variance runs) and `high_score` (1.0; best mean docking score in the original variance runs).
+
+Run outputs keep three score columns:
+- `docking_score`: raw docking energy, lower is better.
+- `norm_score`: uncapped normalized score, useful for seeing when generated molecules exceed the original benchmark range.
+- `reward_score`: `norm_score` clipped to `[0, 1]`, used by RL algorithms and primary optimization metrics.
 
 ### Relaxing Constraints
 You can relax these for exploration:

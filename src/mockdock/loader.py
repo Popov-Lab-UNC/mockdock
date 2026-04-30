@@ -49,6 +49,7 @@ class BenchmarkLoader:
         self.ligand_resname: str | None = raw.get("ligand_resname")
         self.require_fragment_match: bool = raw.get("require_fragment_match", True)
         self.require_pose_rmsd: bool = raw.get("require_pose_rmsd", True)
+        self.filter_during_optimization: bool = raw.get("filter_during_optimization", True)
 
         self._chembl_data: pl.DataFrame | None = None
         self._threshold: float | None = None
