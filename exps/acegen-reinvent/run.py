@@ -171,6 +171,7 @@ def run_benchmark(
     outputs_root: pathlib.Path,
     acegen_root: pathlib.Path,
     n_warmup: int,
+    clip_reward_upper_bound: bool,
     run_parent: pathlib.Path,
 ):
     log.info("=" * 60)
@@ -187,7 +188,12 @@ def run_benchmark(
     # Each benchmark gets its own subdirectory inside the shared run_parent folder.
     benchmark_run_dir = run_parent / benchmark
     benchmark_run_dir.mkdir(parents=True, exist_ok=True)
-    oracle = MDOracle(benchmark, budget=budget, run_dir=benchmark_run_dir)
+    oracle = MDOracle(
+        benchmark,
+        budget=budget,
+        run_dir=benchmark_run_dir,
+        clip_reward_upper_bound=clip_reward_upper_bound,
+    )
     log.info("Run directory: %s", oracle.run_dir)
 
     # ── Initial compound warmup ────────────────────────────────────────────────
@@ -303,7 +309,15 @@ def run_benchmark(
     default=None,
     help="Parent directory for all benchmark outputs. Defaults to <script_dir>/run_<timestamp>.",
 )
-def main(benchmarks, budget, seed, out, acegen_root, n_warmup, run_dir):
+@click.option(
+    "--clip-reward-upper-bound/--no-clip-reward-upper-bound",
+    default=True,
+    show_default=True,
+    help="Cap reward_score at 1.0 (minimum 0.0 is always enforced).",
+)
+def main(
+    benchmarks, budget, seed, out, acegen_root, n_warmup, run_dir, clip_reward_upper_bound
+):
     """Run AceGen-REINVENT against mockdock benchmarks."""
     import datetime
 
@@ -331,6 +345,7 @@ def main(benchmarks, budget, seed, out, acegen_root, n_warmup, run_dir):
     log.info("acegen-open root : %s", acegen_path)
     log.info("Benchmarks       : %s", benchmarks)
     log.info("Output root      : %s", outputs_root)
+    log.info("Clip upper bound : %s", clip_reward_upper_bound)
 
     for bm in benchmarks:
         run_benchmark(
@@ -340,6 +355,7 @@ def main(benchmarks, budget, seed, out, acegen_root, n_warmup, run_dir):
             outputs_root=outputs_root,
             acegen_root=acegen_path,
             n_warmup=n_warmup,
+            clip_reward_upper_bound=clip_reward_upper_bound,
             run_parent=run_parent,
         )
 

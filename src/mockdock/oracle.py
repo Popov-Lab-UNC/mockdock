@@ -44,6 +44,7 @@ class MDOracle:
         benchmark_name: str,
         budget: int = 1000,
         docking_backend: str = "auto",
+        clip_reward_upper_bound: Optional[bool] = None,
         scratch_dir: Optional[Union[str, Path]] = None,
         run_dir: Optional[Union[str, Path]] = None,
         n_cpus: Optional[int] = None,
@@ -58,6 +59,9 @@ class MDOracle:
                 the full list.
             budget: Total number of compounds allowed to be scored.
             docking_backend: Backend to use ('autodock_gpu', 'vina', or 'auto').
+            clip_reward_upper_bound: Whether to cap reward_score at 1.0.
+                A minimum of 0.0 is always enforced. If None, use the benchmark
+                config value (defaults to True in config loader).
             scratch_dir: Directory to store persistent cache assets (grids,
                 bioactivity data). Defaults to ~/.mockdock.
             run_dir: Directory for this run's outputs (docking results, live CSV,
@@ -94,6 +98,11 @@ class MDOracle:
         # ── Load config & bioactivity ──────────────────────────────────
         self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
         self._filters = MDFilters(active_rulesets=["PAINS", "BMS"])
+        self._clip_reward_upper_bound = (
+            self._loader.clip_reward_upper_bound
+            if clip_reward_upper_bound is None
+            else bool(clip_reward_upper_bound)
+        )
 
         # ── Directory layout (all private) ────────────────────────────
         # scratch_dir: persistent CACHE for pre-built receptor grids.
@@ -160,6 +169,7 @@ class MDOracle:
             "require_fragment_match": self._loader.require_fragment_match,
             "require_pose_rmsd": self._loader.require_pose_rmsd,
             "filter_during_optimization": self._loader.filter_during_optimization,
+            "clip_reward_upper_bound": self._clip_reward_upper_bound,
             "low_score": self._loader.low_score,
             "high_score": self._loader.high_score,
         }
@@ -385,7 +395,11 @@ class MDOracle:
             if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
                 norm_score = 0.0
 
-            reward_score = min(max(norm_score, 0.0), 1.0)
+            reward_score = (
+                min(max(norm_score, 0.0), 1.0)
+                if self._clip_reward_upper_bound
+                else max(norm_score, 0.0)
+            )
             final_scores_list.append((original, reward_score))
             batch_results.append(
                 {

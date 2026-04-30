@@ -50,6 +50,7 @@ class BenchmarkLoader:
         self.require_fragment_match: bool = raw.get("require_fragment_match", True)
         self.require_pose_rmsd: bool = raw.get("require_pose_rmsd", True)
         self.filter_during_optimization: bool = raw.get("filter_during_optimization", True)
+        self.clip_reward_upper_bound: bool = raw.get("clip_reward_upper_bound", True)
 
         self._chembl_data: pl.DataFrame | None = None
         self._threshold: float | None = None

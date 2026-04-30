@@ -30,6 +30,13 @@ BUDGET=1000
 SEED=0
 N_WARMUP=25
 NUM_RUNS=5
+CLIP_REWARD_UPPER_BOUND=true
+
+if [ "${CLIP_REWARD_UPPER_BOUND}" = true ]; then
+    CLIP_REWARD_FLAG="--clip-reward-upper-bound"
+else
+    CLIP_REWARD_FLAG="--no-clip-reward-upper-bound"
+fi
 
 echo "========================================================"
 echo " AceGen-REINVENT x FCGMB Evaluation"
@@ -39,6 +46,7 @@ echo " acegen-open : ${ACEGEN_ROOT}"
 echo " Budget      : ${BUDGET}"
 echo " Seed        : ${SEED}"
 echo " Warmup      : ${N_WARMUP} initial compounds"
+echo " Clip reward : ${CLIP_REWARD_UPPER_BOUND}"
 echo " Num runs    : ${NUM_RUNS}"
 echo " Output dir  : ${OUT_DIR}"
 echo " SLURM job   : ${SLURM_JOB_ID}"
@@ -67,6 +75,7 @@ for RUN_IDX in $(seq 1 "${NUM_RUNS}"); do
         --out         "${OUT_DIR}"    \
         --acegen-root "${ACEGEN_ROOT}" \
         --n-warmup    "${N_WARMUP}"   \
+        ${CLIP_REWARD_FLAG} \
         --run-dir     "${RUN_PARENT}"
 
     echo ""
