@@ -57,6 +57,8 @@ METRIC_DESCRIPTIONS = {
     "oracle_efficiency_80": "Oracle calls to reach 80% of final top-10 score (fewer is better).",
     "oracle_efficiency_100": "Oracle calls to first reach a top-10 reward of 1.0.",
     "fraction_medchem_pass": "Fraction of unique valid molecules passing structural alerts (PAINS, BMS) and physchem bounds.",
+    "effective_hit_rate": "Fraction of all generated molecules that are valid, unique, contain the 2D fragment, and are novel (Effective Yield Rate).",
+    "effective_medchem_pass": "Fraction of Effective Yield Rate molecules passing structural alerts (PAINS, BMS) and physchem bounds.",
 }
 
 
@@ -125,6 +127,7 @@ class MDEvaluator:
             float(np.mean([self._sa_score(m) for m in unique_mols])) if unique_mols else 0.0
         )
         metrics["fragment_incorporation"] = self._fragment_rate(unique_smiles, fragment_smiles)
+        frag_passing_set = self._fragment_passing_set(unique_smiles, fragment_smiles)
 
         # MedChem Filtering
         frag_q = Chem.MolFromSmiles(fragment_smiles) if fragment_smiles else None
@@ -167,6 +170,14 @@ class MDEvaluator:
         metrics["effective_novelty"] = len(effective_novel_set) / max(len(generated_raw), 1)
         metrics["snn"] = self._snn(unique_smiles, list(ref_smiles_canonical))
         novel_unique_smiles = [s for s in unique_smiles if s not in ref_smiles_canonical]
+        novel_frag_set = {s for s in novel_unique_smiles if s in frag_passing_set}
+        metrics["effective_hit_rate"] = len(novel_frag_set) / max(len(generated_raw), 1)
+        novel_frag_mols = [Chem.MolFromSmiles(s) for s in novel_frag_set if s]
+        if novel_frag_mols:
+            medchem_pass_results = [self._filters.evaluate(m) for m in novel_frag_mols if m]
+            metrics["effective_medchem_pass"] = sum(1 for r in medchem_pass_results if r["pass"]) / len(medchem_pass_results)
+        else:
+            metrics["effective_medchem_pass"] = 0.0
         novel_unique_mols = [Chem.MolFromSmiles(s) for s in novel_unique_smiles]
         metrics["mean_qed_novel"] = (
             float(np.mean([QED.qed(m) for m in novel_unique_mols])) if novel_unique_mols else 0.0
@@ -354,6 +365,26 @@ class MDEvaluator:
             if m and get_robust_match(m, frag):
                 hits += 1
         return hits / len(unique_smiles)
+
+    @staticmethod
+    def _fragment_passing_set(unique_smiles: list[str], fragment_smiles: str) -> set[str]:
+        """Return the set of SMILES containing the required fragment substructure."""
+        if not fragment_smiles or not unique_smiles:
+            return set()
+        frag = Chem.MolFromSmiles(fragment_smiles)
+        if frag is None:
+            frag = Chem.MolFromSmarts(fragment_smiles)
+        if frag is None:
+            return set()
+
+        from .utils import get_robust_match
+
+        passing = set()
+        for s in unique_smiles:
+            m = Chem.MolFromSmiles(s)
+            if m and get_robust_match(m, frag):
+                passing.add(s)
+        return passing
 
     @staticmethod
     def _lipinski_fraction(mols: list[Chem.Mol]) -> float:

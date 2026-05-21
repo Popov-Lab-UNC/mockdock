@@ -337,13 +337,15 @@ def plot_figure_1_generation(full_df: pl.DataFrame, output_dir: Path):
         "uniqueness": "Uniqueness",
         "fragment_incorporation": "Fragment 2D",
         "novelty": "Novelty",
+        "effective_hit_rate": "Effective Yield Rate",
+        "effective_medchem_pass": "MedChem Pass Rate",
     }
     _plot_metric_panels(
         full_df=full_df,
         metrics_map=metrics_map,
         output_path_stem=output_dir / "fig1_generation_metrics",
         figure_title="Generation Metrics Across Benchmarks (mean +/- 95% CI)",
-        ncols=4,
+        ncols=3,
     )
 
 
@@ -353,61 +355,97 @@ def plot_figure_2_optimization(full_df: pl.DataFrame, output_dir: Path):
         "avg_top_10": "Avg Top-10 Score",
         "avg_top_100": "Avg Top-100 Score",
         "auc_top_10": "AUC Top-10",
-        "oracle_efficiency_80": "Oracle Efficiency @80%",
     }
     _plot_metric_panels(
         full_df=full_df,
         metrics_map=metrics_map,
         output_path_stem=output_dir / "fig2_optimization_metrics",
         figure_title="Optimization Metrics Across Benchmarks (mean +/- 95% CI)",
-        ncols=4,
+        ncols=3,
     )
 
 
 def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_df: pl.DataFrame, output_dir: Path):
-    """Figure 3: Medicinal chemistry quality, using box plots for continuous QED/SA and a bar plot for MedChem rate."""
+    """Figure 3: Chemical quality metrics on the Effective Yield Rate compound set.
+
+    The Effective Yield Rate set consists of molecules that are valid, unique,
+    contain the 2D fragment substructure, and are novel against the model-visible set.
+    QED, SA Score, and MedChem pass rate are all computed on this consistent set.
+
+    Placeholder panels for AIZynthFinder retrosynthetic accessibility and MolSkill
+    drug-likeness scores are documented below. To add them:
+      1. Compute per-molecule scores and add columns to molecule_metrics_cache.csv
+         (aizynthfinder_score, molskill_score).
+      2. Uncomment the corresponding panel code and increase n_panels.
+    """
     setup_plotting()
-    
-    # Gather/Load molecule-level data for QED/SA
+
+    # Gather/Load molecule-level data
     all_mols_data = []
-    
+
     import sys
     from rdkit import Chem
     from rdkit.Chem import QED
-    
+
     try:
         from mockdock.evaluator import MDEvaluator
+        from mockdock.filters import MDFilters
+        from mockdock.utils import get_robust_match
     except ImportError:
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
         from mockdock.evaluator import MDEvaluator
-        
-    print("Gathering molecule-level QED and SA for Figure 3...")
+        from mockdock.filters import MDFilters
+        from mockdock.utils import get_robust_match
+
+    filters = MDFilters(active_rulesets=["PAINS", "BMS"])
+
+    print("Gathering molecule-level data for Figure 3 (Effective Yield Rate set)...")
     for model, seed, target, csv_path in results_list:
         cache_path = csv_path.parent / "molecule_metrics_cache.csv"
         mapped_model = MODEL_RENAME_MAP.get(model.lower(), model)
-        
+
+        # Check if cache exists with all required columns
+        use_cache = False
         if cache_path.exists():
             try:
                 run_df = pl.read_csv(cache_path)
-                for row_data in run_df.iter_rows(named=True):
-                    all_mols_data.append({
-                        "model": mapped_model,
-                        "target": target,
-                        "seed": seed,
-                        "qed": row_data["qed"],
-                        "sa": row_data["sa"],
-                        "is_novel": row_data["is_novel"],
-                    })
-                continue
+                required_cols = {"smiles", "qed", "sa", "is_novel", "has_fragment", "passes_medchem"}
+                if required_cols.issubset(set(run_df.columns)):
+                    use_cache = True
+                    for row_data in run_df.iter_rows(named=True):
+                        all_mols_data.append({
+                            "model": mapped_model,
+                            "target": target,
+                            "seed": seed,
+                            "smiles": row_data["smiles"],
+                            "qed": row_data["qed"],
+                            "sa": row_data["sa"],
+                            "is_novel": row_data["is_novel"],
+                            "has_fragment": row_data["has_fragment"],
+                            "passes_medchem": row_data["passes_medchem"],
+                            # Placeholder: read future scoring columns if available
+                            # "aizynthfinder_score": row_data.get("aizynthfinder_score", None),
+                            # "molskill_score": row_data.get("molskill_score", None),
+                        })
+                else:
+                    print(f"  Cache {cache_path} missing required columns, recomputing...")
             except Exception as e:
                 print(f"  Error reading cache {cache_path}: {e}. Recomputing...")
-                
+
+        if use_cache:
+            continue
+
         try:
             evaluator = MDEvaluator(target)
+            fragment_smiles = evaluator._loader.fragment_smiles
+            frag_q = Chem.MolFromSmiles(fragment_smiles) if fragment_smiles else None
+            if frag_q is None and fragment_smiles:
+                frag_q = Chem.MolFromSmarts(fragment_smiles)
+
             df = pl.read_csv(csv_path)
             smiles_col = "smiles" if "smiles" in df.columns else "original_smiles"
             raw_smiles = df[smiles_col].to_list()
-            
+
             valid_mols = []
             seen = set()
             for s in raw_smiles:
@@ -418,70 +456,88 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                 if canonical_s not in seen:
                     seen.add(canonical_s)
                     valid_mols.append((canonical_s, mol))
-            
+
             ref_smiles_df = evaluator._loader.get_initial_compounds()
             ref_smiles = set()
             if not ref_smiles_df.is_empty():
                 col = "canonical_smiles" if "canonical_smiles" in ref_smiles_df.columns else "smiles"
                 ref_smiles = set(ref_smiles_df[col].to_list())
             ref_smiles_canonical = evaluator._canonicalize_smiles_set(ref_smiles)
-            
+
             cache_rows = []
             for smiles, mol in valid_mols:
                 is_novel = smiles not in ref_smiles_canonical
+                has_fragment = bool(frag_q is not None and get_robust_match(mol, frag_q))
                 qed_val = float(QED.qed(mol))
                 sa_val = float(evaluator._sa_score(mol))
-                
+                filter_result = filters.evaluate(mol)
+                passes_medchem = filter_result["pass"]
+
                 cache_rows.append({
+                    "smiles": smiles,
                     "qed": qed_val,
                     "sa": sa_val,
                     "is_novel": is_novel,
+                    "has_fragment": has_fragment,
+                    "passes_medchem": passes_medchem,
+                    # Placeholder columns for future scoring metrics:
+                    # "aizynthfinder_score": compute_aizynthfinder(smiles),
+                    # "molskill_score": compute_molskill(smiles),
                 })
                 all_mols_data.append({
                     "model": mapped_model,
                     "target": target,
                     "seed": seed,
+                    "smiles": smiles,
                     "qed": qed_val,
                     "sa": sa_val,
                     "is_novel": is_novel,
+                    "has_fragment": has_fragment,
+                    "passes_medchem": passes_medchem,
                 })
-                
+
             if cache_rows:
                 pl.DataFrame(cache_rows).write_csv(cache_path)
-                
+
         except Exception as e:
             print(f"  Error processing molecules for {csv_path}: {e}")
-            
+
     if not all_mols_data:
         print("No molecule-level data found for Figure 3.")
         return
-        
+
     mol_df = pl.DataFrame(all_mols_data)
-    
-    # Filter for novel compounds
-    novel_mol_df = mol_df.filter(pl.col("is_novel")).to_pandas()
-    if novel_mol_df.empty:
-        novel_mol_df = mol_df.to_pandas()
-        qed_label = "QED (All Unique)"
-        sa_label = "SA Score (All Unique)"
+
+    # Filter for Effective Yield Rate compound set: valid + unique + novel + fragment 2D
+    effective_df = mol_df.filter(
+        pl.col("is_novel") & pl.col("has_fragment")
+    ).to_pandas()
+
+    if effective_df.empty:
+        print("Warning: No molecules in Effective Yield Rate set. Using all unique molecules.")
+        effective_df = mol_df.to_pandas()
+        set_label = " (All Unique)"
     else:
-        qed_label = "QED (Novel Only)"
-        sa_label = "SA Score (Novel Only)"
-        
-    medchem_df = full_df.select(["model", "target", "fraction_medchem_pass"]).to_pandas()
-    
-    fig, axes = plt.subplots(1, 3, figsize=(19.5, 4.8))
-    
+        set_label = ""
+
+    # ── Panel layout ─────────────────────────────────────────────────────
+    # Active panels: QED, SA Score
+    # Future panels (see docstring for instructions):
+    #   - AIZynthFinder Score (↑): retrosynthetic accessibility
+    #   - MolSkill Score (↑): learned drug-likeness
+    n_panels = 2
+    fig, axes = plt.subplots(1, n_panels, figsize=(6.5 * n_panels, 4.8))
+
     preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "Libinvent", "GenMol"]
-    unique_models = list(novel_mol_df["model"].unique())
+    unique_models = list(effective_df["model"].unique())
     hue_order = [m for m in preferred_order if m in unique_models] + [
         m for m in unique_models if m not in preferred_order
     ]
-    targets = sorted(novel_mol_df["target"].unique())
-    
-    # Panel A: QED (Box plot)
+    targets = sorted(effective_df["target"].unique())
+
+    # Panel A: QED (Box plot, higher is better)
     sns.boxplot(
-        data=novel_mol_df,
+        data=effective_df,
         x="target",
         y="qed",
         hue="model",
@@ -492,13 +548,13 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
         fliersize=2.0,
         ax=axes[0],
     )
-    axes[0].set_title(qed_label, fontsize=15, fontweight="bold", pad=12)
+    axes[0].set_title(f"QED (\u2191){set_label}", fontsize=15, fontweight="bold", pad=12)
     axes[0].set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
     axes[0].set_ylabel("QED Score", fontsize=12, labelpad=8)
-    
-    # Panel B: SA Score (Box plot)
+
+    # Panel B: SA Score (Box plot, lower is better)
     sns.boxplot(
-        data=novel_mol_df,
+        data=effective_df,
         x="target",
         y="sa",
         hue="model",
@@ -509,31 +565,27 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
         fliersize=2.0,
         ax=axes[1],
     )
-    axes[1].set_title(sa_label, fontsize=15, fontweight="bold", pad=12)
+    axes[1].set_title(f"SA Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
     axes[1].set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
     axes[1].set_ylabel("SA Score (lower is better)", fontsize=12, labelpad=8)
-    
-    # Panel C: Fraction MedChem Pass (Bar plot)
-    sns.barplot(
-        data=medchem_df,
-        x="target",
-        y="fraction_medchem_pass",
-        hue="model",
-        hue_order=hue_order,
-        order=targets,
-        estimator=np.mean,
-        errorbar=("ci", 95),
-        capsize=0.05,
-        err_kws={"linewidth": 1.2},
-        edgecolor="black",
-        linewidth=0.8,
-        alpha=0.85,
-        ax=axes[2],
-    )
-    axes[2].set_title("Fraction Passing MedChem Filters", fontsize=15, fontweight="bold", pad=12)
-    axes[2].set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
-    axes[2].set_ylabel("Pass Rate", fontsize=12, labelpad=8)
-    
+
+    # ── Placeholder panels for future scoring metrics ────────────────────
+    # To add AIZynthFinder Score panel:
+    #   1. Add "aizynthfinder_score" column to molecule_metrics_cache.csv
+    #   2. Increase n_panels to 3 (or 4 with MolSkill)
+    #   3. Add box plot:
+    #       sns.boxplot(data=effective_df, x="target", y="aizynthfinder_score",
+    #                   hue="model", hue_order=hue_order, order=targets, ... ax=axes[2])
+    #       axes[2].set_title("AIZynthFinder Score (\u2191)", ...)
+    #
+    # To add MolSkill Score panel:
+    #   1. Add "molskill_score" column to molecule_metrics_cache.csv
+    #   2. Increase n_panels accordingly
+    #   3. Add box plot:
+    #       sns.boxplot(data=effective_df, x="target", y="molskill_score",
+    #                   hue="model", hue_order=hue_order, order=targets, ... ax=axes[3])
+    #       axes[3].set_title("MolSkill Score (\u2191)", ...)
+
     for ax in axes:
         ax.tick_params(axis="both", labelsize=11)
         ax.tick_params(axis="x", rotation=30)
@@ -542,7 +594,7 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
         sns.despine(ax=ax, top=True, right=True)
         if ax.get_legend() is not None:
             ax.get_legend().remove()
-            
+
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
         handles,
@@ -553,15 +605,15 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
         frameon=False,
         fontsize=13,
     )
-    
+
     fig.suptitle("Chemical Quality Metrics Across Benchmarks", y=1.05, fontsize=18, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.95])
-    
+
     output_path_stem = output_dir / "fig3_quality_metrics"
     fig.savefig(output_path_stem.with_suffix(".svg"), bbox_inches="tight")
     fig.savefig(output_path_stem.with_suffix(".png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print("Generated Figure 3 with true molecule-level box plots successfully!")
+    print("Generated Figure 3 with Effective Yield Rate compound set!")
 
 
 
@@ -632,16 +684,24 @@ def plot_figure_4_trajectory(exps_dir: Path, output_dir: Path, k: int = 10):
             if min_len < 2:
                 continue
             aligned = np.array([curve[:min_len] for curve in curves])
-            median_curve = np.median(aligned, axis=0)
-            q25 = np.percentile(aligned, 25, axis=0)
-            q75 = np.percentile(aligned, 75, axis=0)
+            
+            n_seeds = aligned.shape[0]
+            mean_curve = np.mean(aligned, axis=0)
+            if n_seeds > 1:
+                sem = np.std(aligned, axis=0, ddof=1) / np.sqrt(n_seeds)
+                ci = 1.96 * sem
+            else:
+                ci = np.zeros_like(mean_curve)
+            lower = mean_curve - ci
+            upper = mean_curve + ci
+            
             x = np.arange(1, min_len + 1)
-            plt.plot(x, median_curve, label=model, lw=2.2, color=palette[i])
-            plt.fill_between(x, q25, q75, alpha=0.15, color=palette[i])
+            plt.plot(x, mean_curve, label=model, lw=2.2, color=palette[i])
+            plt.fill_between(x, lower, upper, alpha=0.15, color=palette[i])
 
         plt.xlabel("Cumulative Oracle Calls", fontsize=12, labelpad=8)
-        plt.ylabel(f"Running Avg Top-{k} Reward Score", fontsize=12, labelpad=8)
-        plt.title(f"Optimization Trajectory: {target} (Median with IQR, k={k})", fontsize=14, fontweight="bold", pad=12)
+        plt.ylabel(f"Running Top-{k} Mean Reward Score", fontsize=12, labelpad=8)
+        plt.title(f"Optimization Trajectory: {target}", fontsize=14, fontweight="bold", pad=12)
         plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, fontsize=11)
         plt.grid(True, linestyle="--", alpha=0.5)
         sns.despine(top=True, right=True)
@@ -661,6 +721,8 @@ def write_table_1_macro_summary(macro_df: pl.DataFrame, output_dir: Path):
         "novelty_mean",
         "nonidenticality_mean",
         "effective_novelty_mean",
+        "effective_hit_rate_mean",
+        "effective_medchem_pass_mean",
         "avg_top_10_mean",
         "avg_top_100_mean",
         "mean_qed_novel_mean",

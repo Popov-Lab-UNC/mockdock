@@ -49,13 +49,15 @@ class DockingOracle(ABC):
 
 
 class AutoDockGPUOracle(DockingOracle):
+    DEFAULT_ADGPU_EXECUTABLE = "adgpu"
+
     # Extensions required for AutoDock-GPU docking
     ALLOWED_RECEPTOR_EXTENSIONS = {".map", ".fld", ".xyz", ".pdbqt"}
 
     def __init__(
         self,
         receptor_file: Union[str, Path],
-        adgpu_executable: str = "adgpu",
+        adgpu_executable: Optional[str] = None,
         n_poses: int = 10,
         n_cpus: Optional[int] = None,
         n_gpus: int = 1,
@@ -63,6 +65,11 @@ class AutoDockGPUOracle(DockingOracle):
         **kwargs,
     ):
         super().__init__(receptor_file, n_poses, n_cpus, n_gpus, save_dir)
+
+        if adgpu_executable is None:
+            adgpu_executable = os.environ.get(
+                "ADGPU_EXECUTABLE", self.DEFAULT_ADGPU_EXECUTABLE
+            )
 
         self.adgpu_executable = adgpu_executable
 

@@ -1,6 +1,7 @@
 # Standard library imports
 import json
 import math
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -49,6 +50,7 @@ class MDOracle:
         run_dir: Optional[Union[str, Path]] = None,
         n_cpus: Optional[int] = None,
         n_gpus: Optional[int] = None,
+        adgpu_executable: Optional[str] = None,
     ):
         """
         Initialize the oracle for a specific benchmark.
@@ -88,9 +90,10 @@ class MDOracle:
 
         # ── Backend settings (private) ────────────────────────────────
         self._docking_backend = docking_backend
-        self._resolved_backend: Optional[str] = None
+        self._resolved_backend = None
         self._backend_config = {
-            "adgpu_executable": "adgpu",
+            "adgpu_executable": adgpu_executable
+            or os.environ.get("ADGPU_EXECUTABLE", AutoDockGPUOracle.DEFAULT_ADGPU_EXECUTABLE),
             "vina_exhaustiveness": 32,
             "n_poses": 10,
         }
