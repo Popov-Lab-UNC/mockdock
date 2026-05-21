@@ -24,7 +24,7 @@ def test_analyze_results_normalizes_and_sets_failed_rmsd():
 
     oracle._filter_poses_for_molecule = lambda *_: (float("nan"), False, -10.0, None, -1)
     scores2, batch2 = oracle._analyze_results([("CC", "CC")], [[{"dlg_path": "x.dlg"}]])
-    assert scores2["CC"] == -1.5
+    assert scores2["CC"] == 0.0
     assert batch2[0]["skip_reason"] == "failed_rmsd"
 
 

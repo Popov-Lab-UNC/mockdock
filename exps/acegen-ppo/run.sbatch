@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
-#SBATCH --time=6:00:00
+#SBATCH --time=01-00:00:00
 #SBATCH --output=ppo_%j.log
 #SBATCH --error=ppo_%j.err
 #SBATCH --mail-type=ALL
@@ -26,8 +26,8 @@ OUT_DIR=${SCRIPT_DIR}/outputs
 BUDGET=1000
 SEED=0
 N_WARMUP=25
-NUM_RUNS=1
-CLIP_REWARD_UPPER_BOUND=true
+NUM_RUNS=5
+CLIP_REWARD_UPPER_BOUND=false
 
 if [ "${CLIP_REWARD_UPPER_BOUND}" = true ]; then
     CLIP_REWARD_FLAG="--clip-reward-upper-bound"

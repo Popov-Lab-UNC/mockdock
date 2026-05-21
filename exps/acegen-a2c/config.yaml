@@ -9,7 +9,7 @@ log_dir: results
 logger_backend: null
 
 # Environment
-num_envs: 16
+num_envs: 64
 total_smiles: 1000
 
 # Scoring — handled externally via FCGMBTask

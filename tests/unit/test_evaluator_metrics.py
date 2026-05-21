@@ -29,7 +29,8 @@ def test_compute_metrics_generates_expected_keys(tmp_path: Path, monkeypatch):
         {
             "smiles": ["CCO", "CCN"],
             "original_smiles": ["CC", "CCN"],
-            "normalized_score": [0.3, 0.9],
+            "norm_score": [0.3, 0.9],
+            "reward_score": [0.3, 0.9],
             "skip_reason": [None, None],
             "valid_pose_found": [True, False],
         }

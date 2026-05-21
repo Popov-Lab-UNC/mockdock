@@ -10,7 +10,7 @@ log_dir: results                  # overridden to absolute path in run.py
 logger_backend: null              # set to wandb or tensorboard to enable
 
 # Environment
-num_envs: 128
+num_envs: 64
 total_smiles: 1000                # overridden to remaining budget after warmup
 
 # Scoring — handled externally via FCGMBTask; all molscore fields must be null

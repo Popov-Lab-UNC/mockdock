@@ -27,7 +27,7 @@ BUDGET=1000
 SEED=0
 N_WARMUP=25
 NUM_RUNS=5
-CLIP_REWARD_UPPER_BOUND=true
+CLIP_REWARD_UPPER_BOUND=false
 
 if [ "${CLIP_REWARD_UPPER_BOUND}" = true ]; then
     CLIP_REWARD_FLAG="--clip-reward-upper-bound"

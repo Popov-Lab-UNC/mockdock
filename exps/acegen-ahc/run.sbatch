@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
-#SBATCH --time=1-00:00:00
+#SBATCH --time=16:00:00
 #SBATCH --output=ahc_%j.log
 #SBATCH --error=ahc_%j.err
 #SBATCH --mail-type=ALL
@@ -27,7 +27,7 @@ BUDGET=1000
 SEED=0
 N_WARMUP=25
 NUM_RUNS=5
-CLIP_REWARD_UPPER_BOUND=true
+CLIP_REWARD_UPPER_BOUND=false
 
 if [ "${CLIP_REWARD_UPPER_BOUND}" = true ]; then
     CLIP_REWARD_FLAG="--clip-reward-upper-bound"

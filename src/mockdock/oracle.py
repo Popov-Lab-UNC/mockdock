@@ -245,7 +245,7 @@ class MDOracle:
                 self._create_skipped_result(smi, "budget_exhausted", smi) for smi in smiles_list
             ]
             self._update_results_df(exhausted_rows)
-            return {smi: -1.5 for smi in smiles_list}
+            return {smi: 0.0 for smi in smiles_list}
 
         self._ensure_components()
 
@@ -261,7 +261,7 @@ class MDOracle:
         for smi in out_of_budget_smiles:
             skipped_results.append(self._create_skipped_result(smi, "budget_exhausted", smi))
 
-        final_scores = {smi: -1.5 for smi in smiles_list}
+        final_scores = {smi: 0.0 for smi in smiles_list}
 
         if valid_tasks:
             # 3. Preparation and Docking
@@ -308,6 +308,10 @@ class MDOracle:
                 continue
 
             mol = Chem.MolFromSmiles(canonical)
+            if mol is None:
+                skipped_results.append(self._create_skipped_result(smi, "invalid_molecule", smi))
+                continue
+
             if self._loader.require_fragment_match and not check_2d_match(
                 mol, self._docking_analyzer.fragment_mol
             ):
@@ -395,11 +399,14 @@ class MDOracle:
             if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
                 norm_score = 0.0
 
+            clip_reward_upper_bound = getattr(self, "_clip_reward_upper_bound", True)
             reward_score = (
                 min(max(norm_score, 0.0), 1.0)
-                if self._clip_reward_upper_bound
+                if clip_reward_upper_bound
                 else max(norm_score, 0.0)
             )
+            if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
+                reward_score = 0.0
             final_scores_list.append((original, reward_score))
             batch_results.append(
                 {

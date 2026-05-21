@@ -127,10 +127,25 @@ class MDEvaluator:
         metrics["fragment_incorporation"] = self._fragment_rate(unique_smiles, fragment_smiles)
 
         # MedChem Filtering
+        frag_q = Chem.MolFromSmiles(fragment_smiles) if fragment_smiles else None
+        if frag_q is None and fragment_smiles:
+            frag_q = Chem.MolFromSmarts(fragment_smiles)
+        
+        from .utils import get_robust_match
+
+        valid_frag_mols = []
+        for m in unique_mols:
+            if m:
+                if frag_q is None or get_robust_match(m, frag_q):
+                    valid_frag_mols.append(m)
+
+        if valid_frag_mols:
+            medchem_pass_results = [self._filters.evaluate(m) for m in valid_frag_mols]
+            metrics["fraction_medchem_pass"] = sum(1 for r in medchem_pass_results if r["pass"]) / len(valid_frag_mols)
+        else:
+            metrics["fraction_medchem_pass"] = 0.0
+
         filter_results = [self._filters.evaluate(m) for m in unique_mols]
-        metrics["fraction_medchem_pass"] = sum(1 for r in filter_results if r["pass"]) / max(
-            len(unique_mols), 1
-        )
         metrics["fraction_pains_free"] = sum(
             1 for r in filter_results if "PAINS" not in r["rules_hit"]
         ) / max(len(unique_mols), 1)
@@ -139,6 +154,7 @@ class MDEvaluator:
         ) / max(len(unique_mols), 1)
         metrics["fraction_lipinski"] = self._lipinski_fraction(unique_mols)
 
+
         # ─── Extrinsic Metrics ────────────────────────────────────────────────
         metrics["novelty"] = self._novelty(unique_smiles, ref_smiles_canonical)
         metrics["nonidenticality"] = sum(
@@ -146,12 +162,9 @@ class MDEvaluator:
             for generated_canonical, original_canonical in valid_pairs
             if generated_canonical != original_canonical
         ) / max(len(valid_pairs), 1)
-        metrics["effective_novelty"] = sum(
-            1
-            for generated_canonical, original_canonical in valid_pairs
-            if (generated_canonical not in ref_smiles_canonical)
-            and (generated_canonical != original_canonical)
-        ) / max(len(valid_pairs), 1)
+        unique_nonidentical = {gen for gen, orig in valid_pairs if gen != orig}
+        effective_novel_set = {s for s in unique_nonidentical if s not in ref_smiles_canonical}
+        metrics["effective_novelty"] = len(effective_novel_set) / max(len(generated_raw), 1)
         metrics["snn"] = self._snn(unique_smiles, list(ref_smiles_canonical))
         novel_unique_smiles = [s for s in unique_smiles if s not in ref_smiles_canonical]
         novel_unique_mols = [Chem.MolFromSmiles(s) for s in novel_unique_smiles]
@@ -166,15 +179,17 @@ class MDEvaluator:
 
         # ─── Docking Performance ──────────────────────────────────────────────
         scored_df = df.filter(pl.col("skip_reason").is_null())
+        reward_col = self._pick_first_existing_column(scored_df, ["reward_score"])
+        norm_col = self._pick_first_existing_column(scored_df, ["norm_score"])
         if not scored_df.is_empty():
             # Reward score is the bounded optimization target; norm_score is uncapped.
-            top = scored_df.sort("reward_score", descending=True)
-            metrics["avg_top_1"] = float(top.head(1)["reward_score"].mean())
-            metrics["avg_top_10"] = float(top.head(10)["reward_score"].mean())
-            metrics["avg_top_100"] = float(top.head(100)["reward_score"].mean())
-            metrics["avg_top_1_norm"] = float(top.head(1)["norm_score"].mean())
-            metrics["avg_top_10_norm"] = float(top.head(10)["norm_score"].mean())
-            metrics["avg_top_100_norm"] = float(top.head(100)["norm_score"].mean())
+            top = scored_df.sort(reward_col, descending=True)
+            metrics["avg_top_1"] = float(top.head(1)[reward_col].mean())
+            metrics["avg_top_10"] = float(top.head(10)[reward_col].mean())
+            metrics["avg_top_100"] = float(top.head(100)[reward_col].mean())
+            metrics["avg_top_1_norm"] = float(top.head(1)[norm_col].mean())
+            metrics["avg_top_10_norm"] = float(top.head(10)[norm_col].mean())
+            metrics["avg_top_100_norm"] = float(top.head(100)[norm_col].mean())
             metrics["auc_top_10"] = self._auc_top_k(df, k=10)
             metrics["valid_pose_rate"] = len(scored_df.filter(pl.col("valid_pose_found"))) / len(
                 scored_df
@@ -192,10 +207,10 @@ class MDEvaluator:
             filtered_scored_df = scored_df.filter(pl.col(smiles_col).is_in(list(passing_smiles)))
 
             if not filtered_scored_df.is_empty():
-                top_f = filtered_scored_df.sort("reward_score", descending=True)
-                metrics["avg_top_1_filtered"] = float(top_f.head(1)["reward_score"].mean())
-                metrics["avg_top_10_filtered"] = float(top_f.head(10)["reward_score"].mean())
-                metrics["avg_top_100_filtered"] = float(top_f.head(100)["reward_score"].mean())
+                top_f = filtered_scored_df.sort(reward_col, descending=True)
+                metrics["avg_top_1_filtered"] = float(top_f.head(1)[reward_col].mean())
+                metrics["avg_top_10_filtered"] = float(top_f.head(10)[reward_col].mean())
+                metrics["avg_top_100_filtered"] = float(top_f.head(100)[reward_col].mean())
 
                 # For AUC, we need a version of df where non-passing molecules have their score masked or filtered
                 # Usually we want the AUC of the search *among* passing molecules.
@@ -235,6 +250,15 @@ class MDEvaluator:
         return metrics
 
     # ── helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _pick_first_existing_column(df: pl.DataFrame, candidates: list[str]) -> str:
+        for name in candidates:
+            if name in df.columns:
+                return name
+        raise ValueError(
+            f"None of the expected columns are present. Expected one of: {candidates}, got {df.columns}"
+        )
 
     @staticmethod
     def _canonicalize_smiles(smiles: str) -> str | None:
@@ -316,16 +340,18 @@ class MDEvaluator:
     def _fragment_rate(unique_smiles: list[str], fragment_smiles: str) -> float:
         if not fragment_smiles or not unique_smiles:
             return 0.0
-        frag = Chem.MolFromSmarts(fragment_smiles)
+        frag = Chem.MolFromSmiles(fragment_smiles)
         if frag is None:
-            frag = Chem.MolFromSmiles(fragment_smiles)
+            frag = Chem.MolFromSmarts(fragment_smiles)
         if frag is None:
             return 0.0
+
+        from .utils import get_robust_match
 
         hits = 0
         for s in unique_smiles:
             m = Chem.MolFromSmiles(s)
-            if m and m.HasSubstructMatch(frag):
+            if m and get_robust_match(m, frag):
                 hits += 1
         return hits / len(unique_smiles)
 
@@ -388,7 +414,8 @@ class MDEvaluator:
 
         If passing_smiles is provided, only molecules in that set contribute to the buffer.
         """
-        scores = df["reward_score"].to_list()
+        score_col = MDEvaluator._pick_first_existing_column(df, ["reward_score"])
+        scores = df[score_col].to_list()
         if "smiles" in df.columns:
             smiles = df["smiles"].to_list()
         elif "original_smiles" in df.columns:
@@ -423,7 +450,8 @@ class MDEvaluator:
     @staticmethod
     def _oracle_efficiency(df: pl.DataFrame, k: int = 10, frac: float = 0.80) -> int:
         """Calls to reach frac of final top-k score."""
-        scores = df["reward_score"].to_list()
+        score_col = MDEvaluator._pick_first_existing_column(df, ["reward_score"])
+        scores = df[score_col].to_list()
         if not scores:
             return 0
 
@@ -443,7 +471,8 @@ class MDEvaluator:
     @staticmethod
     def _oracle_calls_to_threshold(df: pl.DataFrame, k: int = 10, threshold: float = 1.0) -> int:
         """Calls to first reach an absolute running top-k reward threshold."""
-        scores = df["reward_score"].to_list()
+        score_col = MDEvaluator._pick_first_existing_column(df, ["reward_score"])
+        scores = df[score_col].to_list()
         if not scores:
             return 0
 
