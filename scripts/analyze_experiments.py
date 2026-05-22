@@ -423,9 +423,7 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                             "is_novel": row_data["is_novel"],
                             "has_fragment": row_data["has_fragment"],
                             "passes_medchem": row_data["passes_medchem"],
-                            # Placeholder: read future scoring columns if available
-                            # "aizynthfinder_score": row_data.get("aizynthfinder_score", None),
-                            # "molskill_score": row_data.get("molskill_score", None),
+                            "molskill_score": row_data.get("molskill_score", None),
                         })
                 else:
                     print(f"  Cache {cache_path} missing required columns, recomputing...")
@@ -480,9 +478,7 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                     "is_novel": is_novel,
                     "has_fragment": has_fragment,
                     "passes_medchem": passes_medchem,
-                    # Placeholder columns for future scoring metrics:
-                    # "aizynthfinder_score": compute_aizynthfinder(smiles),
-                    # "molskill_score": compute_molskill(smiles),
+                    "molskill_score": None,
                 })
                 all_mols_data.append({
                     "model": mapped_model,
@@ -494,6 +490,7 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                     "is_novel": is_novel,
                     "has_fragment": has_fragment,
                     "passes_medchem": passes_medchem,
+                    "molskill_score": None,
                 })
 
             if cache_rows:
@@ -522,10 +519,9 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
 
     # ── Panel layout ─────────────────────────────────────────────────────
     # Active panels: QED, SA Score
-    # Future panels (see docstring for instructions):
-    #   - AIZynthFinder Score (↑): retrosynthetic accessibility
-    #   - MolSkill Score (↑): learned drug-likeness
-    n_panels = 2
+    # Dynamic panel: MolSkill Score (if present and computed)
+    plot_molskill = "molskill_score" in effective_df.columns and effective_df["molskill_score"].notna().any()
+    n_panels = 3 if plot_molskill else 2
     fig, axes = plt.subplots(1, n_panels, figsize=(6.5 * n_panels, 4.8))
 
     preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "Libinvent", "GenMol"]
@@ -569,22 +565,23 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
     axes[1].set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
     axes[1].set_ylabel("SA Score (lower is better)", fontsize=12, labelpad=8)
 
-    # ── Placeholder panels for future scoring metrics ────────────────────
-    # To add AIZynthFinder Score panel:
-    #   1. Add "aizynthfinder_score" column to molecule_metrics_cache.csv
-    #   2. Increase n_panels to 3 (or 4 with MolSkill)
-    #   3. Add box plot:
-    #       sns.boxplot(data=effective_df, x="target", y="aizynthfinder_score",
-    #                   hue="model", hue_order=hue_order, order=targets, ... ax=axes[2])
-    #       axes[2].set_title("AIZynthFinder Score (\u2191)", ...)
-    #
-    # To add MolSkill Score panel:
-    #   1. Add "molskill_score" column to molecule_metrics_cache.csv
-    #   2. Increase n_panels accordingly
-    #   3. Add box plot:
-    #       sns.boxplot(data=effective_df, x="target", y="molskill_score",
-    #                   hue="model", hue_order=hue_order, order=targets, ... ax=axes[3])
-    #       axes[3].set_title("MolSkill Score (\u2191)", ...)
+    # Panel C: MolSkill Score (Box plot, lower is better) - dynamic
+    if plot_molskill:
+        sns.boxplot(
+            data=effective_df,
+            x="target",
+            y="molskill_score",
+            hue="model",
+            hue_order=hue_order,
+            order=targets,
+            palette=sns.color_palette("colorblind", len(hue_order)),
+            linewidth=1.0,
+            fliersize=2.0,
+            ax=axes[2],
+        )
+        axes[2].set_title(f"MolSkill Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
+        axes[2].set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
+        axes[2].set_ylabel("MolSkill Score (lower is better)", fontsize=12, labelpad=8)
 
     for ax in axes:
         ax.tick_params(axis="both", labelsize=11)
