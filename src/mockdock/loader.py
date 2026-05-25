@@ -10,14 +10,14 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-import yaml
+import tomllib
 
 from .data import fetch_chembl_data
 
 
 class BenchmarkLoader:
     """
-    Lightweight loader: reads the benchmark YAML config and bioactivity CSV.
+    Lightweight loader: reads the benchmark TOML config and bioactivity CSV.
     Does NOT initialise any docking engine or create run directories.
     """
 
@@ -35,8 +35,8 @@ class BenchmarkLoader:
 
         # Load config
         config_path = self._find_config(benchmark_name, _pkg_configs_dir)
-        with open(config_path) as f:
-            raw = yaml.safe_load(f)
+        with open(config_path, "rb") as f:
+            raw = tomllib.load(f)
 
         self.pdb_id: str = raw["pdb_id"]
         self.target_id: str = raw.get("target_id", "")
@@ -62,7 +62,7 @@ class BenchmarkLoader:
         # Try exact, then uppercase, then lowercase
         stems = [name, name.upper(), name.lower()]
         for stem in stems:
-            p = config_dir / f"{stem}.yaml"
+            p = config_dir / f"{stem}.toml"
             if p.exists():
                 return p
 
@@ -70,11 +70,11 @@ class BenchmarkLoader:
         local_config_dir = Path("configs")
         if local_config_dir.exists():
             for stem in stems:
-                p = local_config_dir / f"{stem}.yaml"
+                p = local_config_dir / f"{stem}.toml"
                 if p.exists():
                     return p
 
-        available = [f.stem for f in config_dir.glob("*.yaml")]
+        available = [f.stem for f in config_dir.glob("*.toml")]
         raise FileNotFoundError(f"Benchmark config '{name}' not found. Available: {available}")
 
     @classmethod
@@ -82,7 +82,7 @@ class BenchmarkLoader:
         pkg_config_dir = Path(__file__).parent / "configs"
         if not pkg_config_dir.exists():
             return []
-        return sorted(f.stem for f in pkg_config_dir.glob("*.yaml"))
+        return sorted(f.stem for f in pkg_config_dir.glob("*.toml"))
 
     # ── Bioactivity helpers ───────────────────────────────────────────
 

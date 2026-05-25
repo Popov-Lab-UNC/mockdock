@@ -1,0 +1,15 @@
+benchmark_name = "PEPCK"
+pdb_id = "2GMV"
+target_id = "CHEMBL2911"
+doc_id = "CHEMBL1145376"
+assay_id = "CHEMBL889299"
+ligand_resname = "UN8"
+fragment_smiles = "Cn1c(=O)n(Cc2ccccc2F)c(=O)c2[nH]c(Cc3ccc(N)cc3)nc21"
+fragment_smiles_with_dummies = "*Cn1c(=O)n(Cc2ccccc2F)c(=O)c2[nH]c(Cc3ccc(N*)cc3*)nc21"
+require_fragment_match = true
+require_pose_rmsd = true
+filter_during_optimization = true
+clip_reward_upper_bound = true
+low_score = -9.262
+high_score = -11.792
+rmsd_threshold = 2.0

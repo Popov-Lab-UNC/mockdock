@@ -11,7 +11,7 @@ from mockdock.oracle import MDOracle
 def test_update_results_df_writes_live_outputs(tmp_path: Path):
     oracle = MDOracle.__new__(MDOracle)
     oracle.results_df = pl.DataFrame()
-    oracle._yaml_results = []
+    oracle._results_list = []
     oracle._generation_round = 1
     oracle._run_dir = tmp_path
     oracle.benchmark_name = "CHK1"
@@ -36,7 +36,7 @@ def test_update_results_df_writes_live_outputs(tmp_path: Path):
     oracle._update_results_df(new_results)
 
     assert (tmp_path / "results.csv").exists()
-    assert (tmp_path / "results.yaml").exists()
+    assert (tmp_path / "results.toml").exists()
     status_path = tmp_path / "status.json"
     assert status_path.exists()
     status = json.loads(status_path.read_text())

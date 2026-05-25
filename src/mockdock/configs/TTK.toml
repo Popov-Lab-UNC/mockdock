@@ -1,0 +1,15 @@
+benchmark_name = "TTK"
+pdb_id = "3WZJ"
+target_id = "CHEMBL3983"
+doc_id = "CHEMBL3407417"
+assay_id = "CHEMBL3411333"
+ligand_resname = "O43"
+fragment_smiles = "NC(=O)c1ccc(-c2cnc[nH]2)cc1"
+fragment_smiles_with_dummies = "*NC(=O)c1ccc(-c2cnc(*)n2*)cc1"
+require_fragment_match = true
+require_pose_rmsd = true
+filter_during_optimization = true
+clip_reward_upper_bound = true
+low_score = -7.87
+high_score = -11.814
+rmsd_threshold = 2.0

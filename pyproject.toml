@@ -3,7 +3,7 @@ name = "mockdock"
 version = "0.2.0"
 description = "mockdock — Fragment-Constrained Generative Model Benchmark"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "chembl_webresource_client",
     "polars",
@@ -14,7 +14,6 @@ dependencies = [
     "scipy",
     "gemmi>=0.7.4",
     "molscrub>=0.2.2",
-    "pyyaml>=6.0.3",
     "tqdm>=4.67.1",
     "aiohttp>=3.9.0",
     "asttokens>=3.0.1",
@@ -38,7 +37,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-mockdock = ["configs/*.yaml", "grids/**/*", "bioactivity_data/*.csv", "data/*.csv"]
+mockdock = ["configs/*.toml", "grids/**/*", "bioactivity_data/*.csv", "data/*.csv"]
 
 [tool.ruff]
 line-length = 100

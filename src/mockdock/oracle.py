@@ -9,9 +9,6 @@ from typing import Optional, Union
 
 # Third-party imports
 import polars as pl
-
-# Third-party imports (yaml used for results.yaml output)
-import yaml as _yaml_module
 from rdkit import Chem
 
 # Local imports
@@ -80,7 +77,7 @@ class MDOracle:
         self.n_cpus = n_cpus or effective_cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else detect_gpus()
         self.results_df = pl.DataFrame()
-        self._yaml_results: list[dict] = []  # accumulates all results for YAML output
+        self._results_list: list[dict] = []  # accumulates all results for TOML output
         # Timing accumulators
         self._total_prep_time = 0.0
         self._total_dock_time = 0.0
@@ -161,7 +158,7 @@ class MDOracle:
     @property
     def fragment_smiles_with_dummies(self) -> Optional[str]:
         """Fragment SMILES with (*) dummy attachment point(s) for PromptSMILES
-        scaffold decoration.  Returns None if not yet set in the benchmark config YAML."""
+        scaffold decoration.  Returns None if not yet set in the benchmark config TOML."""
         return self._loader.fragment_smiles_with_dummies
 
     @property
@@ -766,8 +763,8 @@ class MDOracle:
             self.results_df = self.results_df.cast(schema, strict=False)
             self.results_df = pl.concat([self.results_df, new_df])
 
-        # Accumulate for YAML (kept separately so we don't re-serialize the whole DF)
-        self._yaml_results.extend(new_results)
+        # Accumulate for TOML (kept separately so we don't re-serialize the whole DF)
+        self._results_list.extend(new_results)
 
         self._flush_results()
 
@@ -778,8 +775,8 @@ class MDOracle:
           results.csv  — ALL scored SMILES in generation order (including
                               2D-mismatched/skipped), so post-hoc novelty/uniqueness
                               analysis works without any data loss.
-          results.yaml      — Same data sorted by reward_score DESC, human-readable.
-          status.json       — Summary counters / best scores for live monitoring
+          results.toml — Same data sorted by reward_score DESC, human-readable TOML.
+          status.json  — Summary counters / best scores for live monitoring
                               (see n_molecules_attempted vs budget_used in code comments).
         """
         if self.results_df.is_empty():
@@ -789,42 +786,66 @@ class MDOracle:
         live_csv = self._run_dir / "results.csv"
         self.results_df.write_csv(live_csv)
 
-        # ── YAML (all SMILES, sorted by reward_score DESC) ──────────
+        # ── TOML (all SMILES, sorted by reward_score DESC) ──────────
         sorted_results = sorted(
-            self._yaml_results,
+            self._results_list,
             key=lambda r: r.get("reward_score") or 0.0,
             reverse=True,
         )
 
-        # Convert NaN / None to null-friendly values for YAML
+        # Convert NaN / None to null-friendly values
         def _clean(v):
             if isinstance(v, float) and math.isnan(v):
                 return None
             return v
 
-        yaml_data = [
-            {
-                "smiles": r["smiles"],
-                "original_smiles": r.get("original_smiles"),
-                "reward_score": _clean(r.get("reward_score")),
-                "norm_score": _clean(r.get("norm_score")),
-                "docking_score": _clean(r.get("docking_score")),
-                "generation_round": r.get("generation_round"),
-                "generation_index": r.get("generation_index"),
-                "valid_pose_found": r.get("valid_pose_found"),
-                "skip_reason": r.get("skip_reason"),
-            }
-            for r in sorted_results
-        ]
-        yaml_path = self._run_dir / "results.yaml"
-        with open(yaml_path, "w") as f:
-            _yaml_module.dump(
-                yaml_data,
-                f,
-                default_flow_style=False,
-                allow_unicode=True,
-                sort_keys=False,
-            )
+        toml_lines = []
+        for r in sorted_results:
+            toml_lines.append("[[results]]")
+
+            def _escape_str(s: str) -> str:
+                return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+
+            toml_lines.append(f'smiles = "{_escape_str(r["smiles"])}"')
+
+            orig_smiles = r.get("original_smiles")
+            if orig_smiles is not None:
+                toml_lines.append(f'original_smiles = "{_escape_str(orig_smiles)}"')
+            else:
+                toml_lines.append('original_smiles = ""')
+
+            # Float values (with nan handling)
+            for k in ["reward_score", "norm_score", "docking_score"]:
+                val = _clean(r.get(k))
+                if val is not None:
+                    toml_lines.append(f"{k} = {val}")
+                else:
+                    toml_lines.append(f"{k} = nan")
+
+            # Integer values
+            for k in ["generation_round", "generation_index"]:
+                val = r.get(k)
+                if val is not None:
+                    toml_lines.append(f"{k} = {int(val)}")
+                else:
+                    toml_lines.append(f"{k} = 0")
+
+            # Boolean values
+            val_pose = r.get("valid_pose_found")
+            toml_lines.append(f'valid_pose_found = {"true" if val_pose else "false"}')
+
+            # String value
+            reason = r.get("skip_reason")
+            if reason is not None:
+                toml_lines.append(f'skip_reason = "{_escape_str(reason)}"')
+            else:
+                toml_lines.append('skip_reason = ""')
+
+            toml_lines.append("")
+
+        toml_path = self._run_dir / "results.toml"
+        with open(toml_path, "w") as f:
+            f.write("\n".join(toml_lines))
 
         # ── Status JSON (summary for live monitoring) ────────────────────
         # - budget_used: oracle calls (includes invalid / 2D-fail / budget_exhausted rows).
