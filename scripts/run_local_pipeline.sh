@@ -25,27 +25,32 @@ activate_venv() {
 export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
 
 # Step 1: Initial analyze_experiments.py to generate cache files
-echo "--> [Step 1/4] Generating initial caches..."
+echo "--> [Step 1/5] Generating initial caches..."
 activate_venv
 python scripts/analyze_experiments.py --exps-dir exps --output-dir analysis_exps
 
-# Step 2: run_molskill.py
-echo "--> [Step 2/4] Scoring with MolSkill..."
+# Step 2: score MolSkill
+echo "--> [Step 2/5] Scoring with MolSkill..."
 if [ -f "${HOME}/miniconda3/etc/profile.d/conda.sh" ]; then
     source "${HOME}/miniconda3/etc/profile.d/conda.sh"
     conda activate molskill
-    python scripts/run_molskill.py --exps-dir exps --batch-size 64 --quiet
+    python scripts/score_molecules.py --scorer molskill --exps-dir exps --batch-size 64 --quiet
 else
     echo "Warning: Conda not found at ${HOME}/miniconda3. Skipping MolSkill."
 fi
 
-# Step 3: run_aizynthfinder.py
-echo "--> [Step 3/4] Scoring with AIZynthFinder..."
+# Step 3: score AIZynthFinder
+echo "--> [Step 3/5] Scoring with AIZynthFinder..."
 activate_venv
-python scripts/run_aizynthfinder.py --exps-dir exps
+python scripts/score_molecules.py --scorer aizynthfinder --exps-dir exps
 
-# Step 4: Final analyze_experiments.py to regenerate figures with all scores
-echo "--> [Step 4/4] Regenerating final figures..."
+# Step 4: score Stoplight
+echo "--> [Step 4/5] Scoring with Stoplight..."
+activate_venv
+python scripts/score_molecules.py --scorer stoplight --exps-dir exps
+
+# Step 5: Final analyze_experiments.py to regenerate figures with all scores
+echo "--> [Step 5/5] Regenerating final figures..."
 python scripts/analyze_experiments.py --exps-dir exps --output-dir analysis_exps
 
 echo "================================================================="

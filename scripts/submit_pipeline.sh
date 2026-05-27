@@ -21,10 +21,15 @@ JOB3_OUT=$(sbatch --dependency=afterok:${JOB1_ID} scripts/sbatch_aizynth.sh)
 JOB3_ID=$(echo "${JOB3_OUT}" | awk '{print $NF}')
 echo "Submitted AIZynthFinder Scoring (Job 3 ID: ${JOB3_ID}, dependent on ${JOB1_ID})"
 
-# 4. Submit final analyze job (dependent on both scoring jobs succeeding)
-JOB4_OUT=$(sbatch --dependency=afterok:${JOB2_ID}:${JOB3_ID} scripts/sbatch_analyze.sh)
+# 4. Submit Stoplight scoring job (dependent on Job 1 succeeding)
+JOB4_OUT=$(sbatch --dependency=afterok:${JOB1_ID} scripts/sbatch_stoplight.sh)
 JOB4_ID=$(echo "${JOB4_OUT}" | awk '{print $NF}')
-echo "Submitted Final Analysis & Plotting (Job 4 ID: ${JOB4_ID}, dependent on ${JOB2_ID} and ${JOB3_ID})"
+echo "Submitted Stoplight ADMET Scoring (Job 4 ID: ${JOB4_ID}, dependent on ${JOB1_ID})"
+
+# 5. Submit final analyze job (dependent on all scoring jobs succeeding)
+JOB5_OUT=$(sbatch --dependency=afterok:${JOB2_ID}:${JOB3_ID}:${JOB4_ID} scripts/sbatch_analyze.sh)
+JOB5_ID=$(echo "${JOB5_OUT}" | awk '{print $NF}')
+echo "Submitted Final Analysis & Plotting (Job 5 ID: ${JOB5_ID}, dependent on ${JOB2_ID}, ${JOB3_ID}, and ${JOB4_ID})"
 
 echo "================================================================="
 echo "All jobs submitted! The pipeline will run automatically in order."

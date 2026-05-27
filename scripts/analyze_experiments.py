@@ -411,6 +411,32 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                 run_df = pl.read_csv(cache_path)
                 required_cols = {"smiles", "qed", "sa", "is_novel", "has_fragment", "passes_medchem"}
                 if required_cols.issubset(set(run_df.columns)):
+                    # Load separate scores if they exist
+                    molskill_csv = csv_path.parent / "scores_molskill.csv"
+                    stoplight_csv = csv_path.parent / "scores_stoplight.csv"
+                    aizynth_csv = csv_path.parent / "scores_aizynthfinder.csv"
+
+                    if molskill_csv.exists():
+                        try:
+                            m_df = pl.read_csv(molskill_csv)
+                            run_df = run_df.join(m_df, on="smiles", how="left")
+                        except Exception as e:
+                            print(f"  Error joining molskill scores: {e}")
+
+                    if stoplight_csv.exists():
+                        try:
+                            s_df = pl.read_csv(stoplight_csv)
+                            run_df = run_df.join(s_df, on="smiles", how="left")
+                        except Exception as e:
+                            print(f"  Error joining stoplight scores: {e}")
+
+                    if aizynth_csv.exists():
+                        try:
+                            a_df = pl.read_csv(aizynth_csv)
+                            run_df = run_df.join(a_df, on="smiles", how="left")
+                        except Exception as e:
+                            print(f"  Error joining aizynthfinder scores: {e}")
+
                     use_cache = True
                     for row_data in run_df.iter_rows(named=True):
                         all_mols_data.append({
@@ -424,6 +450,9 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                             "has_fragment": row_data["has_fragment"],
                             "passes_medchem": row_data["passes_medchem"],
                             "molskill_score": row_data.get("molskill_score", None),
+                            "stoplight_score": row_data.get("stoplight_score", None),
+                            "aizynthfinder_score": row_data.get("aizynthfinder_score", None),
+                            "aizynthfinder_state_score": row_data.get("aizynthfinder_state_score", None),
                         })
                 else:
                     print(f"  Cache {cache_path} missing required columns, recomputing...")
@@ -479,6 +508,7 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                     "has_fragment": has_fragment,
                     "passes_medchem": passes_medchem,
                     "molskill_score": None,
+                    "stoplight_score": None,
                 })
                 all_mols_data.append({
                     "model": mapped_model,
@@ -491,6 +521,9 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                     "has_fragment": has_fragment,
                     "passes_medchem": passes_medchem,
                     "molskill_score": None,
+                    "stoplight_score": None,
+                    "aizynthfinder_score": None,
+                    "aizynthfinder_state_score": None,
                 })
 
             if cache_rows:
@@ -519,10 +552,22 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
 
     # ── Panel layout ─────────────────────────────────────────────────────
     # Active panels: QED, SA Score
-    # Dynamic panel: MolSkill Score (if present and computed)
+    # Dynamic panels: MolSkill Score, Stoplight Score (if present and computed)
     plot_molskill = "molskill_score" in effective_df.columns and effective_df["molskill_score"].notna().any()
-    n_panels = 3 if plot_molskill else 2
-    fig, axes = plt.subplots(1, n_panels, figsize=(6.5 * n_panels, 4.8))
+    plot_stoplight = "stoplight_score" in effective_df.columns and effective_df["stoplight_score"].notna().any()
+    plot_aizynth = "aizynthfinder_state_score" in effective_df.columns and effective_df["aizynthfinder_state_score"].notna().any()
+
+    active_panels = ["qed", "sa"]
+    if plot_molskill:
+        active_panels.append("molskill_score")
+    if plot_stoplight:
+        active_panels.append("stoplight_score")
+    if plot_aizynth:
+        active_panels.append("aizynthfinder_state_score")
+
+    n_panels = len(active_panels)
+    fig, axes = plt.subplots(1, n_panels, figsize=(6.5 * n_panels, 4.8), squeeze=False)
+    axes_flat = axes.flatten()
 
     preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "Libinvent", "GenMol"]
     unique_models = list(effective_df["model"].unique())
@@ -531,59 +576,39 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
     ]
     targets = sorted(effective_df["target"].unique())
 
-    # Panel A: QED (Box plot, higher is better)
-    sns.boxplot(
-        data=effective_df,
-        x="target",
-        y="qed",
-        hue="model",
-        hue_order=hue_order,
-        order=targets,
-        palette=sns.color_palette("colorblind", len(hue_order)),
-        linewidth=1.0,
-        fliersize=2.0,
-        ax=axes[0],
-    )
-    axes[0].set_title(f"QED (\u2191){set_label}", fontsize=15, fontweight="bold", pad=12)
-    axes[0].set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
-    axes[0].set_ylabel("QED Score", fontsize=12, labelpad=8)
-
-    # Panel B: SA Score (Box plot, lower is better)
-    sns.boxplot(
-        data=effective_df,
-        x="target",
-        y="sa",
-        hue="model",
-        hue_order=hue_order,
-        order=targets,
-        palette=sns.color_palette("colorblind", len(hue_order)),
-        linewidth=1.0,
-        fliersize=2.0,
-        ax=axes[1],
-    )
-    axes[1].set_title(f"SA Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
-    axes[1].set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
-    axes[1].set_ylabel("SA Score (lower is better)", fontsize=12, labelpad=8)
-
-    # Panel C: MolSkill Score (Box plot, lower is better) - dynamic
-    if plot_molskill:
+    for idx, col_name in enumerate(active_panels):
+        ax = axes_flat[idx]
         sns.boxplot(
             data=effective_df,
             x="target",
-            y="molskill_score",
+            y=col_name,
             hue="model",
             hue_order=hue_order,
             order=targets,
             palette=sns.color_palette("colorblind", len(hue_order)),
             linewidth=1.0,
             fliersize=2.0,
-            ax=axes[2],
+            ax=ax,
         )
-        axes[2].set_title(f"MolSkill Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
-        axes[2].set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
-        axes[2].set_ylabel("MolSkill Score (lower is better)", fontsize=12, labelpad=8)
+        if col_name == "qed":
+            ax.set_title(f"QED (\u2191){set_label}", fontsize=15, fontweight="bold", pad=12)
+            ax.set_ylabel("QED Score", fontsize=12, labelpad=8)
+        elif col_name == "sa":
+            ax.set_title(f"SA Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
+            ax.set_ylabel("SA Score (lower is better)", fontsize=12, labelpad=8)
+        elif col_name == "molskill_score":
+            ax.set_title(f"MolSkill Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
+            ax.set_ylabel("MolSkill Score (lower is better)", fontsize=12, labelpad=8)
+        elif col_name == "stoplight_score":
+            ax.set_title(f"Stoplight Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
+            ax.set_ylabel("Stoplight Score (lower is better)", fontsize=12, labelpad=8)
+        elif col_name == "aizynthfinder_state_score":
+            ax.set_title(f"AIZynthFinder State Score (\u2191){set_label}", fontsize=15, fontweight="bold", pad=12)
+            ax.set_ylabel("State Score (higher is better)", fontsize=12, labelpad=8)
 
-    for ax in axes:
+        ax.set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
+
+    for ax in axes_flat:
         ax.tick_params(axis="both", labelsize=11)
         ax.tick_params(axis="x", rotation=30)
         ax.yaxis.grid(True, linestyle="--", alpha=0.5)
@@ -592,7 +617,7 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
         if ax.get_legend() is not None:
             ax.get_legend().remove()
 
-    handles, labels = axes[0].get_legend_handles_labels()
+    handles, labels = axes_flat[0].get_legend_handles_labels()
     fig.legend(
         handles,
         labels,

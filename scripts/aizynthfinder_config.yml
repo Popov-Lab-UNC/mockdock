@@ -1,0 +1,22 @@
+# =====================================================================
+# AIZynthFinder Config for Batch Processing Generated Molecules
+# =====================================================================
+
+expansion:
+  uspto:
+    - /work/users/s/h/shuhang/aizynthfinder/data/full_uspto_03_05_19_rollout_policy.hdf5
+    - /work/users/s/h/shuhang/aizynthfinder/data/full_uspto_03_05_19_unique_templates.hdf5
+
+filter:
+  uspto_strict: /work/users/s/h/shuhang/aizynthfinder/data/filter_policy_strict.hdf5
+
+stock:
+  zinc: /work/users/s/h/shuhang/aizynthfinder/data/zinc_stock_17_04_20.hdf5
+
+# Optimization parameters tailored for scanning large batches
+search:
+  algorithm: mcts
+  time_limit: 30              # Max seconds per molecule (Default is 120, way too slow for batches!)
+  iteration_limit: 100        # Cuts off deep endless loops on weird generated structures
+  max_transforms: 8           # Max steps from target molecule down to starting materials
+  return_first: false         # Keeps searching for alternative routes until time/iter limits hit

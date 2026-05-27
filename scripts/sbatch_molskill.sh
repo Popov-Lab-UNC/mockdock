@@ -41,10 +41,10 @@ MOLSKILL_ARGS="--batch-size 64 --quiet"
 
 # Run batch scoring on exps
 echo "Scoring main experiments..."
-python scripts/run_molskill.py --exps-dir exps ${MOLSKILL_ARGS}
+python scripts/score_molecules.py --scorer molskill --exps-dir exps ${MOLSKILL_ARGS}
 
 # Run batch scoring on exps_upperbound
 echo "Scoring upper-bound experiments..."
-python scripts/run_molskill.py --exps-dir exps_upperbound ${MOLSKILL_ARGS}
+python scripts/score_molecules.py --scorer molskill --exps-dir exps_upperbound ${MOLSKILL_ARGS}
 
 echo "MolSkill Job finished at $(date)"
