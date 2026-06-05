@@ -15,7 +15,8 @@ echo "Starting Mockdock Analysis Job at $(date)"
 echo "Running on node: $SLURM_NODENAME"
 
 # Move to workspace directory if not already there
-cd "$(dirname "$0")/.." || exit 1
+BENCHMARK_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+cd "${BENCHMARK_DIR}" || exit 1
 
 # Activate virtual environment
 if [ -d ".venv" ]; then
@@ -27,7 +28,8 @@ elif [ -d "venv" ]; then
 fi
 
 # Set PYTHONPATH to include src
-export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
+export PYTHONPATH="$(pwd)/src"
+
 
 # Run main analysis on exps
 echo "Analyzing main experiments..."

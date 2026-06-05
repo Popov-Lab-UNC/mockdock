@@ -35,16 +35,17 @@ echo "Using Python: $(which python)"
 python -c "from molskill.scorer import MolSkillScorer; print('MolSkill import OK')"
 
 # Set PYTHONPATH to include src (for any shared benchmark utilities)
-export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
+export PYTHONPATH="$(pwd)/src"
+
 
 MOLSKILL_ARGS="--batch-size 64 --quiet"
 
 # Run batch scoring on exps
 echo "Scoring main experiments..."
-python scripts/score_molecules.py --scorer molskill --exps-dir exps ${MOLSKILL_ARGS}
+python scripts/score_molecules.py --scorer molskill --exps-dir exps ${MOLSKILL_ARGS} --force
 
 # Run batch scoring on exps_upperbound
 echo "Scoring upper-bound experiments..."
-python scripts/score_molecules.py --scorer molskill --exps-dir exps_upperbound ${MOLSKILL_ARGS}
+python scripts/score_molecules.py --scorer molskill --exps-dir exps_upperbound --skip-reference-set ${MOLSKILL_ARGS} --force
 
 echo "MolSkill Job finished at $(date)"

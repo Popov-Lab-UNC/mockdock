@@ -10,7 +10,10 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-import tomllib
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
 
 from .data import fetch_chembl_data
 

@@ -36,6 +36,27 @@ MODEL_RENAME_MAP = {
     "libinvent": "Libinvent",
 }
 
+REFERENCE_SET_LABEL = "Reference Set"
+REFERENCE_SET_CACHE_DIRNAME = "reference_set_scores"
+REFERENCE_SET_CACHE_FILENAME = "molecule_metrics_cache.csv"
+EXPENSIVE_SCORE_COLUMNS = {
+    "molskill_score",
+    "stoplight_score",
+    "aizynthfinder_score",
+    "aizynthfinder_state_score",
+}
+MODEL_PLOT_ORDER = [
+    REFERENCE_SET_LABEL,
+    "A2C",
+    "AHC",
+    "PPO",
+    "PPOD",
+    "REINFORCE",
+    "REINVENT",
+    "Libinvent",
+    "GenMol",
+]
+
 
 def setup_plotting():
     """Configure seaborn/matplotlib for publication-quality output."""
@@ -252,11 +273,9 @@ def _plot_metric_panels(
     fig, axes = plt.subplots(nrows, ncols, figsize=(6.5 * ncols, 4.8 * nrows), squeeze=False)
     axes_flat = axes.flatten()
 
-    # Consistent ordering for models in the grouped bars
-    preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "Libinvent", "GenMol"]
     unique_models = list(pdf["model"].unique())
-    hue_order = [m for m in preferred_order if m in unique_models] + [
-        m for m in unique_models if m not in preferred_order
+    hue_order = [m for m in MODEL_PLOT_ORDER if m in unique_models] + [
+        m for m in unique_models if m not in MODEL_PLOT_ORDER
     ]
 
     plot_types = plot_types or {}
@@ -365,18 +384,175 @@ def plot_figure_2_optimization(full_df: pl.DataFrame, output_dir: Path):
     )
 
 
-def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_df: pl.DataFrame, output_dir: Path):
+def _reference_set_cache_path(reference_cache_dir: Path, target: str) -> Path:
+    return reference_cache_dir / target / REFERENCE_SET_CACHE_FILENAME
+
+
+def _join_quality_score_files(cache_df: pl.DataFrame, cache_dir: Path) -> pl.DataFrame:
+    """Join optional expensive per-molecule score files beside a molecule cache.
+
+    Expensive scores live in scores_*.csv files. If an older cache still has score
+    columns, drop them before joining so stale cache values cannot shadow reruns.
+    """
+    legacy_score_cols = [col for col in EXPENSIVE_SCORE_COLUMNS if col in cache_df.columns]
+    if legacy_score_cols:
+        cache_df = cache_df.drop(legacy_score_cols)
+
+    score_files = [
+        (cache_dir / "scores_molskill.csv", {"molskill_score"}),
+        (cache_dir / "scores_stoplight.csv", {"stoplight_score"}),
+        (
+            cache_dir / "scores_aizynthfinder.csv",
+            {"aizynthfinder_score", "aizynthfinder_state_score"},
+        ),
+    ]
+    for score_path, score_cols in score_files:
+        if not score_path.exists():
+            continue
+        existing_cols = set(cache_df.columns)
+        try:
+            score_df = pl.read_csv(score_path)
+            cols_to_add = ["smiles"] + [
+                col for col in score_cols if col in score_df.columns and col not in existing_cols
+            ]
+            if len(cols_to_add) > 1:
+                cache_df = cache_df.join(score_df.select(cols_to_add), on="smiles", how="left")
+        except Exception as e:
+            print(f"  Error joining {score_path.name}: {e}")
+    return cache_df
+
+
+def _build_reference_set_cache(
+    target: str,
+    cache_path: Path,
+    chem_module,
+    qed_module,
+    evaluator_cls,
+    force: bool,
+) -> pl.DataFrame:
+    """Compute and cache baseline quality metrics for one bundled reference set."""
+    required_cols = {"smiles", "qed", "sa", "is_novel", "has_fragment", "passes_medchem"}
+    if cache_path.exists() and not force:
+        try:
+            cached_df = pl.read_csv(cache_path)
+            if required_cols.issubset(set(cached_df.columns)):
+                return cached_df
+            print(f"  Reference cache {cache_path} missing required columns, recomputing...")
+        except Exception as e:
+            print(f"  Error reading reference cache {cache_path}: {e}. Recomputing...")
+
+    evaluator = evaluator_cls(target)
+    reference_df, _, _ = evaluator._loader.get_full_data_and_threshold()
+    if reference_df.is_empty():
+        return pl.DataFrame()
+
+    smiles_col = (
+        "canonical_smiles"
+        if "canonical_smiles" in reference_df.columns
+        else "smiles"
+        if "smiles" in reference_df.columns
+        else None
+    )
+    if smiles_col is None:
+        print(f"  Reference data for {target} has no SMILES column.")
+        return pl.DataFrame()
+
+    seen = set()
+    rows = []
+    for row_data in reference_df.iter_rows(named=True):
+        mol = chem_module.MolFromSmiles(str(row_data[smiles_col]))
+        if mol is None:
+            continue
+        smiles = chem_module.MolToSmiles(mol)
+        if smiles in seen:
+            continue
+        seen.add(smiles)
+        rows.append(
+            {
+                "smiles": smiles,
+                "qed": float(qed_module.qed(mol)),
+                "sa": float(evaluator._sa_score(mol)),
+                # Reference-set compounds define the baseline; keep all rows in Figure 3.
+                "is_novel": True,
+                "has_fragment": True,
+                "passes_medchem": True,
+            }
+        )
+
+    cache_df = pl.DataFrame(rows)
+    if not cache_df.is_empty():
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_df.write_csv(cache_path)
+        print(f"  Saved reference cache for {target} to {cache_path}")
+    return cache_df
+
+
+def _append_reference_quality_rows(
+    all_mols_data: list[dict],
+    targets: list[str],
+    reference_cache_dir: Path,
+    chem_module,
+    qed_module,
+    evaluator_cls,
+    force: bool = False,
+):
+    """Add cached benchmark reference-set molecules to Figure 3's molecule-level rows."""
+    for target in targets:
+        try:
+            cache_path = _reference_set_cache_path(reference_cache_dir, target)
+            reference_df = _build_reference_set_cache(
+                target=target,
+                cache_path=cache_path,
+                chem_module=chem_module,
+                qed_module=qed_module,
+                evaluator_cls=evaluator_cls,
+                force=force,
+            )
+            if reference_df.is_empty():
+                print(f"  No reference-set data found for {target}.")
+                continue
+
+            reference_df = _join_quality_score_files(reference_df, cache_path.parent)
+            added = 0
+            for row_data in reference_df.iter_rows(named=True):
+                all_mols_data.append(
+                    {
+                        "model": REFERENCE_SET_LABEL,
+                        "target": target,
+                        "seed": "reference",
+                        "smiles": row_data["smiles"],
+                        "qed": row_data["qed"],
+                        "sa": row_data["sa"],
+                        "is_novel": True,
+                        "has_fragment": True,
+                        "passes_medchem": True,
+                        "molskill_score": row_data.get("molskill_score", None),
+                        "stoplight_score": row_data.get("stoplight_score", None),
+                        "aizynthfinder_score": row_data.get("aizynthfinder_score", None),
+                        "aizynthfinder_state_score": row_data.get(
+                            "aizynthfinder_state_score", None
+                        ),
+                    }
+                )
+                added += 1
+            print(f"  Added {added} reference-set molecules for {target}.")
+        except Exception as e:
+            print(f"  Error processing reference-set molecules for {target}: {e}")
+
+
+def plot_figure_3_quality(
+    results_list: list[tuple[str, str, str, Path]],
+    full_df: pl.DataFrame,
+    output_dir: Path,
+    reference_cache_dir: Path,
+    force: bool = False,
+):
     """Figure 3: Chemical quality metrics on the Effective Yield Rate compound set.
 
     The Effective Yield Rate set consists of molecules that are valid, unique,
     contain the 2D fragment substructure, and are novel against the model-visible set.
     QED, SA Score, and MedChem pass rate are all computed on this consistent set.
-
-    Placeholder panels for AIZynthFinder retrosynthetic accessibility and MolSkill
-    drug-likeness scores are documented below. To add them:
-      1. Compute per-molecule scores and add columns to molecule_metrics_cache.csv
-         (aizynthfinder_score, molskill_score).
-      2. Uncomment the corresponding panel code and increase n_panels.
+    Optional expensive scores are loaded from sibling scores_*.csv files.
     """
     setup_plotting()
 
@@ -411,32 +587,7 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                 run_df = pl.read_csv(cache_path)
                 required_cols = {"smiles", "qed", "sa", "is_novel", "has_fragment", "passes_medchem"}
                 if required_cols.issubset(set(run_df.columns)):
-                    # Load separate scores if they exist
-                    molskill_csv = csv_path.parent / "scores_molskill.csv"
-                    stoplight_csv = csv_path.parent / "scores_stoplight.csv"
-                    aizynth_csv = csv_path.parent / "scores_aizynthfinder.csv"
-
-                    if molskill_csv.exists():
-                        try:
-                            m_df = pl.read_csv(molskill_csv)
-                            run_df = run_df.join(m_df, on="smiles", how="left")
-                        except Exception as e:
-                            print(f"  Error joining molskill scores: {e}")
-
-                    if stoplight_csv.exists():
-                        try:
-                            s_df = pl.read_csv(stoplight_csv)
-                            run_df = run_df.join(s_df, on="smiles", how="left")
-                        except Exception as e:
-                            print(f"  Error joining stoplight scores: {e}")
-
-                    if aizynth_csv.exists():
-                        try:
-                            a_df = pl.read_csv(aizynth_csv)
-                            run_df = run_df.join(a_df, on="smiles", how="left")
-                        except Exception as e:
-                            print(f"  Error joining aizynthfinder scores: {e}")
-
+                    run_df = _join_quality_score_files(run_df, csv_path.parent)
                     use_cache = True
                     for row_data in run_df.iter_rows(named=True):
                         all_mols_data.append({
@@ -507,8 +658,6 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
                     "is_novel": is_novel,
                     "has_fragment": has_fragment,
                     "passes_medchem": passes_medchem,
-                    "molskill_score": None,
-                    "stoplight_score": None,
                 })
                 all_mols_data.append({
                     "model": mapped_model,
@@ -532,11 +681,28 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
         except Exception as e:
             print(f"  Error processing molecules for {csv_path}: {e}")
 
+    print("Gathering reference-set molecule-level data for Figure 3...")
+    reference_targets = sorted({target for _, _, target, _ in results_list})
+    _append_reference_quality_rows(
+        all_mols_data=all_mols_data,
+        targets=reference_targets,
+        reference_cache_dir=reference_cache_dir,
+        chem_module=Chem,
+        qed_module=QED,
+        evaluator_cls=MDEvaluator,
+        force=force,
+    )
+
     if not all_mols_data:
         print("No molecule-level data found for Figure 3.")
         return
 
     mol_df = pl.DataFrame(all_mols_data)
+
+    # Ensure all 5 score columns exist in the DataFrame, filling with None if missing
+    for col in ["qed", "sa", "molskill_score", "stoplight_score", "aizynthfinder_state_score"]:
+        if col not in mol_df.columns:
+            mol_df = mol_df.with_columns(pl.lit(None).cast(pl.Float64).alias(col))
 
     # Filter for Effective Yield Rate compound set: valid + unique + novel + fragment 2D
     effective_df = mol_df.filter(
@@ -551,8 +717,7 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
         set_label = ""
 
     # ── Panel layout ─────────────────────────────────────────────────────
-    # Active panels: QED, SA Score
-    # Dynamic panels: MolSkill Score, Stoplight Score (if present and computed)
+    # Active panels: dynamically render subplots that have valid data
     plot_molskill = "molskill_score" in effective_df.columns and effective_df["molskill_score"].notna().any()
     plot_stoplight = "stoplight_score" in effective_df.columns and effective_df["stoplight_score"].notna().any()
     plot_aizynth = "aizynthfinder_state_score" in effective_df.columns and effective_df["aizynthfinder_state_score"].notna().any()
@@ -569,10 +734,9 @@ def plot_figure_3_quality(results_list: list[tuple[str, str, str, Path]], full_d
     fig, axes = plt.subplots(1, n_panels, figsize=(6.5 * n_panels, 4.8), squeeze=False)
     axes_flat = axes.flatten()
 
-    preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "Libinvent", "GenMol"]
     unique_models = list(effective_df["model"].unique())
-    hue_order = [m for m in preferred_order if m in unique_models] + [
-        m for m in unique_models if m not in preferred_order
+    hue_order = [m for m in MODEL_PLOT_ORDER if m in unique_models] + [
+        m for m in unique_models if m not in MODEL_PLOT_ORDER
     ]
     targets = sorted(effective_df["target"].unique())
 
@@ -770,12 +934,24 @@ def main():
     parser.add_argument(
         "--output-dir", type=Path, default=Path("output"), help="Path for aggregated outputs"
     )
+    parser.add_argument(
+        "--reference-cache-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Shared cache directory for reference-set molecule metrics and optional "
+            "MolSkill/STOPLIGHT/AIZynthFinder scores"
+        ),
+    )
     parser.add_argument("--scratch-dir", type=Path, default=None, help="mockdock scratch dir")
     parser.add_argument("--force", action="store_true", help="Force recomputation of all metrics")
 
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "figures").mkdir(parents=True, exist_ok=True)
+    reference_cache_dir = args.reference_cache_dir or (
+        args.exps_dir.parent / REFERENCE_SET_CACHE_DIRNAME
+    )
 
     setup_plotting()
 
@@ -805,7 +981,13 @@ def main():
     plot_figure_2_optimization(full_df, fig_dir)
 
     print("Generating Figure 3 (Quality Metrics)...")
-    plot_figure_3_quality(results_list, full_df, fig_dir)
+    plot_figure_3_quality(
+        results_list,
+        full_df,
+        fig_dir,
+        reference_cache_dir=reference_cache_dir,
+        force=args.force,
+    )
 
     print("Generating Figure 4 (Trajectories)...")
     plot_figure_4_trajectory(args.exps_dir, fig_dir)
