@@ -162,6 +162,11 @@ class MDOracle:
         return self._loader.fragment_smiles_with_dummies
 
     @property
+    def libinvent_scaffold_with_dummies(self) -> Optional[str]:
+        """LibInvent-specific scaffold with two attachment points when needed."""
+        return self._loader.libinvent_scaffold_with_dummies
+
+    @property
     def config(self) -> dict:
         """Key benchmark configuration parameters."""
         return {

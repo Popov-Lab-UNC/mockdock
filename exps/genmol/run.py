@@ -1,7 +1,7 @@
 """
 GenMol x mockdock Benchmark Evaluation
 ========================================
-Runs GenMol against the six mockdock benchmarks.
+Runs GenMol against the mockdock benchmarks.
 
 Generation (GenMol) runs inside the Apptainer container via subprocess so
 that GenMol's rdkit-pypi is fully isolated from mockdock's newer RDKit/Meeko.
@@ -33,7 +33,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
+BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2", "PptT"]
 
 
 def _generate_smiles(
@@ -286,7 +286,7 @@ def run_benchmark(
     "benchmarks",
     multiple=True,
     type=click.Choice(BENCHMARKS, case_sensitive=False),
-    help="Benchmark(s) to run. Defaults to all six.",
+    help="Benchmark(s) to run. Defaults to all configured benchmarks.",
 )
 @click.option("--budget", default=1000, show_default=True)
 @click.option("--seed", default=0, show_default=True)

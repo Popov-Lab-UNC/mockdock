@@ -46,6 +46,9 @@ class BenchmarkLoader:
         self.doc_id: str | None = raw.get("doc_id")
         self.fragment_smiles: str = raw["fragment_smiles"]
         self.fragment_smiles_with_dummies: str | None = raw.get("fragment_smiles_with_dummies")
+        self.libinvent_scaffold_with_dummies: str | None = raw.get(
+            "libinvent_scaffold_with_dummies"
+        )
         self.rmsd_threshold: float = raw.get("rmsd_threshold", 2.0)
         self.low_score: float | None = raw.get("low_score")
         self.high_score: float | None = raw.get("high_score")

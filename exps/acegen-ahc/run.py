@@ -1,8 +1,8 @@
 """
 AceGen-AHC x mockdock Benchmark Evaluation
 =========================================
-Runs AceGen's AHC (Augmented Hill-Climbing) algorithm against the six
-FCGMB benchmarks.
+Runs AceGen's AHC (Augmented Hill-Climbing) algorithm against the
+mockdock benchmarks.
 
 mockdock-specific adaptations:
   - Scoring via MDOracle (docking-based, fragment-constrained).
@@ -44,7 +44,7 @@ log = logging.getLogger(__name__)
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 ACEGEN_ROOT = SCRIPT_DIR.parents[2] / "acegen-open"
-BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
+BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2", "PptT"]
 
 
 # ── Interface bridge ──────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ def run_benchmark(
     "benchmarks",
     multiple=True,
     type=click.Choice(BENCHMARKS, case_sensitive=False),
-    help="Benchmark(s) to run. Defaults to all six.",
+    help="Benchmark(s) to run. Defaults to all configured benchmarks.",
 )
 @click.option(
     "--budget",

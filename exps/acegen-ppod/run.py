@@ -1,7 +1,7 @@
 """
 AceGen-PPOD x mockdock Benchmark Evaluation
 ==========================================
-Runs AceGen's PPOD algorithm against the six mockdock benchmarks.
+Runs AceGen's PPOD algorithm against the mockdock benchmarks.
 
 PPOD is PPO+Diversity: PPO with the experience replay buffer enabled
 (experience_replay=True in config.yaml), which improves diversity and
@@ -47,7 +47,7 @@ log = logging.getLogger(__name__)
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 ACEGEN_ROOT = SCRIPT_DIR.parents[2] / "acegen-open"
-BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
+BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2", "PptT"]
 
 
 # ── Interface bridge ──────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ def run_benchmark(
     "benchmarks",
     multiple=True,
     type=click.Choice(BENCHMARKS, case_sensitive=False),
-    help="Benchmark(s) to run. Defaults to all six.",
+    help="Benchmark(s) to run. Defaults to all configured benchmarks.",
 )
 @click.option(
     "--budget",

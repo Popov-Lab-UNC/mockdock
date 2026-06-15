@@ -1,7 +1,7 @@
 """
 AceGen-REINVENT x mockdock Benchmark Evaluation
 =============================================
-Runs AceGen's REINVENT algorithm against the six mockdock benchmarks.
+Runs AceGen's REINVENT algorithm against the mockdock benchmarks.
 
 mockdock-specific adaptations:
   - Scoring via MDOracle (docking-based, fragment-constrained).
@@ -45,7 +45,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 ACEGEN_ROOT = (
     SCRIPT_DIR.parents[2] / "acegen-open"
 )  # benchmark/exps/<folder>/../../../acegen-open
-BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
+BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2", "PptT"]
 
 
 # ── Interface bridge ──────────────────────────────────────────────────────────
@@ -279,7 +279,7 @@ def run_benchmark(
     "benchmarks",
     multiple=True,
     type=click.Choice(BENCHMARKS, case_sensitive=False),
-    help="Benchmark(s) to run. Defaults to all six.",
+    help="Benchmark(s) to run. Defaults to all configured benchmarks.",
 )
 @click.option(
     "--budget",

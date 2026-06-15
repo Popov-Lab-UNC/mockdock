@@ -1,0 +1,22 @@
+# =====================================================================
+# AIZynthFinder Config for Batch Processing (ONNX CPU Backend)
+# =====================================================================
+
+expansion:
+  uspto:
+    - /work/users/s/h/shuhang/aizynthfinder/data_onnx/uspto_model.onnx
+    - /work/users/s/h/shuhang/aizynthfinder/data_onnx/uspto_templates.csv.gz
+
+filter:
+  uspto_strict: /work/users/s/h/shuhang/aizynthfinder/data_onnx/uspto_filter_model.onnx
+
+stock:
+  zinc: /work/users/s/h/shuhang/aizynthfinder/data/zinc_stock_17_04_20.hdf5
+
+# Optimization parameters tailored for scanning large batches on CPU
+search:
+  algorithm: mcts
+  time_limit: 30              # Max seconds per molecule
+  iteration_limit: 100        # Cuts off deep endless loops on weird generated structures
+  max_transforms: 8           # Max steps from target molecule down to starting materials
+  return_first: false         # Keeps searching for alternative routes until limits hit

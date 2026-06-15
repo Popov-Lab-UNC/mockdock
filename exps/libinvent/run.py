@@ -24,7 +24,7 @@ if str(PROJECT_SRC) not in sys.path:
 
 from mockdock import MDOracle
 
-BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2"]
+BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2", "PptT"]
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 TEMPLATE_PATH = SCRIPT_DIR / "templates" / "libinvent_base.toml"
 
@@ -37,10 +37,10 @@ log = logging.getLogger(__name__)
 
 
 def _require_scaffold(oracle: MDOracle) -> str:
-    scaffold = oracle.fragment_smiles_with_dummies
+    scaffold = oracle.libinvent_scaffold_with_dummies or oracle.fragment_smiles_with_dummies
     if not scaffold:
         raise ValueError(
-            f"{oracle.benchmark_name}: fragment_smiles_with_dummies is not set in mockdock config."
+            f"{oracle.benchmark_name}: no LibInvent-compatible scaffold is set in mockdock config."
         )
     if scaffold.count("*") < 2:
         raise ValueError(
@@ -194,7 +194,7 @@ def run_benchmark(
     "benchmarks",
     multiple=True,
     type=click.Choice(BENCHMARKS, case_sensitive=False),
-    help="Benchmark(s) to run. Defaults to all six.",
+    help="Benchmark(s) to run. Defaults to all configured benchmarks.",
 )
 @click.option("--budget", default=1000, show_default=True, type=int)
 @click.option("--seed", default=0, show_default=True, type=int, help="Logged only.")
