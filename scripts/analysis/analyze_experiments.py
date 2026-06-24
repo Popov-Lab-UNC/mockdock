@@ -289,7 +289,7 @@ def _plot_metric_panels(
         ax = axes_flat[idx]
         ptype = plot_types.get(metric, "bar")
         if ptype == "box":
-            sns.boxplot(
+            sns.boxenplot(
                 data=pdf,
                 x="target",
                 y=metric,
@@ -298,7 +298,7 @@ def _plot_metric_panels(
                 order=targets,
                 palette=palette,
                 linewidth=1.0,
-                fliersize=3.0,
+                showfliers=False,
                 ax=ax,
             )
         else:
@@ -339,17 +339,26 @@ def _plot_metric_panels(
 
     handles, labels = axes_flat[0].get_legend_handles_labels()
     if handles:
+        if nrows == 1:
+            rect_top = 0.76
+            suptitle_y = 0.99
+            bbox_y = 0.94
+        else:
+            rect_top = 0.86
+            suptitle_y = 0.99
+            bbox_y = 0.95
+
         fig.legend(
             handles,
             labels,
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.98),
-            ncol=min(8, len(labels)),
+            bbox_to_anchor=(0.5, bbox_y),
+            ncol=min(3, len(labels)),
             frameon=False,
             fontsize=13,
         )
-    fig.suptitle(figure_title, y=1.03, fontsize=18, fontweight="bold")
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.suptitle(figure_title, y=suptitle_y, fontsize=18, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, rect_top])
     fig.savefig(output_path_stem.with_suffix(".svg"), bbox_inches="tight")
     fig.savefig(output_path_stem.with_suffix(".png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -736,7 +745,9 @@ def plot_figure_3_quality(
         active_panels.append("aizynthfinder_state_score")
 
     n_panels = len(active_panels)
-    fig, axes = plt.subplots(1, n_panels, figsize=(6.5 * n_panels, 4.8), squeeze=False)
+    ncols = 3
+    nrows = int(np.ceil(n_panels / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6.5 * ncols, 4.8 * nrows), squeeze=False)
     axes_flat = axes.flatten()
 
     unique_models = list(effective_df["model"].unique())
@@ -756,8 +767,8 @@ def plot_figure_3_quality(
             hue_order=hue_order,
             order=targets,
             palette=palette,
-            linewidth=1.0,
-            fliersize=2.0,
+            linewidth=0.8,
+            showfliers=False,
             ax=ax,
         )
         if col_name == "qed":
@@ -778,7 +789,10 @@ def plot_figure_3_quality(
 
         ax.set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
 
-    for ax in axes_flat:
+    for idx in range(n_panels, len(axes_flat)):
+        axes_flat[idx].axis("off")
+
+    for ax in axes_flat[:n_panels]:
         ax.tick_params(axis="both", labelsize=11)
         ax.tick_params(axis="x", rotation=30)
         ax.yaxis.grid(True, linestyle="--", alpha=0.5)
@@ -792,14 +806,14 @@ def plot_figure_3_quality(
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.98),
-        ncol=min(8, len(labels)),
+        bbox_to_anchor=(0.5, 0.95),
+        ncol=min(3, len(labels)),
         frameon=False,
         fontsize=13,
     )
 
-    fig.suptitle("Chemical Quality Metrics Across Benchmarks", y=1.05, fontsize=18, fontweight="bold")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.suptitle("Chemical Quality Metrics Across Benchmarks", y=0.99, fontsize=18, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.86])
 
     output_path_stem = output_dir / "fig3_quality_metrics"
     fig.savefig(output_path_stem.with_suffix(".svg"), bbox_inches="tight")

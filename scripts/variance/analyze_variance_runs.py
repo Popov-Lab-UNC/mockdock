@@ -118,12 +118,37 @@ def _valid_score_mask(df: pl.DataFrame, score_cols: list[str]) -> pl.Expr:
     return pl.fold(pl.lit(True), lambda acc, x: acc & x, exprs)
 
 
+CHEMBL_TO_TARGET = {
+    "CHEMBL286": "Renin",
+    "CHEMBL205": "CA2",
+    "CHEMBL206": "ESR1",
+    "CHEMBL2534": "PDK1",
+    "CHEMBL3983": "MPS1",
+    "CHEMBL2971": "JAK2",
+    "CHEMBL335": "PTP1B",
+    "CHEMBL214": "5-HT1A",
+    "CHEMBL3778": "IRAK4",
+    "CHEMBL2147": "PIM1",
+    "CHEMBL3820": "GCK",
+    "CHEMBL4361": "MCL1",
+    "CHEMBL2959": "ITK",
+    "CHEMBL4899": "MAP3K8",
+    "CHEMBL4523304": "FAN1",
+    "CHEMBL2911": "PEPCK",
+    "CHEMBL4630": "CHK1",
+    "CHEMBL284": "DPP4",
+    "CHEMBL279": "VEGFR2",
+}
+
+
 def _short_system_label(system_key: str) -> str:
-    """Use only first CHEMBL ID and PDB ID from a full system key."""
+    """Map CHEMBL ID to human-readable target name and append PDB ID."""
     parts = system_key.split("_")
     if len(parts) >= 2:
-        return f"{parts[0]}_{parts[1]}"
-    return system_key
+        target_name = CHEMBL_TO_TARGET.get(parts[0], parts[0])
+        return f"{target_name}_{parts[1]}"
+    return CHEMBL_TO_TARGET.get(system_key, system_key)
+
 
 
 SUMMARY_SCHEMA = {
@@ -135,7 +160,10 @@ SUMMARY_SCHEMA = {
     "r2_std": pl.Float64,
     "spearman_mean": pl.Float64,
     "spearman_std": pl.Float64,
+    "pct_passing_rmsd_mean": pl.Float64,
+    "pct_passing_rmsd_std": pl.Float64,
 }
+
 
 
 def _empty_summary_df() -> pl.DataFrame:
@@ -150,7 +178,9 @@ def _merge_existing_summary(stats_df: pl.DataFrame, stats_csv: Path) -> pl.DataF
     existing = pl.read_csv(stats_csv)
     missing_cols = [col for col in SUMMARY_SCHEMA if col not in existing.columns]
     if missing_cols:
-        raise RuntimeError(f"Existing summary is missing columns: {missing_cols}")
+        for col in missing_cols:
+            existing = existing.with_columns(pl.lit(None).cast(SUMMARY_SCHEMA[col]).alias(col))
+
 
     existing = existing.select(list(SUMMARY_SCHEMA))
     if not stats_df.is_empty():
@@ -182,6 +212,7 @@ def plot_run_barplot(runs_dir: Path, config_dir: Path, output_dir: Path) -> Path
 
     system_key_to_config = _build_system_key_to_config(config_dir)
     system_corrs: dict[str, list[float]] = {}
+    system_pct_pass: dict[str, list[float]] = {}
     for run_dir in run_dirs:
         for system_key, csv_path in _iter_results(run_dir):
             config_path = system_key_to_config.get(system_key)
@@ -189,6 +220,13 @@ def plot_run_barplot(runs_dir: Path, config_dir: Path, output_dir: Path) -> Path
             pearson, spearman = _compute_system_correlations(df, config_path)
             if np.isfinite(pearson):
                 system_corrs.setdefault(system_key, []).append((pearson, spearman))
+            if "valid_pose_found" in df.columns:
+                series = df["valid_pose_found"]
+                if series.dtype == pl.Boolean:
+                    pct = float(series.mean()) * 100
+                else:
+                    pct = float(series.cast(pl.Utf8).str.to_lowercase().is_in(["true", "1", "yes"]).mean()) * 100
+                system_pct_pass.setdefault(system_key, []).append(pct)
 
     system_stats = []
     for system_key, corrs in sorted(system_corrs.items()):
@@ -200,6 +238,11 @@ def plot_run_barplot(runs_dir: Path, config_dir: Path, output_dir: Path) -> Path
         r2_std = float(np.std(np.square(pearsons))) if pearsons else float("nan")
         spearman_mean = float(np.mean(spearmans)) if spearmans else float("nan")
         spearman_std = float(np.std(spearmans)) if spearmans else float("nan")
+        
+        pct_list = system_pct_pass.get(system_key, [])
+        pct_mean = float(np.mean(pct_list)) if pct_list else float("nan")
+        pct_std = float(np.std(pct_list)) if pct_list else float("nan")
+        
         system_stats.append(
             {
                 "system": system_key,
@@ -210,8 +253,11 @@ def plot_run_barplot(runs_dir: Path, config_dir: Path, output_dir: Path) -> Path
                 "r2_std": r2_std,
                 "spearman_mean": spearman_mean,
                 "spearman_std": spearman_std,
+                "pct_passing_rmsd_mean": pct_mean,
+                "pct_passing_rmsd_std": pct_std,
             }
         )
+
 
     stats_csv = output_dir / "run_correlation_summary.csv"
     stats_df = _empty_summary_df() if not system_stats else pl.DataFrame(system_stats)
@@ -223,7 +269,7 @@ def plot_run_barplot(runs_dir: Path, config_dir: Path, output_dir: Path) -> Path
     plt.figure(figsize=(12, 6))
     summary_stats = stats_df.to_dicts()
     if summary_stats:
-        sorted_stats = sorted(summary_stats, key=lambda r: r["spearman_mean"], reverse=True)
+        sorted_stats = sorted(summary_stats, key=lambda r: r["spearman_mean"], reverse=False)
         x = np.arange(len(sorted_stats))
         means = [r["spearman_mean"] for r in sorted_stats]
         stds = [r["spearman_std"] for r in sorted_stats]
