@@ -30,6 +30,6 @@ echo "STOPLIGHT_MAX_WORKERS=${STOPLIGHT_MAX_WORKERS}"
 echo "STOPLIGHT_TIMEOUT_STARTUP_SEC=${STOPLIGHT_TIMEOUT_STARTUP_SEC}"
 echo "STOPLIGHT_TIMEOUT_PER_MOL_SEC=${STOPLIGHT_TIMEOUT_PER_MOL_SEC}"
 
-python scripts/scoring/score_molecules.py --scorer stoplight --exps-dir exps
+python scripts/scoring/score_molecules.py --scorer stoplight --exps-dir exps --skip-reference-set
 python scripts/scoring/score_molecules.py --scorer stoplight --exps-dir exps_upperbound --skip-reference-set
 mockdock_slurm_footer "Stoplight scoring"

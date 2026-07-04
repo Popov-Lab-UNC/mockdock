@@ -369,7 +369,7 @@ def plot_figure_1_generation(full_df: pl.DataFrame, output_dir: Path):
     metrics_map = {
         "validity": "Validity",
         "uniqueness": "Uniqueness",
-        "fragment_incorporation": "Fragment 2D",
+        "fragment_incorporation": "Fragment-adherence",
         "novelty": "Novelty",
         "effective_hit_rate": "Effective Yield Rate",
         "effective_medchem_pass": "MedChem Pass Rate",
@@ -718,7 +718,7 @@ def plot_figure_3_quality(
         if col not in mol_df.columns:
             mol_df = mol_df.with_columns(pl.lit(None).cast(pl.Float64).alias(col))
 
-    # Filter for Effective Yield Rate compound set: valid + unique + novel + fragment 2D
+    # Filter for Effective Yield Rate compound set: valid + unique + novel + Fragment-adherence
     effective_df = mol_df.filter(
         pl.col("is_novel") & pl.col("has_fragment")
     ).to_pandas()
@@ -807,7 +807,7 @@ def plot_figure_3_quality(
         labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.95),
-        ncol=min(3, len(labels)),
+        ncol=5,
         frameon=False,
         fontsize=13,
     )
@@ -860,7 +860,7 @@ def plot_figure_4_trajectory(exps_dir: Path, output_dir: Path, k: int = 10):
             continue
 
         # Sort model results by preferred order
-        preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "Libinvent", "GenMol"]
+        preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "LibINVENT", "GenMol"]
         sorted_model_results = {}
         for m in preferred_order:
             if m in model_results:

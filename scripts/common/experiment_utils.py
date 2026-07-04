@@ -15,7 +15,8 @@ MODEL_RENAME_MAP = {
     "acegen-reinforce": "REINFORCE",
     "acegen-reinvent": "REINVENT",
     "genmol": "GenMol",
-    "libinvent": "Libinvent",
+    "libinvent": "LibINVENT",
+    "invirtuogen": "InVirtuoGen",
 }
 
 REFERENCE_SET_LABEL = "Reference Set"
@@ -35,8 +36,9 @@ MODEL_PLOT_ORDER = [
     "PPOD",
     "REINFORCE",
     "REINVENT",
-    "Libinvent",
+    "LibINVENT",
     "GenMol",
+    "InVirtuoGen",
 ]
 
 

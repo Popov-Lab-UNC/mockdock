@@ -28,8 +28,9 @@ MODEL_RENAME_MAP = {
     "acegen-ppod": "PPOD",
     "acegen-reinforce": "REINFORCE",
     "acegen-reinvent": "REINVENT",
-    "libinvent": "Libinvent",
+    "libinvent": "LibINVENT",
     "genmol": "GenMol",
+    "invirtuogen": "InVirtuoGen",
 }
 
 def setup_plotting():
@@ -241,7 +242,7 @@ def main():
     setup_plotting()
     pdf = df.to_pandas()
 
-    preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "Libinvent", "GenMol"]
+    preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "LibINVENT", "GenMol"]
     unique_models = list(pdf["model"].unique())
     hue_order = [m for m in preferred_order if m in unique_models] + [
         m for m in unique_models if m not in preferred_order
@@ -431,7 +432,7 @@ def main():
         "## Scientific Discoveries from Top-100 Highest-Scoring Subsets",
         "",
         "### 1. Capped at 1.0 Achieves High Target Potency Safely",
-        "In the capped experiment, the average top-100 score is close to `1.0` for high-performing models (e.g. Libinvent), indicating that models successfully find a wide collection of molecules hitting the target reward ceiling. In the uncapped experiment, the scores are occasionally higher (up to `1.4` for Libinvent on VEGFR2) but as shown below, this extra score is achieved by sacrificing structural quality.",
+        "In the capped experiment, the average top-100 score is close to `1.0` for high-performing models (e.g. LibINVENT), indicating that models successfully find a wide collection of molecules hitting the target reward ceiling. In the uncapped experiment, the scores are occasionally higher (up to `1.4` for LibINVENT on VEGFR2) but as shown below, this extra score is achieved by sacrificing structural quality.",
         "",
         "### 2. Capped Scoring Preserves or Improves Chemical Quality (QED, SA)",
         "By capping the reward at `1.0`, we avoid extreme optimization. In uncapped optimization, agents often stack repeated sub-structures to maximize docking metrics, resulting in highly complex, un-synthesizable, and physically unrealistic structures. The capped models maintain highly stable and robust QED and SA scores, indicating better synthesizability (lower SA scores) and higher drug-likeness (higher QED scores).",

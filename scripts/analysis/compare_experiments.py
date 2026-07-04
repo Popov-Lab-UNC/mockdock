@@ -81,7 +81,7 @@ def main():
     combined = pl.concat([uncapped_df, capped_df], how="diagonal")
     pdf = combined.to_pandas()
 
-    preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "Libinvent", "GenMol"]
+    preferred_order = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "LibINVENT", "GenMol"]
     unique_models = list(pdf["model"].unique())
     hue_order = [m for m in preferred_order if m in unique_models] + [
         m for m in unique_models if m not in preferred_order
@@ -182,7 +182,7 @@ def main():
         "- **Scaffold Diversity**: Higher values indicate that models generate a wider variety of core scaffolds (scaffold hopping).",
         "- **Average Max SNN** (Similarity to starting compounds): Lower values indicate that the generated compounds are structurally distinct from the starting reference molecules, indicating broad exploration.",
         "- **Effective Novelty**: The fraction of valid molecules that are both novel and non-identical to their seed compounds.",
-        "- **Fraction Passing MedChem Filters**: Calculated on the subset of generated unique valid molecules that pass validity and fragment 2D filters.",
+        "- **Fraction Passing MedChem Filters**: Calculated on the subset of generated unique valid molecules that pass validity and Fragment-adherence filters.",
         "- **Avg Top-10 Score**: The actual optimization reward achieved.",
         "",
         "## Macro-Averages by Model and Experiment Setting",

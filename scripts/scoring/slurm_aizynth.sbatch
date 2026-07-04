@@ -29,6 +29,6 @@ export CUDA_VISIBLE_DEVICES=""
 
 echo "AIZYNTH_MAX_WORKERS=${AIZYNTH_MAX_WORKERS}"
 
-python scripts/scoring/score_molecules.py --scorer aizynthfinder --exps-dir exps
+python scripts/scoring/score_molecules.py --scorer aizynthfinder --exps-dir exps --skip-reference-set
 python scripts/scoring/score_molecules.py --scorer aizynthfinder --exps-dir exps_upperbound --skip-reference-set
 mockdock_slurm_footer "AIZynthFinder scoring"

@@ -19,6 +19,6 @@ mockdock_slurm_header "MolSkill scoring"
 mockdock_activate_conda molskill
 python -c "from molskill.scorer import MolSkillScorer; print('MolSkill import OK')"
 MOLSKILL_ARGS="--batch-size 64 --quiet"
-python scripts/scoring/score_molecules.py --scorer molskill --exps-dir exps ${MOLSKILL_ARGS}
+python scripts/scoring/score_molecules.py --scorer molskill --exps-dir exps --skip-reference-set ${MOLSKILL_ARGS}
 python scripts/scoring/score_molecules.py --scorer molskill --exps-dir exps_upperbound --skip-reference-set ${MOLSKILL_ARGS}
 mockdock_slurm_footer "MolSkill scoring"
