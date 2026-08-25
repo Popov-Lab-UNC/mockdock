@@ -6,7 +6,7 @@ Fragment-Constrained Generative Model Benchmark via Molecular Docking
   <img src="assets/Mock_Dock_Duck.svg" alt="MockDock banner" width="800" />
 </p>
 
-**Documentation:** [https://popov-lab-unc.github.io/mockdock/](https://popov-lab-unc.github.io/mockdock/)
+**Documentation:** [https://popov-lab-unc.github.io/mockdock/](https://popov-lab-unc.github.io/mockdock/) &nbsp;|&nbsp; **License:** [MIT](./LICENSE)
 
 **mockdock** is a docking-based benchmarking package for chemical language models (CLMs) and generative algorithms performing fragment-constrained molecular design. Each benchmark pairs a curated PDB crystal structure with bioactivity-annotated ChEMBL compounds, evaluating models on their ability to decorate core fragments into high-affinity binders while maintaining the bioactive 3D binding mode.
 
@@ -81,7 +81,3 @@ print(metrics["novelty"])               # Novelty fraction vs seed set
 | **VEGFR2**| 3VHE   | CHEMBL279  | 42Q             | [-6.70, -12.10]   |
 
 *See the [documentation](https://popov-lab-unc.github.io/mockdock/) for scoring mechanics, adding custom targets, script pipelines, and full API reference.*
-
-## License
-
-[MIT](./LICENSE)
