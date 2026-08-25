@@ -35,6 +35,7 @@ from pathlib import Path
 
 import polars as pl
 import yaml
+import tomllib
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -54,11 +55,11 @@ CONFIGS_DIR = BENCHMARK_ROOT / "src" / "mockdock" / "configs"
 # Map each canonical benchmark name to its (target_id, pdb_id, doc_id, assay_id)
 # so we can reconstruct the path to each variant run results CSV.
 def _load_benchmark_config(benchmark_name: str) -> dict:
-    config_path = CONFIGS_DIR / f"{benchmark_name}.yaml"
+    config_path = CONFIGS_DIR / f"{benchmark_name}.toml"
     if not config_path.exists():
         raise FileNotFoundError(f"No config found: {config_path}")
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    with open(config_path, "rb") as f:
+        return tomllib.load(f)
 
 
 def _find_results_csv(run_dir: Path, target_id: str, pdb_id: str, doc_id: str) -> Path | None:
@@ -139,12 +140,18 @@ def process_benchmark(benchmark_name: str) -> None:
     high_score = float(with_scores["mean_docking_score"].min())
     low_score = float(with_scores["mean_docking_score"].max())
 
-    # Write calibration values back to YAML config
+    # Write calibration values back to TOML config
     cfg["low_score"] = round(low_score, 3)
     cfg["high_score"] = round(high_score, 3)
-    config_path = CONFIGS_DIR / f"{benchmark_name}.yaml"
+    config_path = CONFIGS_DIR / f"{benchmark_name}.toml"
     with open(config_path, "w") as f:
-        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+        for k, v in cfg.items():
+            if isinstance(v, bool):
+                f.write(f"{k} = {str(v).lower()}\n")
+            elif isinstance(v, (int, float)):
+                f.write(f"{k} = {v}\n")
+            elif isinstance(v, str):
+                f.write(f'{k} = "{v}"\n')
 
     # ── Compute scores ───────────────────────────────────────────────────────
     denom = low_score - high_score
@@ -175,7 +182,7 @@ def process_benchmark(benchmark_name: str) -> None:
 
 
 def main() -> None:
-    benchmarks = sorted(p.stem for p in CONFIGS_DIR.glob("*.yaml"))
+    benchmarks = sorted(p.stem for p in CONFIGS_DIR.glob("*.toml"))
 
     print("add_docking_baselines.py")
     print(f"  Variance runs dir : {VARIANCE_RUNS_DIR}")
