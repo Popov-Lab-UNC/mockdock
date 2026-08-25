@@ -33,6 +33,14 @@ docs = [
     "shibuya>=2024.7.0",
     "myst-parser>=3.0",
 ]
+# All optional dependencies combined
+all = [
+    "vina>=1.2.7",
+    "prody>=2.4.1",
+    "sphinx>=7.0,<9",
+    "shibuya>=2024.7.0",
+    "myst-parser>=3.0",
+]
 
 [build-system]
 requires = ["setuptools", "wheel"]

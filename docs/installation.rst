@@ -28,8 +28,23 @@ Or using `uv <https://github.com/astral-sh/uv>`_:
    uv venv
    uv sync
 
-Optional Backends
------------------
+Optional Backends & Extras
+--------------------------
+
+All Optional Dependencies Combined
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To install all optional backends and documentation tools at once:
+
+.. code-block:: bash
+
+   pip install -e ".[all]"
+
+Or with uv:
+
+.. code-block:: bash
+
+   uv sync --all-extras
 
 AutoDock Vina Backend
 ^^^^^^^^^^^^^^^^^^^^^

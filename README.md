@@ -24,7 +24,9 @@ cd mockdock
 uv venv && uv sync
 ```
 
-Optional backends: `pip install -e ".[vina]"` (Vina) and `pip install -e ".[receptor]"` (ProDy receptor prep).
+Optional extras:
+* Install everything: `pip install -e ".[all]"` (or `uv sync --all-extras`)
+* Specific features: `pip install -e ".[vina]"` (Vina), `pip install -e ".[receptor]"` (ProDy receptor prep), or `pip install -e ".[docs]"` (Sphibuya docs).
 
 ## Quickstart
 
