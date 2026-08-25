@@ -27,6 +27,12 @@ dependencies = [
 vina = ["vina>=1.2.7"]
 # Receptor preparation from raw PDB (only needed if pre-built grids are absent)
 receptor = ["prody>=2.4.1"]
+# Documentation build dependencies
+docs = [
+    "sphinx>=7.0,<9",
+    "shibuya>=2024.7.0",
+    "myst-parser>=3.0",
+]
 
 [build-system]
 requires = ["setuptools", "wheel"]
