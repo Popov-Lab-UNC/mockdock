@@ -73,13 +73,22 @@ Pass a list of candidate SMILES strings to :meth:`~mockdock.MDOracle.score`:
 6. Inspecting Results & Session State
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-At any time during or after scoring, inspect the full history and budget:
+During scoring, **mockdock** automatically flushes the cumulative results to ``results.csv`` inside ``oracle.run_dir`` after every batch.
+
+You can inspect the full DataFrame in Python or export it explicitly:
 
 .. code-block:: python
 
    # Access results as a Polars DataFrame
    results_df = oracle.results_df
    print(results_df)
+
+   # Path to the auto-saved live CSV
+   csv_path = oracle.run_dir / "results.csv"
+   print("Live results saved at:", csv_path)
+
+   # Or export explicitly to a custom location
+   oracle.results_df.write_csv("./my_experiment_results.csv")
 
    # Check remaining oracle calls
    print(f"Remaining budget: {oracle.budget_remaining} / {oracle.budget}")

@@ -36,7 +36,7 @@ Optional backends: `pip install -e ".[vina]"` (Vina) and `pip install -e ".[rece
 from mockdock import MDOracle
 
 # Initialize oracle for a benchmark target
-oracle = MDOracle("CHK1", budget=1000)
+oracle = MDOracle("CHK1", budget=1000, run_dir="./my_run")
 
 # Seed compounds & required 2D fragment
 initial_df = oracle.get_initial_compounds()
@@ -45,8 +45,12 @@ fragment_smiles = oracle.fragment_smiles
 # Score candidate molecules (returns {smiles: reward_score in [0.0, 1.0]})
 scores = oracle.score(["CCO", "c1ccccc1"])
 
+# Inspect results (automatically saved to oracle.run_dir / "results.csv")
 print(oracle.results_df)       # Full Polars history DataFrame
 print(oracle.budget_remaining) # Remaining oracle calls
+
+# Optionally save results explicitly
+oracle.results_df.write_csv("results.csv")
 ```
 
 ### Post-hoc Evaluation
@@ -56,6 +60,7 @@ from mockdock import MDEvaluator
 from pathlib import Path
 
 evaluator = MDEvaluator("CHK1")
+# Evaluate results.csv (from oracle.run_dir or your saved CSV)
 metrics = evaluator.compute_metrics(Path("my_run/results.csv"))
 
 print(metrics["avg_top_10"])            # Top-10 mean reward score

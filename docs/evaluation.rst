@@ -6,6 +6,10 @@ Evaluation Metrics
 Usage
 -----
 
+.. tip::
+
+   ``results.csv`` is generated automatically by :class:`~mockdock.MDOracle` during scoring and saved in ``oracle.run_dir / "results.csv"``. You can also export custom DataFrames via ``oracle.results_df.write_csv("my_results.csv")``.
+
 Python API
 ^^^^^^^^^^
 
@@ -17,7 +21,7 @@ Python API
    # Initialize evaluator with target benchmark configuration
    evaluator = MDEvaluator("CHK1")
 
-   # Compute metrics from a session CSV
+   # Compute metrics from a session CSV (e.g. from oracle.run_dir / "results.csv")
    metrics = evaluator.compute_metrics(Path("my_run/results.csv"))
 
    # Save metrics to JSON

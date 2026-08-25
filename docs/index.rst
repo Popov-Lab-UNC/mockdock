@@ -34,7 +34,7 @@ Scoring molecules during generative model training / reinforcement learning:
    from mockdock import MDOracle
 
    # Instantiate oracle for a specific benchmark target
-   oracle = MDOracle("CHK1", budget=1000)
+   oracle = MDOracle("CHK1", budget=1000, run_dir="./my_run")
 
    # Initial seed compounds (lowest-quartile ChEMBL bioactivity)
    initial_df = oracle.get_initial_compounds()
@@ -46,8 +46,12 @@ Scoring molecules during generative model training / reinforcement learning:
    scores = oracle.score(["CCO", "c1ccccc1"])
 
    # Inspect session history & remaining budget
+   # (Results are automatically written to oracle.run_dir / "results.csv")
    print(oracle.results_df)
    print(oracle.budget_remaining)
+
+   # Or export explicitly:
+   oracle.results_df.write_csv("my_run/results.csv")
 
 Computing comprehensive benchmarking metrics after a run:
 
@@ -57,7 +61,8 @@ Computing comprehensive benchmarking metrics after a run:
    from pathlib import Path
 
    evaluator = MDEvaluator("CHK1")
-   metrics = evaluator.compute_metrics(Path("run_results/results.csv"))
+   # Point to results.csv generated during the scoring run
+   metrics = evaluator.compute_metrics(Path("my_run/results.csv"))
 
    print(f"Top 10 Mean Score: {metrics['avg_top_10']:.3f}")
    print(f"MedChem Pass Fraction: {metrics['fraction_medchem_pass']:.1%}")
