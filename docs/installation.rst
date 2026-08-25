@@ -11,15 +11,9 @@ Requirements
 Step 1: Install AutoDock-GPU (Required, v1.6)
 ---------------------------------------------
 
-**mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ (developed and tested with **v1.6**) as its primary docking and scoring backend.
+**mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ (tested with **v1.6**) as its primary docking and scoring backend.
 
-Install via Conda:
-
-.. code-block:: bash
-
-   conda install -c conda-forge autodock-gpu
-
-Or download a pre-compiled binary directly from `GitHub Releases <https://github.com/ccsb-scripps/AutoDock-GPU/releases>`_.
+Download a pre-compiled binary directly from `GitHub Releases <https://github.com/ccsb-scripps/AutoDock-GPU/releases>`_ or compile from source following the instructions in the `AutoDock-GPU repository <https://github.com/ccsb-scripps/AutoDock-GPU>`_.
 
 Custom AutoDock-GPU Executable Path
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
