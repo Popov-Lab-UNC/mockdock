@@ -10,12 +10,12 @@
 
 ## Installation
 
-### 1. Install AutoDock-GPU (Required)
+### 1. Install AutoDock-GPU (Required, v1.6)
 
 ```bash
 conda install -c conda-forge autodock-gpu
 ```
-*(Or download the binary from [AutoDock-GPU Releases](https://github.com/ccsb-scripps/AutoDock-GPU/releases) and set `export ADGPU_EXECUTABLE=/path/to/adgpu`)*
+*(Tested with **AutoDock-GPU v1.6**. On HPC clusters with environment modules: `module load autodock-gpu`. Or download the pre-compiled binary from [AutoDock-GPU Releases](https://github.com/ccsb-scripps/AutoDock-GPU/releases) and set `export ADGPU_EXECUTABLE=/path/to/adgpu`)*
 
 ### 2. Install mockdock
 
