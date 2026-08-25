@@ -10,10 +10,19 @@
 
 ## Installation
 
+### 1. Install AutoDock-GPU (Required)
+
+```bash
+conda install -c conda-forge autodock-gpu
+```
+*(Or download the binary from [AutoDock-GPU Releases](https://github.com/ccsb-scripps/AutoDock-GPU/releases) and set `export ADGPU_EXECUTABLE=/path/to/adgpu`)*
+
+### 2. Install mockdock
+
 ```bash
 git clone https://github.com/Popov-Lab-UNC/mockdock.git
 cd mockdock
-pip install -e .
+pip install -e ".[all]"
 ```
 
 Or using [uv](https://github.com/astral-sh/uv):
@@ -21,13 +30,10 @@ Or using [uv](https://github.com/astral-sh/uv):
 ```bash
 git clone https://github.com/Popov-Lab-UNC/mockdock.git
 cd mockdock
-uv venv && uv sync
+uv venv && uv sync --all-extras
 ```
 
-Optional extras:
-* AutoDock-GPU (recommended): `conda install -c conda-forge autodock-gpu` (or download binary; set `ADGPU_EXECUTABLE=/path/to/adgpu`)
-* Install everything else: `pip install -e ".[all]"` (or `uv sync --all-extras`)
-* Specific features: `pip install -e ".[vina]"` (Vina fallback), `pip install -e ".[receptor]"` (ProDy receptor prep), or `pip install -e ".[docs]"` (Shibuya docs).
+Optional extras: `pip install -e ".[vina]"` (CPU fallback), `pip install -e ".[receptor]"` (ProDy receptor prep), or `pip install -e ".[docs]"` (Shibuya docs).
 
 ## Quickstart
 

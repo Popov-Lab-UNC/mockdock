@@ -6,55 +6,14 @@ Requirements
 
 * Python **>= 3.11**
 * Linux or macOS
-* (Optional) NVIDIA GPU with CUDA for AutoDock-GPU acceleration
+* **AutoDock-GPU** (Required for standard benchmark scoring; NVIDIA GPU recommended)
 
-Standard Installation
----------------------
+Step 1: Install AutoDock-GPU (Required)
+---------------------------------------
 
-Clone the repository and install in editable mode with ``pip``:
+**mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ as its primary docking and scoring backend.
 
-.. code-block:: bash
-
-   git clone https://github.com/Popov-Lab-UNC/mockdock.git
-   cd mockdock
-   pip install -e .
-
-Or using `uv <https://github.com/astral-sh/uv>`_:
-
-.. code-block:: bash
-
-   git clone https://github.com/Popov-Lab-UNC/mockdock.git
-   cd mockdock
-   uv venv
-   uv sync
-
-Optional Backends & Extras
---------------------------
-
-All Optional Dependencies Combined
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-To install all optional backends and documentation tools at once:
-
-.. code-block:: bash
-
-   pip install -e ".[all]"
-
-Or with uv:
-
-.. code-block:: bash
-
-   uv sync --all-extras
-
-Docking Engines & Accelerators
-------------------------------
-
-AutoDock-GPU (Recommended)
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-**mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ for fast, GPU-accelerated molecular docking.
-
-You can install AutoDock-GPU via Conda:
+Install via Conda:
 
 .. code-block:: bash
 
@@ -63,7 +22,7 @@ You can install AutoDock-GPU via Conda:
 Or download a pre-compiled binary directly from `GitHub Releases <https://github.com/ccsb-scripps/AutoDock-GPU/releases>`_.
 
 Custom AutoDock-GPU Executable Path
-"""""""""""""""""""""""""""""""""""
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 By default, **mockdock** searches for an ``adgpu`` executable on your system ``PATH``. You can specify a custom binary location using either:
 
@@ -81,9 +40,28 @@ By default, **mockdock** searches for an ``adgpu`` executable on your system ``P
 
    oracle = MDOracle("CHK1", adgpu_executable="/custom/path/to/adgpu")
 
-.. note::
+Step 2: Install mockdock
+------------------------
 
-   If no GPU or ``adgpu`` binary is found, **mockdock** will issue a warning and automatically fall back to **AutoDock Vina** (if installed).
+Install **mockdock** with all optional dependencies:
+
+.. code-block:: bash
+
+   git clone https://github.com/Popov-Lab-UNC/mockdock.git
+   cd mockdock
+   pip install -e ".[all]"
+
+Or using `uv <https://github.com/astral-sh/uv>`_:
+
+.. code-block:: bash
+
+   git clone https://github.com/Popov-Lab-UNC/mockdock.git
+   cd mockdock
+   uv venv
+   uv sync --all-extras
+
+Optional Backends & Extras
+--------------------------
 
 AutoDock Vina Backend (CPU Fallback)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
