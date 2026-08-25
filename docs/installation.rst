@@ -13,13 +13,7 @@ Step 1: Install AutoDock-GPU (Required, v1.6)
 
 **mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ (developed and tested with **v1.6**) as its primary docking and scoring backend.
 
-On HPC clusters utilizing environment modules (e.g. Lmod / Slurm):
-
-.. code-block:: bash
-
-   module load autodock-gpu
-
-Or install via Conda:
+Install via Conda:
 
 .. code-block:: bash
 
