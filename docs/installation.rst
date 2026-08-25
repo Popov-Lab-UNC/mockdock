@@ -46,23 +46,68 @@ Or with uv:
 
    uv sync --all-extras
 
-AutoDock Vina Backend
-^^^^^^^^^^^^^^^^^^^^^
+Docking Engines & Accelerators
+------------------------------
 
-To enable CPU-based docking via AutoDock Vina:
+AutoDock-GPU (Recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ for fast, GPU-accelerated molecular docking.
+
+You can install AutoDock-GPU via Conda:
+
+.. code-block:: bash
+
+   conda install -c conda-forge autodock-gpu
+
+Or download a pre-compiled binary directly from `GitHub Releases <https://github.com/ccsb-scripps/AutoDock-GPU/releases>`_.
+
+Custom AutoDock-GPU Executable Path
+"""""""""""""""""""""""""""""""""""
+
+By default, **mockdock** searches for an ``adgpu`` executable on your system ``PATH``. You can specify a custom binary location using either:
+
+1. The ``ADGPU_EXECUTABLE`` environment variable:
+
+.. code-block:: bash
+
+   export ADGPU_EXECUTABLE=/custom/path/to/adgpu
+
+2. Or the ``adgpu_executable`` parameter in Python:
+
+.. code-block:: python
+
+   from mockdock import MDOracle
+
+   oracle = MDOracle("CHK1", adgpu_executable="/custom/path/to/adgpu")
+
+.. note::
+
+   If no GPU or ``adgpu`` binary is found, **mockdock** will issue a warning and automatically fall back to **AutoDock Vina** (if installed).
+
+AutoDock Vina Backend (CPU Fallback)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To enable CPU-based docking via AutoDock Vina (no GPU required):
 
 .. code-block:: bash
 
    pip install -e ".[vina]"
 
-Receptor Preparation Tools
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+Receptor Preparation & Custom Benchmark Tools
+---------------------------------------------
 
-If you are creating custom benchmarks and need to prepare receptors from raw PDB files rather than using pre-computed AutoGrid maps:
+For using standard benchmark targets, pre-computed AutoGrid maps are included and no extra tools are needed.
+
+If you are creating **new custom benchmark systems** from raw PDB or CIF files:
 
 .. code-block:: bash
 
+   # Install ProDy for receptor splitting and cleaning
    pip install -e ".[receptor]"
+
+   # (Optional) Install CCTBX for complex bond-order assignment
+   conda install -c conda-forge cctbx-base
 
 Building Documentation Locally
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

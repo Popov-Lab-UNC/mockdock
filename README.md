@@ -25,8 +25,9 @@ uv venv && uv sync
 ```
 
 Optional extras:
-* Install everything: `pip install -e ".[all]"` (or `uv sync --all-extras`)
-* Specific features: `pip install -e ".[vina]"` (Vina), `pip install -e ".[receptor]"` (ProDy receptor prep), or `pip install -e ".[docs]"` (Sphibuya docs).
+* AutoDock-GPU (recommended): `conda install -c conda-forge autodock-gpu` (or download binary; set `ADGPU_EXECUTABLE=/path/to/adgpu`)
+* Install everything else: `pip install -e ".[all]"` (or `uv sync --all-extras`)
+* Specific features: `pip install -e ".[vina]"` (Vina fallback), `pip install -e ".[receptor]"` (ProDy receptor prep), or `pip install -e ".[docs]"` (Shibuya docs).
 
 ## Quickstart
 
