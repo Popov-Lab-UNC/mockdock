@@ -57,11 +57,9 @@ oracle.results_df.write_csv("results.csv")
 
 ```python
 from mockdock import MDEvaluator
-from pathlib import Path
 
 evaluator = MDEvaluator("CHK1")
-# Evaluate results.csv (from oracle.run_dir or your saved CSV)
-metrics = evaluator.compute_metrics(Path("my_run/results.csv"))
+metrics = evaluator.compute_metrics("my_run/results.csv")
 
 print(metrics["avg_top_10"])            # Top-10 mean reward score
 print(metrics["fraction_medchem_pass"])  # MedChem filter pass rate

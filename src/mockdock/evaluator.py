@@ -70,13 +70,14 @@ class MDEvaluator:
     is instantiated, making this lightweight and safe to run on a login node.
     """
 
-    def __init__(self, benchmark_name: str, scratch_dir: Path | None = None):
+    def __init__(self, benchmark_name: str, scratch_dir: Path | str | None = None):
         self.benchmark_name = benchmark_name
         self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
         self._filters = MDFilters(active_rulesets=["PAINS", "BMS"])
 
-    def compute_metrics(self, results_csv: Path, output_path: Path | None = None) -> dict:
+    def compute_metrics(self, results_csv: Path | str, output_path: Path | str | None = None) -> dict:
         """Compute all metrics for one results.csv file and optionally write JSON."""
+        results_csv = Path(results_csv)
         if not results_csv.exists():
             raise FileNotFoundError(f"Results CSV not found: {results_csv}")
 
@@ -253,7 +254,9 @@ class MDEvaluator:
         metrics["descriptions"] = METRIC_DESCRIPTIONS
 
         if output_path is None:
-            output_path = Path(results_csv).parent / "eval_metrics.json"
+            output_path = results_csv.parent / "eval_metrics.json"
+        else:
+            output_path = Path(output_path)
 
         with open(output_path, "w") as f:
             json.dump(metrics, f, indent=2)

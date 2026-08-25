@@ -58,11 +58,9 @@ Computing comprehensive benchmarking metrics after a run:
 .. code-block:: python
 
    from mockdock import MDEvaluator
-   from pathlib import Path
 
    evaluator = MDEvaluator("CHK1")
-   # Point to results.csv generated during the scoring run
-   metrics = evaluator.compute_metrics(Path("my_run/results.csv"))
+   metrics = evaluator.compute_metrics("my_run/results.csv")
 
    print(f"Top 10 Mean Score: {metrics['avg_top_10']:.3f}")
    print(f"MedChem Pass Fraction: {metrics['fraction_medchem_pass']:.1%}")

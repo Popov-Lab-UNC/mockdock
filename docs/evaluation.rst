@@ -16,16 +16,15 @@ Python API
 .. code-block:: python
 
    from mockdock import MDEvaluator
-   from pathlib import Path
 
    # Initialize evaluator with target benchmark configuration
    evaluator = MDEvaluator("CHK1")
 
-   # Compute metrics from a session CSV (e.g. from oracle.run_dir / "results.csv")
-   metrics = evaluator.compute_metrics(Path("my_run/results.csv"))
+   # Compute metrics from a session CSV (string path or Path object)
+   metrics = evaluator.compute_metrics("my_run/results.csv")
 
-   # Save metrics to JSON
-   evaluator.save_metrics(metrics, Path("my_run/eval_metrics.json"))
+   # Optionally save metrics to a custom JSON destination
+   evaluator.compute_metrics("my_run/results.csv", output_path="my_run/eval_metrics.json")
 
 CLI Usage
 ^^^^^^^^^
