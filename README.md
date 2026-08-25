@@ -6,7 +6,7 @@
 
 **Documentation:** [https://popov-lab-unc.github.io/mockdock/](https://popov-lab-unc.github.io/mockdock/) &nbsp;|&nbsp; **License:** [MIT](./LICENSE)
 
-**mockdock** is a docking-based benchmarking package for chemical language models (CLMs) and generative algorithms performing fragment-constrained molecular design. Each benchmark pairs a curated PDB crystal structure with bioactivity-annotated ChEMBL compounds, evaluating models on their ability to decorate core fragments into high-affinity binders while maintaining the bioactive 3D binding mode.
+**mockdock** is a docking-based benchmarking package for chemical language models (CLMs) and generative algorithms performing fragment-constrained molecular design. Each benchmark pairs a curated PDB crystal structure with bioactivity-annotated compounds, evaluating models on their ability to decorate core fragments into high-scoring molecules while maintaining a similar binding mode.
 
 ## Installation
 
