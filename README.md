@@ -1,7 +1,5 @@
 # MOCKDOCK
 
-Fragment-Constrained Generative Model Benchmark via Molecular Docking
-
 <p align="center">
   <img src="assets/Mock_Dock_Duck.svg" alt="MockDock banner" width="800" />
 </p>
@@ -68,14 +66,14 @@ print(metrics["novelty"])               # Novelty fraction vs seed set
 
 ## Available Benchmarks
 
-| Benchmark | PDB ID | Target ID | Reference Ligand | Calibration Bounds |
-|-----------|--------|-----------|------------------|-------------------|
-| **CHK1**  | 2R0U   | CHEMBL4630 | M54             | [-6.44, -11.79]   |
-| **DPP4**  | 2HHA   | CHEMBL284  | 3TP             | [-6.21, -11.23]   |
-| **ITK**   | 3QGW   | CHEMBL2959 | L7A             | [-6.55, -11.45]   |
-| **PEPCK** | 2GMV   | CHEMBL2911 | UN8             | [-6.12, -10.98]   |
-| **PptT**  | 8GKF   | Custom     | D16             | [-6.30, -11.50]   |
-| **TTK**   | 3WZJ   | CHEMBL3983 | O43             | [-6.48, -11.62]   |
-| **VEGFR2**| 3VHE   | CHEMBL279  | 42Q             | [-6.70, -12.10]   |
+| Benchmark | Target ID | PDB ID | Reference Ligand | Calibration Bounds |
+|-----------|-----------|--------|------------------|-------------------|
+| **CHK1**  | CHEMBL4630 | 2R0U   | M54             | [-6.44, -11.79]   |
+| **DPP4**  | CHEMBL284  | 2HHA   | 3TP             | [-6.21, -11.23]   |
+| **ITK**   | CHEMBL2959 | 3QGW   | L7A             | [-6.55, -11.45]   |
+| **PEPCK** | CHEMBL2911 | 2GMV   | UN8             | [-6.12, -10.98]   |
+| **PptT**  | CHEMBL5465373 | 8GKF | D16            | [-6.30, -11.50]   |
+| **TTK**   | CHEMBL3983 | 3WZJ   | O43             | [-6.48, -11.62]   |
+| **VEGFR2**| CHEMBL279  | 3VHE   | 42Q             | [-6.70, -12.10]   |
 
 *See the [documentation](https://popov-lab-unc.github.io/mockdock/) for scoring mechanics, adding custom targets, script pipelines, and full API reference.*
