@@ -371,7 +371,7 @@ def plot_figure_1_generation(full_df: pl.DataFrame, output_dir: Path):
         "uniqueness": "Uniqueness",
         "fragment_incorporation": "Fragment-adherence",
         "novelty": "Novelty",
-        "effective_hit_rate": "Effective Yield Rate",
+        "effective_yield_rate": "Effective Yield Rate",
         "effective_medchem_pass": "MedChem Pass Rate",
     }
     _plot_metric_panels(
@@ -928,7 +928,7 @@ def write_table_1_macro_summary(macro_df: pl.DataFrame, output_dir: Path):
         "novelty_mean",
         "nonidenticality_mean",
         "effective_novelty_mean",
-        "effective_hit_rate_mean",
+        "effective_yield_rate_mean",
         "effective_medchem_pass_mean",
         "avg_top_10_mean",
         "avg_top_100_mean",

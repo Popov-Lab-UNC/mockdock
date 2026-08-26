@@ -57,7 +57,7 @@ METRIC_DESCRIPTIONS = {
     "oracle_efficiency_80": "Oracle calls to reach 80% of final top-10 score (fewer is better).",
     "oracle_efficiency_100": "Oracle calls to first reach a top-10 reward of 1.0.",
     "fraction_medchem_pass": "Fraction of unique valid molecules passing structural alerts (PAINS, BMS) and physchem bounds.",
-    "effective_hit_rate": "Fraction of all generated molecules that are valid, unique, contain the 2D fragment, and are novel (Effective Yield Rate).",
+    "effective_yield_rate": "Fraction of all generated molecules that are valid, unique, contain the 2D fragment, and are novel.",
     "effective_medchem_pass": "Fraction of Effective Yield Rate molecules passing structural alerts (PAINS, BMS) and physchem bounds.",
 }
 
@@ -172,7 +172,7 @@ class MDEvaluator:
         metrics["snn"] = self._snn(unique_smiles, list(ref_smiles_canonical))
         novel_unique_smiles = [s for s in unique_smiles if s not in ref_smiles_canonical]
         novel_frag_set = {s for s in novel_unique_smiles if s in frag_passing_set}
-        metrics["effective_hit_rate"] = len(novel_frag_set) / max(len(generated_raw), 1)
+        metrics["effective_yield_rate"] = len(novel_frag_set) / max(len(generated_raw), 1)
         novel_frag_mols = [Chem.MolFromSmiles(s) for s in novel_frag_set if s]
         if novel_frag_mols:
             medchem_pass_results = [self._filters.evaluate(m) for m in novel_frag_mols if m]

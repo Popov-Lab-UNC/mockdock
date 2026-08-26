@@ -95,7 +95,7 @@ Novelty & Fragment Constraints
      - Fraction of molecules that are both novel and non-identical.
    * - ``snn``
      - Average maximum Tanimoto similarity to the initial seed dataset (Nearest Neighbor).
-   * - ``effective_hit_rate``
+   * - ``effective_yield_rate``
      - Fraction of all generated molecules that are valid, unique, contain the fragment, and are novel.
 
 Optimization & Docking Performance
