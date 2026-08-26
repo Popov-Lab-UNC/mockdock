@@ -110,14 +110,10 @@ html_theme_options = {
     "github_url": "https://github.com/Popov-Lab-UNC/mockdock",
     "globaltoc_expand_depth": 1,
     "nav_links": [
-        {"title": "Installation", "url": "installation"},
-        {"title": "Quickstart", "url": "quickstart"},
-        {"title": "Benchmarks", "url": "benchmarks"},
-        {"title": "Scoring", "url": "scoring"},
-        {"title": "Evaluation", "url": "evaluation"},
-        {"title": "Custom Benchmarks", "url": "custom_benchmark"},
-        {"title": "Scripts", "url": "scripts"},
-        {"title": "API", "url": "api/index"},
+        {"title": "Running Benchmarks", "url": "running"},
+        {"title": "Evaluating Results", "url": "evaluation"},
+        {"title": "Benchmark Reference & Guide", "url": "reference/index"},
+        {"title": "API Reference", "url": "api/index"},
     ],
 }
 

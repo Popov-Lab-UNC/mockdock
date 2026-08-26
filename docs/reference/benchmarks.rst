@@ -1,7 +1,7 @@
-Standard Benchmarks
-===================
+The Seven Target Benchmarks
+============================
 
-**mockdock** includes 7 curated protein-ligand benchmark targets with pre-computed AutoGrid maps and ChEMBL bioactivity calibrations.
+**mockdock** includes 7 curated protein–ligand benchmark targets with pre-computed AutoGrid maps and ChEMBL bioactivity calibrations.
 
 Target Overview
 ---------------

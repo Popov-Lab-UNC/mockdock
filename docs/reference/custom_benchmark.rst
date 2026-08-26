@@ -1,5 +1,5 @@
-Custom Benchmarks
-=================
+Creating Custom Benchmarks
+==========================
 
 This guide explains how to define, curate, calibrate, and register a new target system in **mockdock**.
 
@@ -46,12 +46,12 @@ Place pre-computed AutoGrid files in ``src/mockdock/grids/<PDB_ID>/``:
 * Associated atom map files (``.C.map``, ``.A.map``, ``.OA.map``, ``.e.map``, ``.d.map``, etc.).
 * ``<PDB_ID>_ligand_corrected.sdf``: Cleaned crystal ligand SDF with correct bond orders.
 
-Alternatively, if receptor tools are installed, **mockdock** will automatically fetch and prepare the receptor PDB from the RCSB PDB using :class:`~mockdock.ReceptorPreparer`.
+Alternatively, if receptor tools are installed (``pip install -e ".[receptor]"``), **mockdock** can fetch and prepare the receptor PDB from the RCSB PDB using :class:`~mockdock.ReceptorPreparer`.
 
 Step 4: 5-Fold Variance Calibration
 -----------------------------------
 
-Run the variance calibration script across 5 independent seeds to calibrate docking energy distribution:
+Run the variance calibration script across 5 independent seeds to calibrate docking energy distributions and correlation with experimental bioactivity:
 
 .. code-block:: bash
 
@@ -70,4 +70,4 @@ This generates:
 Step 5: Set Calibration Bounds
 ------------------------------
 
-Update ``low_score`` and ``high_score`` in ``src/mockdock/configs/<BenchmarkName>.toml`` using the 5x variance calibration results.
+Update ``low_score`` and ``high_score`` in ``src/mockdock/configs/<BenchmarkName>.toml`` using the 5x variance calibration results. Once saved, the new target benchmark is immediately available via ``MDOracle("MyTarget")``.

@@ -22,7 +22,7 @@ Generative models are evaluated on their ability to grow or decorate a fixed 2D 
 What mockdock provides
 ----------------------
 
-* **7 Curated Target Benchmarks**: Clinically relevant protein targets (CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2) with pre-computed AutoGrid maps and active/inactive compound baselines.
+* **Curated Target Benchmarks**: Seven protein targets (CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2) with pre-computed AutoGrid maps and bioactivity baselines.
 * **Standardized Oracle Interface**: :class:`~mockdock.MDOracle` handles SMILES sanitization, conformer generation, docking execution, pose RMSD validation, and score normalization.
 * **Docking Backends**: **AutoDock-GPU** (GPU) and **AutoDock Vina** (CPU).
 * **Post-hoc Evaluation**: :class:`~mockdock.MDEvaluator` calculates standardized metrics covering generation quality, medicinal chemistry alerts, and oracle call efficiency.
@@ -70,17 +70,31 @@ Computing benchmarking metrics after a run:
    print(f"Top 10 Mean Score: {metrics['avg_top_10']:.3f}")
    print(f"MedChem Pass Fraction: {metrics['fraction_medchem_pass']:.1%}")
 
+Documentation Sections
+----------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Section
+     - Description
+   * - :doc:`running`
+     - How to initialize oracles, query fragment constraints, batch score candidates, inspect session states, and connect with generative models.
+   * - :doc:`evaluation`
+     - How to run :class:`~mockdock.MDEvaluator`, full breakdown of all 22 metrics, and multi-model aggregate analysis.
+   * - :doc:`reference/index`
+     - Complete reference on the 7 standard targets, scoring equations, creating custom targets, scripts, and installation.
+   * - :doc:`api/index`
+     - Python API reference for all public classes, methods, and modules.
+
 .. toctree::
    :maxdepth: 2
    :caption: User Guide
 
-   installation
-   quickstart
-   benchmarks
-   scoring
+   running
    evaluation
-   custom_benchmark
-   scripts
+   reference/index
 
 .. toctree::
    :maxdepth: 2

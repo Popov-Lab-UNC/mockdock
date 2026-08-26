@@ -1,5 +1,5 @@
-Scoring & Constraints
-=====================
+Scoring Pipeline & Constraints
+==============================
 
 **mockdock** converts raw docking energies into standardized, bounded reward signals designed for reinforcement learning, genetic algorithms, and chemical language models.
 
@@ -74,12 +74,14 @@ By default (``clip_reward_upper_bound = True``):
 
 This ensures rewards remain strictly within ``[0.0, 1.0]`` for reinforcement learning stability. Both ``norm_score`` (unclipped) and ``reward_score`` (clipped) are preserved in the results DataFrame.
 
-Relaxing Constraints
---------------------
+Relaxing Constraints & Ablation Studies
+---------------------------------------
 
-For unconstrained exploration or ablation studies, you can relax or disable specific filters:
+For unconstrained exploration or ablation studies, you can relax or disable specific filters in Python:
 
 .. code-block:: python
+
+   from mockdock import MDOracle
 
    oracle = MDOracle("CHK1")
 
