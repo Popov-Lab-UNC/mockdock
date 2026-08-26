@@ -1,6 +1,6 @@
 benchmark_name = "PptT"
 pdb_id = "8GKF"
-target_id = "PptT"
+target_id = "CHEMBL5465373"
 doc_id = "PptT"
 ligand_resname = "D16"
 fragment_smiles = "CC1=NC(=O)c2ccccc2N1"

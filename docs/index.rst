@@ -11,14 +11,13 @@ mockdock documentation
 Overview
 --------
 
-Each benchmark system in **mockdock** is built around a curated protein–ligand crystal structure from the PDB paired with bioactivity-annotated reference compounds from ChEMBL.
+Each benchmark system in **mockdock** is built around a curated protein–ligand crystal structure from the PDB paired with bioactivity-annotated reference compounds (mainly from ChEMBL).
+Generative models are evaluated on their ability to grow or decorate a fixed 2D core fragment into high-scoring molecules while maintaining a similar 3D binding pose as the reference ligand.
 
-.. image:: ../assets/mockdock_workflow.jpg
+.. image:: ../assets/MOCKDOCK.pdf
    :alt: MOCKDOCK Benchmark Construction and Generative Model Evaluation Workflow
    :align: center
    :width: 100%
-
-Generative models are evaluated on their ability to grow or decorate a fixed 2D core fragment into high-affinity binders while maintaining the bioactive 3D binding pose.
 
 What mockdock provides
 ----------------------
