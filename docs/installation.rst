@@ -37,13 +37,13 @@ By default, **mockdock** searches for an ``adgpu`` executable on your system ``P
 Step 2: Install mockdock
 ------------------------
 
-Install **mockdock** with all optional dependencies:
+Install **mockdock** in editable mode:
 
 .. code-block:: bash
 
    git clone https://github.com/Popov-Lab-UNC/mockdock.git
    cd mockdock
-   pip install -e ".[all]"
+   pip install -e .
 
 Or using `uv <https://github.com/astral-sh/uv>`_:
 
@@ -52,10 +52,25 @@ Or using `uv <https://github.com/astral-sh/uv>`_:
    git clone https://github.com/Popov-Lab-UNC/mockdock.git
    cd mockdock
    uv venv
-   uv sync --all-extras
+   uv sync
 
 Optional Backends & Extras
 --------------------------
+
+All Optional Dependencies Combined
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To install all optional backends and development/docs tools together:
+
+.. code-block:: bash
+
+   pip install -e ".[all]"
+
+Or with uv:
+
+.. code-block:: bash
+
+   uv sync --all-extras
 
 AutoDock Vina Backend (CPU Fallback)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

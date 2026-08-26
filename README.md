@@ -24,7 +24,7 @@ export ADGPU_EXECUTABLE=/path/to/adgpu
 ```bash
 git clone https://github.com/Popov-Lab-UNC/mockdock.git
 cd mockdock
-pip install -e ".[all]"
+pip install -e .
 ```
 
 Or using [uv](https://github.com/astral-sh/uv):
@@ -32,10 +32,8 @@ Or using [uv](https://github.com/astral-sh/uv):
 ```bash
 git clone https://github.com/Popov-Lab-UNC/mockdock.git
 cd mockdock
-uv venv && uv sync --all-extras
+uv venv && uv sync
 ```
-
-Optional extras: `pip install -e ".[vina]"` (CPU fallback), `pip install -e ".[receptor]"` (ProDy receptor prep), or `pip install -e ".[docs]"` (Shibuya docs).
 
 ## Quickstart
 
