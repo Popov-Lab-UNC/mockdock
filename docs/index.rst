@@ -22,16 +22,15 @@ Generative models are evaluated on their ability to grow or decorate a fixed 2D 
 What mockdock provides
 ----------------------
 
-* **7 Curated Target Benchmarks**: Clinically relevant kinases and enzyme targets (CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2) with pre-computed AutoGrid maps and ChEMBL baselines.
+* **7 Curated Target Benchmarks**: Clinically relevant protein targets (CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2) with pre-computed AutoGrid maps and active/inactive compound baselines.
 * **Standardized Oracle Interface**: :class:`~mockdock.MDOracle` handles SMILES sanitization, conformer generation, docking execution, pose RMSD validation, and score normalization.
-* **Dual Docking Backends**: Seamless support for hardware-accelerated **AutoDock-GPU** (GPU) and **AutoDock Vina** (CPU/cross-platform).
-* **Comprehensive Post-hoc Evaluation**: :class:`~mockdock.MDEvaluator` calculates 19+ standardized metrics covering generative quality, medicinal chemistry alerts (PAINS, BMS, Lipinski), novelty, top-10 optimization performance, and oracle call efficiency.
-* **Reproducible Calibration Workflow**: Protocol and scripts for setting up new custom protein targets with 5-fold variance calibration.
+* **Docking Backends**: **AutoDock-GPU** (GPU) and **AutoDock Vina** (CPU).
+* **Post-hoc Evaluation**: :class:`~mockdock.MDEvaluator` calculates standardized metrics covering generation quality, medicinal chemistry alerts, and oracle call efficiency.
 
 At a glance
 -----------
 
-Scoring molecules during generative model training / reinforcement learning:
+Score molecules using a unified interface:
 
 .. code-block:: python
 
@@ -40,7 +39,7 @@ Scoring molecules during generative model training / reinforcement learning:
    # Instantiate oracle for a specific benchmark target
    oracle = MDOracle("CHK1", budget=1000, run_dir="./my_run")
 
-   # Initial seed compounds (lowest-quartile ChEMBL bioactivity)
+   # Initial seed compounds (lowest-quartile bioactivity)
    initial_df = oracle.get_initial_compounds()
 
    # Substructure fragment constraint that generated molecules must contain
@@ -49,15 +48,17 @@ Scoring molecules during generative model training / reinforcement learning:
    # Score candidate molecules (returns dict of {smiles: reward_score})
    scores = oracle.score(["CCO", "c1ccccc1"])
 
-   # Inspect session history & remaining budget
+   # Inspect session history
    # (Results are automatically written to oracle.run_dir / "results.csv")
    print(oracle.results_df)
+
+   # Inspect remaining budget
    print(oracle.budget_remaining)
 
    # Or export explicitly:
    oracle.results_df.write_csv("my_run/results.csv")
 
-Computing comprehensive benchmarking metrics after a run:
+Computing benchmarking metrics after a run:
 
 .. code-block:: python
 
