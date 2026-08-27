@@ -79,12 +79,14 @@ Documentation Sections
 
    * - Section
      - Description
+   * - :doc:`installation`
+     - System requirements, AutoDock-GPU binary setup, CPU Vina fallback, and environment configuration.
    * - :doc:`running`
      - How to initialize oracles, query fragment constraints, batch score candidates, inspect session states, and connect with generative models.
    * - :doc:`evaluation`
      - How to run :class:`~mockdock.MDEvaluator`, full breakdown of all 22 metrics, and multi-model aggregate analysis.
    * - :doc:`reference/index`
-     - Complete reference on the 7 standard targets, scoring equations, creating custom targets, scripts, and installation.
+     - Complete reference on the 7 standard targets, scoring equations, creating custom targets, and automation scripts.
    * - :doc:`api/index`
      - Python API reference for all public classes, methods, and modules.
 
@@ -92,6 +94,7 @@ Documentation Sections
    :maxdepth: 2
    :caption: User Guide
 
+   installation
    running
    evaluation
    reference/index
