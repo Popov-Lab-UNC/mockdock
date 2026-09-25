@@ -22,7 +22,7 @@ Generative models are evaluated on their ability to grow or decorate a fixed 2D 
 What mockdock provides
 ----------------------
 
-* **Curated Benchmark Tasks**: Pre-configured protein–ligand tasks (including CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2) with pre-computed AutoGrid maps and bioactivity baselines, fully extensible to custom systems.
+* **Curated Benchmark Tasks**: Pre-configured protein–ligand tasks with pre-computed AutoGrid maps and bioactivity baselines, fully extensible to custom systems.
 * **Standardized Oracle Interface**: :class:`~mockdock.MDOracle` handles SMILES sanitization, conformer generation, docking execution, pose RMSD validation, and score normalization.
 * **Docking Backend**: **AutoDock-GPU** (tested with v1.6).
 * **Post-hoc Evaluation**: :class:`~mockdock.MDEvaluator` calculates standardized metrics covering generation quality, medicinal chemistry alerts, and oracle call efficiency.

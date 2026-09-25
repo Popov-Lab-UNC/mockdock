@@ -14,7 +14,7 @@ This section contains in-depth documentation on benchmark designs, scoring mecha
 Summary of Topics
 -----------------
 
-* :doc:`benchmarks`: Detailed breakdown of benchmark tasks (including CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2), fragment constraints, crystal structures, resolution, and bioactivity calibrations.
+* :doc:`benchmarks`: Detailed breakdown of benchmark tasks, fragment constraints, crystal structures, resolution, and bioactivity calibrations.
 * :doc:`scoring`: The 5-step scoring pipeline from 2D substructure filtering to 3D docking, pose RMSD validation, score normalization, and reward clipping.
 * :doc:`custom_benchmark`: Step-by-step protocol for adding, calibrating, and registering new target systems in **mockdock**.
 * :doc:`scripts`: Tooling for multi-seed variance calibration, large-scale benchmarking, and figure generation.

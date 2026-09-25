@@ -13,7 +13,7 @@ In structure-based prospective design, generative algorithms are tasked with exp
 This constraint serves two key purposes:
 
 1. **Practical Hit Expansion**: Models are evaluated on their ability to grow functional groups from defined exit vectors, reflecting real-world medicinal chemistry campaigns.
-2. **Quantitative 3D Pose Validation**: The co-crystallized fragment coordinates provide ground-truth atomic positions. A candidate molecule is only rewarded if its docked fragment satisfies a stringent structural constraint (:math:`\le 2.0\text{ \AA}` heavy-atom RMSD relative to crystal coordinates).
+2. **Quantitative 3D Pose Validation**: The co-crystallized fragment coordinates provide ground-truth atomic positions. A candidate molecule is only rewarded if its docked fragment satisfies a stringent structural constraint (≤ 2.0 Å heavy-atom RMSD relative to crystal coordinates).
 
 .. image:: ../../assets/figure2_fragments.png
    :alt: Chemical structures of the fragment constraints for each MOCKDOCK task
