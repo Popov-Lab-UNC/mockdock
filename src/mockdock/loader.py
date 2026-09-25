@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+
 try:
     import tomllib
 except ImportError:

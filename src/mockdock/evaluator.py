@@ -75,7 +75,9 @@ class MDEvaluator:
         self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
         self._filters = MDFilters(active_rulesets=["PAINS", "BMS"])
 
-    def compute_metrics(self, results_csv: Path | str, output_path: Path | str | None = None) -> dict:
+    def compute_metrics(
+        self, results_csv: Path | str, output_path: Path | str | None = None
+    ) -> dict:
         """Compute all metrics for one results.csv file and optionally write JSON."""
         results_csv = Path(results_csv)
         if not results_csv.exists():
@@ -134,7 +136,7 @@ class MDEvaluator:
         frag_q = Chem.MolFromSmiles(fragment_smiles) if fragment_smiles else None
         if frag_q is None and fragment_smiles:
             frag_q = Chem.MolFromSmarts(fragment_smiles)
-        
+
         from .utils import get_robust_match
 
         valid_frag_mols = []
@@ -145,7 +147,9 @@ class MDEvaluator:
 
         if valid_frag_mols:
             medchem_pass_results = [self._filters.evaluate(m) for m in valid_frag_mols]
-            metrics["fraction_medchem_pass"] = sum(1 for r in medchem_pass_results if r["pass"]) / len(valid_frag_mols)
+            metrics["fraction_medchem_pass"] = sum(
+                1 for r in medchem_pass_results if r["pass"]
+            ) / len(valid_frag_mols)
         else:
             metrics["fraction_medchem_pass"] = 0.0
 
@@ -157,7 +161,6 @@ class MDEvaluator:
             1 for r in filter_results if "BMS" not in r["rules_hit"]
         ) / max(len(unique_mols), 1)
         metrics["fraction_lipinski"] = self._lipinski_fraction(unique_mols)
-
 
         # ─── Extrinsic Metrics ────────────────────────────────────────────────
         metrics["novelty"] = self._novelty(unique_smiles, ref_smiles_canonical)
@@ -176,7 +179,9 @@ class MDEvaluator:
         novel_frag_mols = [Chem.MolFromSmiles(s) for s in novel_frag_set if s]
         if novel_frag_mols:
             medchem_pass_results = [self._filters.evaluate(m) for m in novel_frag_mols if m]
-            metrics["effective_medchem_pass"] = sum(1 for r in medchem_pass_results if r["pass"]) / len(medchem_pass_results)
+            metrics["effective_medchem_pass"] = sum(
+                1 for r in medchem_pass_results if r["pass"]
+            ) / len(medchem_pass_results)
         else:
             metrics["effective_medchem_pass"] = 0.0
         novel_unique_mols = [Chem.MolFromSmiles(s) for s in novel_unique_smiles]

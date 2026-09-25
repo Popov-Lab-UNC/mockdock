@@ -5,7 +5,6 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 # Third-party imports
 import aiohttp
@@ -102,7 +101,7 @@ def resolve_backend(
 # ── RDKit chemistry utilities ─────────────────────────────────────────────────
 
 
-def standardize_smiles(smiles: str) -> Optional[str]:
+def standardize_smiles(smiles: str) -> str | None:
     """Strip salts, neutralize, and return a canonical SMILES string.
 
     Steps applied in order:
@@ -162,7 +161,7 @@ def get_robust_match(target_mol: Chem.Mol, query_mol: Chem.Mol) -> tuple[int, ..
     return ()
 
 
-def check_2d_match(mol: Chem.Mol, fragment_mol: Optional[Chem.Mol]) -> bool:
+def check_2d_match(mol: Chem.Mol, fragment_mol: Chem.Mol | None) -> bool:
     """Check whether *mol* contains *fragment_mol* as a 2-D substructure.
 
     Uses :func:`get_robust_match` for kekulization-tolerant matching.
@@ -186,7 +185,7 @@ def plot_docking_results(
     score_col: str = "docking_score",
     activity_col: str = "pchembl_value",
     valid_col: str = "valid_pose_found",
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
 ):
     """
     Plot docking scores vs pChEMBL values.
@@ -303,7 +302,7 @@ def plot_docking_results(
 def plot_activity_distribution(
     df: pl.DataFrame,
     activity_col: str = "pchembl_value",
-    output_path: Optional[str] = None,
+    output_path: str | None = None,
 ):
     """
     Plot the distribution of bioactivity values.
@@ -349,8 +348,8 @@ def plot_activity_distribution(
 
 
 async def fetch_ligand_expo_sdf(
-    resname: str, output_dir: Path, session: Optional[aiohttp.ClientSession] = None
-) -> Optional[Path]:
+    resname: str, output_dir: Path, session: aiohttp.ClientSession | None = None
+) -> Path | None:
     """
     Fetch the ideal SDF for a ligand from RCSB Ligand Expo.
 
@@ -388,9 +387,7 @@ async def fetch_ligand_expo_sdf(
             await session.close()
 
 
-def assign_bond_orders_from_template(
-    pdb_mol: Chem.Mol, template_mol: Chem.Mol
-) -> Optional[Chem.Mol]:
+def assign_bond_orders_from_template(pdb_mol: Chem.Mol, template_mol: Chem.Mol) -> Chem.Mol | None:
     """
     Assign bond orders to a PDB molecule using a template molecule (with bond orders).
     """

@@ -1,6 +1,5 @@
 import multiprocessing
 from pathlib import Path
-from typing import Optional
 
 from meeko import MoleculePreparation, PDBQTWriterLegacy
 from molscrub import Scrub
@@ -23,7 +22,7 @@ class LigandPreparer:
 
     def __init__(
         self,
-        n_cpus: Optional[int] = None,
+        n_cpus: int | None = None,
         ph_low: float = 6.4,
         ph_high: float = 8.4,
         generate_isomers: bool = True,

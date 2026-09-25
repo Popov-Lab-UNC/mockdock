@@ -1,6 +1,5 @@
 import math
 from pathlib import Path
-from typing import Optional, Union
 
 import polars as pl
 from meeko import PDBQTMolecule, RDKitMolCreate
@@ -123,8 +122,8 @@ class DockingAnalyzer:
 
     def __init__(
         self,
-        reference_ligand_path: Optional[Union[str, Path]] = None,
-        fragment_smiles: Optional[str] = None,
+        reference_ligand_path: str | Path | None = None,
+        fragment_smiles: str | None = None,
         rmsd_threshold: float = 2.0,
     ):
         self.reference_ligand_path = Path(reference_ligand_path) if reference_ligand_path else None
@@ -204,7 +203,7 @@ class DockingAnalyzer:
 
     def filter_poses_by_rmsd(
         self, pose_file: Path, smiles: str
-    ) -> tuple[float, bool, Optional[Chem.Mol], float, Optional[Chem.Mol], int, int]:
+    ) -> tuple[float, bool, Chem.Mol | None, float, Chem.Mol | None, int, int]:
         """
         Parse DLG or PDBQT, filter poses by RMSD if applicable.
 
@@ -270,9 +269,9 @@ class DockingAnalyzer:
 
     def save_best_poses_sdf(
         self,
-        output_path: Union[str, Path],
+        output_path: str | Path,
         results_df: pl.DataFrame,
-        df_metadata: Optional[pl.DataFrame] = None,
+        df_metadata: pl.DataFrame | None = None,
         id_col: str = "id",
         score_col: str = "docking_score",
         dlg_col: str = "dlg_path",
@@ -347,7 +346,7 @@ class DockingAnalyzer:
                 pose_pairs.sort(key=lambda t: t[0])
 
                 chosen_mol = None
-                chosen_rmsd: Optional[float] = None
+                chosen_rmsd: float | None = None
 
                 pi = row.get("pose_index")
                 if pi is None or (isinstance(pi, float) and math.isnan(pi)):

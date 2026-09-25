@@ -63,6 +63,8 @@ extend-exclude = [
     "data",
     "logs",
     "results",
+    "exps",
+    "scripts",
 ]
 
 [tool.ruff.lint]
@@ -72,7 +74,7 @@ unfixable = []
 
 [tool.mypy]
 # Type-check source only (ignore run outputs / generated files)
-exclude = "(\\.venv/|benchmark_runs/|generated_configs/|data/|logs/|results/)"
+exclude = "(\\.venv/|benchmark_runs/|generated_configs/|data/|logs/|results/|exps/|scripts/)"
 
 [tool.pytest.ini_options]
 # Prevent pytest from recursing into large output directories.

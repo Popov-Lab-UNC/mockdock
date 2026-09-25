@@ -1,6 +1,5 @@
 # Standard library imports
 from pathlib import Path
-from typing import Optional, Union
 
 # Third-party imports
 import polars as pl
@@ -9,8 +8,8 @@ from .utils import standardize_smiles  # noqa: F401 – re-exported for backward
 
 
 def _find_cache_directory(
-    cache_dir: Optional[Union[str, Path]] = None,
-) -> Optional[Path]:
+    cache_dir: str | Path | None = None,
+) -> Path | None:
     """
     Find the ChEMBL cache directory by checking common locations.
 
@@ -46,12 +45,12 @@ def _find_cache_directory(
 def fetch_chembl_data(
     target_chembl_id: str,
     document_chembl_id: str,
-    assay_chembl_id: Optional[str] = None,
+    assay_chembl_id: str | None = None,
     return_stats: bool = False,
-    cache_dir: Optional[Union[str, Path]] = None,
+    cache_dir: str | Path | None = None,
     use_cache: bool = True,
     cache_only: bool = False,
-) -> Union[pl.DataFrame, tuple[pl.DataFrame, dict]]:
+) -> pl.DataFrame | tuple[pl.DataFrame, dict]:
     """
     Fetch bioactivity data from ChEMBL for a specific target and document.
 

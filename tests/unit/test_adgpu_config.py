@@ -1,7 +1,5 @@
-import os
-import shutil
-from pathlib import Path
 from unittest.mock import patch
+
 import pytest
 
 from mockdock.docking import AutoDockGPUOracle
@@ -72,6 +70,7 @@ def test_mdoracle_adgpu_executable_config(mock_loader, mock_which, tmp_path, mon
     # Mock MDOracle._ensure_components to not raise file errors or load grids
     def dummy_ensure_components(self):
         pass
+
     monkeypatch.setattr(MDOracle, "_ensure_components", dummy_ensure_components)
 
     # 4. Test direct instantiation on MDOracle

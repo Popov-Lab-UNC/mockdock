@@ -4,7 +4,6 @@ import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Union
 
 from rdkit import RDLogger
 
@@ -19,11 +18,11 @@ class DockingOracle(ABC):
 
     def __init__(
         self,
-        receptor_file: Union[str, Path],
+        receptor_file: str | Path,
         n_poses: int = 10,
-        n_cpus: Optional[int] = None,
-        n_gpus: Optional[int] = None,
-        save_dir: Optional[Union[str, Path]] = None,
+        n_cpus: int | None = None,
+        n_gpus: int | None = None,
+        save_dir: str | Path | None = None,
         **kwargs,
     ):
         self.receptor_file = Path(receptor_file).resolve()
@@ -56,20 +55,18 @@ class AutoDockGPUOracle(DockingOracle):
 
     def __init__(
         self,
-        receptor_file: Union[str, Path],
-        adgpu_executable: Optional[str] = None,
+        receptor_file: str | Path,
+        adgpu_executable: str | None = None,
         n_poses: int = 10,
-        n_cpus: Optional[int] = None,
+        n_cpus: int | None = None,
         n_gpus: int = 1,
-        save_dir: Optional[Union[str, Path]] = None,
+        save_dir: str | Path | None = None,
         **kwargs,
     ):
         super().__init__(receptor_file, n_poses, n_cpus, n_gpus, save_dir)
 
         if adgpu_executable is None:
-            adgpu_executable = os.environ.get(
-                "ADGPU_EXECUTABLE", self.DEFAULT_ADGPU_EXECUTABLE
-            )
+            adgpu_executable = os.environ.get("ADGPU_EXECUTABLE", self.DEFAULT_ADGPU_EXECUTABLE)
 
         self.adgpu_executable = adgpu_executable
 
@@ -203,11 +200,11 @@ class AutoDockGPUOracle(DockingOracle):
 class AutoDockVinaOracle(DockingOracle):
     def __init__(
         self,
-        receptor_file: Union[str, Path],
+        receptor_file: str | Path,
         n_poses: int = 10,
-        n_cpus: Optional[int] = None,
+        n_cpus: int | None = None,
         exhaustiveness: int = 32,
-        save_dir: Optional[Union[str, Path]] = None,
+        save_dir: str | Path | None = None,
         **kwargs,
     ):
         super().__init__(receptor_file, n_poses, n_cpus, n_gpus=0, save_dir=save_dir)

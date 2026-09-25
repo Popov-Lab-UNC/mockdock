@@ -5,7 +5,6 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional, Union
 
 # Third-party imports
 import polars as pl
@@ -42,12 +41,12 @@ class MDOracle:
         benchmark_name: str,
         budget: int = 1000,
         docking_backend: str = "auto",
-        clip_reward_upper_bound: Optional[bool] = None,
-        scratch_dir: Optional[Union[str, Path]] = None,
-        run_dir: Optional[Union[str, Path]] = None,
-        n_cpus: Optional[int] = None,
-        n_gpus: Optional[int] = None,
-        adgpu_executable: Optional[str] = None,
+        clip_reward_upper_bound: bool | None = None,
+        scratch_dir: str | Path | None = None,
+        run_dir: str | Path | None = None,
+        n_cpus: int | None = None,
+        n_gpus: int | None = None,
+        adgpu_executable: str | None = None,
     ):
         """
         Initialize the oracle for a specific benchmark.
@@ -73,7 +72,7 @@ class MDOracle:
         self.max_budget = budget
         self.budget_used = 0
         self._generation_round = 0
-        self._pdb_id: Optional[str] = None  # set after config load below
+        self._pdb_id: str | None = None  # set after config load below
         self.n_cpus = n_cpus or effective_cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else detect_gpus()
         self.results_df = pl.DataFrame()
@@ -156,13 +155,13 @@ class MDOracle:
         return self._loader.fragment_smiles
 
     @property
-    def fragment_smiles_with_dummies(self) -> Optional[str]:
+    def fragment_smiles_with_dummies(self) -> str | None:
         """Fragment SMILES with (*) dummy attachment point(s) for PromptSMILES
         scaffold decoration.  Returns None if not yet set in the benchmark config TOML."""
         return self._loader.fragment_smiles_with_dummies
 
     @property
-    def libinvent_scaffold_with_dummies(self) -> Optional[str]:
+    def libinvent_scaffold_with_dummies(self) -> str | None:
         """LibInvent-specific scaffold with two attachment points when needed."""
         return self._loader.libinvent_scaffold_with_dummies
 
@@ -193,7 +192,7 @@ class MDOracle:
         return self._loader.rmsd_threshold
 
     @property
-    def ligand_resname(self) -> Optional[str]:
+    def ligand_resname(self) -> str | None:
         """Residue name of the reference ligand."""
         return self._loader.ligand_resname
 
@@ -333,7 +332,7 @@ class MDOracle:
         return valid_tasks, skipped_results
 
     def _create_skipped_result(
-        self, smiles: str, reason: str, original_smiles: Optional[str] = None
+        self, smiles: str, reason: str, original_smiles: str | None = None
     ) -> dict:
         return {
             "smiles": smiles,
@@ -406,9 +405,7 @@ class MDOracle:
 
             clip_reward_upper_bound = getattr(self, "_clip_reward_upper_bound", True)
             reward_score = (
-                min(max(norm_score, 0.0), 1.0)
-                if clip_reward_upper_bound
-                else max(norm_score, 0.0)
+                min(max(norm_score, 0.0), 1.0) if clip_reward_upper_bound else max(norm_score, 0.0)
             )
             if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
                 reward_score = 0.0
@@ -472,7 +469,7 @@ class MDOracle:
     def export_top_poses(
         self,
         n: int = 10,
-        output_path: Optional[Union[str, Path]] = None,
+        output_path: str | Path | None = None,
     ) -> Path:
         """
         Export the top-N docked poses as a single SDF file.
@@ -507,7 +504,7 @@ class MDOracle:
         print(f"[mockdock] Exported top {n} poses to {output_path}")
         return output_path
 
-    def fetch_poses(self, smiles: Optional[str] = None, top_n: int = 10) -> list:
+    def fetch_poses(self, smiles: str | None = None, top_n: int = 10) -> list:
         """
         Return RDKit molecules with actual docked 3D coordinates.
 
@@ -552,7 +549,7 @@ class MDOracle:
                 print(f"[mockdock] fetch_poses: could not read {pose_file}: {e}")
         return mols
 
-    def save_metrics(self, extra: Optional[dict] = None) -> Path:
+    def save_metrics(self, extra: dict | None = None) -> Path:
         """
         Save timing and performance metrics to metrics.json in the run directory.
 
@@ -809,7 +806,12 @@ class MDOracle:
             toml_lines.append("[[results]]")
 
             def _escape_str(s: str) -> str:
-                return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+                return (
+                    s.replace("\\", "\\\\")
+                    .replace('"', '\\"')
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                )
 
             toml_lines.append(f'smiles = "{_escape_str(r["smiles"])}"')
 
@@ -837,7 +839,7 @@ class MDOracle:
 
             # Boolean values
             val_pose = r.get("valid_pose_found")
-            toml_lines.append(f'valid_pose_found = {"true" if val_pose else "false"}')
+            toml_lines.append(f"valid_pose_found = {'true' if val_pose else 'false'}")
 
             # String value
             reason = r.get("skip_reason")

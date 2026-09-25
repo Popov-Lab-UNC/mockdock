@@ -1,7 +1,6 @@
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional, Union
 
 import requests
 
@@ -70,7 +69,7 @@ def _parse_mmcif(structure_path: Path):
         )
 
 
-def _choose_altloc_token(sel) -> Optional[str]:
+def _choose_altloc_token(sel) -> str | None:
     """
     Decide which altloc to use for a selection.
 
@@ -93,7 +92,7 @@ def _choose_altloc_token(sel) -> Optional[str]:
         return None
 
 
-def _pick_ligand_instance(structure, ligand_resname: str) -> tuple[str, str, int, Optional[str]]:
+def _pick_ligand_instance(structure, ligand_resname: str) -> tuple[str, str, int, str | None]:
     """
     Find the first instance of a ligand resname and return (chain_id, resname, resnum, altloc_token).
     """
@@ -126,9 +125,7 @@ def _select_protein(structure, chain_ids: list[str]):
     return sel
 
 
-def _select_ligand(
-    structure, chain_id: str, resname: str, resnum: int, altloc_token: Optional[str]
-):
+def _select_ligand(structure, chain_id: str, resname: str, resnum: int, altloc_token: str | None):
     """
     Select ligand atoms for a specific residue instance.
     """
@@ -204,7 +201,7 @@ def _pick_receptor_chains_from_ligand(
 
 
 def extract_protein_and_ligand(
-    pdb_id: str, ligand_resname: str, output_dir: Union[str, Path] = "."
+    pdb_id: str, ligand_resname: str, output_dir: str | Path = "."
 ) -> tuple[Path, Path]:
     """
     mmCIF-first receptor/ligand extraction:
@@ -268,8 +265,8 @@ class ReceptorPreparer:
         pdb_id: str,
         output_dir: Path,
         ligand_resname: str,
-        protein_pdb_path: Optional[Union[str, Path]] = None,
-        ligand_pdb_path: Optional[Union[str, Path]] = None,
+        protein_pdb_path: str | Path | None = None,
+        ligand_pdb_path: str | Path | None = None,
     ) -> tuple[Path, Path]:
         """Obtain protein and ligand PDB files."""
         if protein_pdb_path and ligand_pdb_path:
@@ -383,10 +380,10 @@ class ReceptorPreparer:
         self,
         pdb_id: str,
         ligand_resname: str,
-        output_dir: Union[str, Path] = ".",
+        output_dir: str | Path = ".",
         allow_bad_res: bool = False,
-        protein_pdb_path: Optional[Union[str, Path]] = None,
-        ligand_pdb_path: Optional[Union[str, Path]] = None,
+        protein_pdb_path: str | Path | None = None,
+        ligand_pdb_path: str | Path | None = None,
     ) -> Path:
         """Convenience method to run the full preparation pipeline."""
         output_dir = Path(output_dir)
