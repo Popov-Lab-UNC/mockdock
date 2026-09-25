@@ -79,6 +79,7 @@ exclude = "(\\.venv/|benchmark_runs/|generated_configs/|data/|logs/|results/|exp
 [tool.pytest.ini_options]
 # Prevent pytest from recursing into large output directories.
 testpaths = ["tests"]
+pythonpath = ["src"]
 norecursedirs = [
     ".venv",
     "benchmark_runs",
