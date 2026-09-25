@@ -6,10 +6,10 @@ Requirements
 
 * Python **>= 3.11**
 * Linux or macOS
-* **AutoDock-GPU v1.6** (Required for standard benchmark scoring; NVIDIA GPU recommended)
+* **AutoDock-GPU** (tested with v1.6; NVIDIA GPU recommended)
 
-Step 1: Install AutoDock-GPU (Required, v1.6)
----------------------------------------------
+Step 1: Install AutoDock-GPU
+----------------------------
 
 **mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ (tested with **v1.6**) as its primary docking and scoring backend.
 

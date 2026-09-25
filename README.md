@@ -10,7 +10,7 @@
 
 ## Installation
 
-### 1. Install AutoDock-GPU (Required, v1.6)
+### 1. Install AutoDock-GPU
 
 Install [AutoDock-GPU](https://github.com/ccsb-scripps/AutoDock-GPU) (tested with **v1.6**) by downloading a pre-compiled binary from [GitHub Releases](https://github.com/ccsb-scripps/AutoDock-GPU/releases) or building from source.
 
