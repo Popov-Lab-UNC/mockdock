@@ -1,42 +1,105 @@
 # Benchmark Scripts
 
-Scripts are organized by benchmark stage. Run commands from the repository root unless a script says otherwise.
+Scripts are organized by workflow stage. Run commands from the repository root unless a script says otherwise.
 
 | Stage | Directory | Purpose |
 | --- | --- | --- |
-| Dataset generation | `scripts/dataset/` | Build ChEMBL/PDB benchmark candidate datasets and generated configs. |
-| Docking workflows | `scripts/docking/` | Run the core docking workflow locally or through SLURM. |
-| Variance calibration | `scripts/variance/` | Run repeated docking, analyze score variance, and prepare variance support data. |
-| Experiments | `scripts/experiments/` | Launch model suites, including the parameterized PptT suite. |
-| Scoring | `scripts/scoring/` | Run MolSkill, Stoplight, and AIZynthFinder scoring jobs. |
-| Analysis | `scripts/analysis/` | Aggregate experiment metrics, compare runs, and generate figures. |
-| Validation | `scripts/validation/` | Validate benchmark setup and docking behavior. |
-| Orchestration | `scripts/orchestration/` | Submit or run the analysis/scoring pipeline end to end. |
-| Common helpers | `scripts/common/` | Shared shell setup and Python constants used by other stages. |
-| Archive | `scripts/archive/` | Deprecated launchers retained for reference with replacements documented. |
+| **Dataset Generation** | `scripts/dataset/` | Data mining pipeline from ChEMBL SQLite and PDB to build benchmark candidates and configs. |
+| **Docking Workflows** | `scripts/docking/` | Core AutoDock-GPU docking workflow executed locally or dispatched via SLURM. |
+| **Variance Calibration** | `scripts/variance/` | Multi-replicate docking variance calibration, baseline scoring, and stability analysis. |
+| **Orthogonal Scoring** | `scripts/scoring/` | MolSkill (medicinal chemist preference), STOPLIGHT (ADMET liabilities), and AIZynthFinder (retrosynthetic feasibility) scoring pipelines. |
+| **Analysis & Plotting** | `scripts/analysis/` | Compute benchmark metrics, property correlations, chemical quality statistical tests, and generate publication figures. |
+| **Validation** | `scripts/validation/` | End-to-end benchmark validation and docking integrity checks across configured targets. |
+| **Orchestration** | `scripts/orchestration/` | Local execution or SLURM job-dependency pipelines running analysis and scoring end to end. |
+| **Common Helpers** | `scripts/common/` | Shared shell environment configuration (`env.sh`, `slurm.sh`) and experiment utilities. |
 
-## Environments
+---
 
-Most scripts expect the benchmark virtual environment at `.venv` and source `scripts/common/env.sh`, which sets `BENCHMARK_DIR`, `PYTHONPATH`, and prints the active Python. Scoring jobs may activate specialized environments: MolSkill uses the `molskill` conda environment, AIZynthFinder uses `/work/users/s/h/shuhang/aizynthfinder/.venv`, and PptT model launches activate each model environment as needed.
+## Environments & Setup
 
-Dataset scripts accept `CHEMBL_SQLITE_PATH=/path/to/chembl_36.db`; the SLURM scripts fall back to the Longleaf ChEMBL SQLite path when the variable is unset.
+Most scripts expect the virtual environment at `.venv` and source [`scripts/common/env.sh`](file:///hickory/users/s/h/shuhang/devel/mockdock/scripts/common/env.sh), which exports `BENCHMARK_DIR` and prepends `src/` to `PYTHONPATH`.
 
-## Common Commands
+Scoring modules utilize specialized environments where required:
+- **MolSkill**: Conda environment (`molskill`) via `mockdock_activate_conda molskill`.
+- **AIZynthFinder**: Python virtual environment containing AIZynthFinder models and stock database policies.
+- **STOPLIGHT**: Communicates via persistent worker daemons (`stoplight_worker_daemon.py`).
 
+Dataset extraction scripts accept `CHEMBL_SQLITE_PATH=/path/to/chembl_36.db`.
+
+---
+
+## Common Workflows & Commands
+
+### 1. Dataset Generation Pipeline
 ```bash
-# Dataset pipeline
+# Sequential local run
+export CHEMBL_SQLITE_PATH=/path/to/chembl_36.db
 bash scripts/dataset/run_dataset_pipeline.sh sequential
+
+# Or SLURM array dispatch on cluster
 bash scripts/dataset/run_dataset_pipeline.sh slurm
+```
 
-# Variance calibration
-python scripts/variance/run_variance.py --config src/mockdock/configs/PptT.toml --run-dir variance_runs/PptT --output-dir variance_analysis/PptT --n-iters 5
+### 2. Docking Execution & Validation
+```bash
+# Run validation across benchmark targets
+python scripts/validation/validation_test.py
+
+# Submit batch docking workflow via SLURM
+sbatch scripts/docking/run_workflow_longleaf.sbatch
+```
+
+### 3. Variance Calibration
+```bash
+# Run 5-replicate variance calibration for a target
+python scripts/variance/run_variance.py \
+    --config src/mockdock/configs/PptT.toml \
+    --run-dir variance_runs/PptT \
+    --output-dir variance_analysis/PptT \
+    --n-iters 5
+
+# Or submit via SLURM
 sbatch scripts/variance/slurm_pptt_variance.sbatch
+```
 
-# PptT model suite
-sbatch --export=ALL,CLIP_REWARD_UPPER_BOUND=false scripts/experiments/slurm_pptt_model_suite.sh
-sbatch --export=ALL,CLIP_REWARD_UPPER_BOUND=true scripts/experiments/slurm_pptt_model_suite.sh
+### 4. Orthogonal Scoring (MolSkill, STOPLIGHT, AIZynthFinder)
+```bash
+# Score generated molecules with MolSkill
+python scripts/scoring/score_molecules.py --scorer molskill --exps-dir exps_upperbound --batch-size 64
 
-# Analysis and scoring orchestration
+# Score retrosynthetic feasibility with AIZynthFinder
+python scripts/scoring/score_molecules.py --scorer aizynthfinder --exps-dir exps_upperbound
+
+# Score ADMET liabilities with STOPLIGHT
+python scripts/scoring/score_molecules.py --scorer stoplight --exps-dir exps_upperbound
+```
+
+### 5. Analysis & Metric Aggregation
+```bash
+# Aggregate metrics across all models and targets
+python scripts/analysis/analyze_experiments.py \
+    --exps-dir exps_upperbound \
+    --output-dir analysis_exps_upperbound
+
+# Calculate chemical quality statistical distributions vs. reference set
+python scripts/analysis/calculate_chemical_quality_distribution_tests.py \
+    --exps-dir exps_upperbound \
+    --output-dir analysis_exps_upperbound
+
+# Generate property correlation analysis (MW / cLogP vs docking score)
+python scripts/analysis/correlation_analysis.py \
+    --exps-dir exps_upperbound \
+    --output-dir assets/correlation
+
+# Convert an AutoDock .dlg output pose to .sdf
+python scripts/analysis/convert_dlg_to_sdf.py -i pose.dlg -o pose.sdf --pose-index 0
+```
+
+### 6. Pipeline Orchestration
+```bash
+# Run full analysis and scoring sequentially
 bash scripts/orchestration/run_analysis_scoring_pipeline.sh
+
+# Or submit with chained SLURM job dependencies
 bash scripts/orchestration/submit_analysis_scoring_pipeline.sh
 ```
