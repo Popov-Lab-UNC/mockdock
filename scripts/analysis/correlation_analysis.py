@@ -11,11 +11,13 @@ from scipy.stats import pearsonr
 from concurrent.futures import ProcessPoolExecutor
 
 # Configuration
-exps_dir = Path("/work/users/s/h/shuhang/benchmark/exps")
-exps_ub_dir = Path("/work/users/s/h/shuhang/benchmark/exps_upperbound")
-bioactivity_dir = Path("/work/users/s/h/shuhang/benchmark/src/mockdock/bioactivity_data")
-assets_dir = Path("/work/users/s/h/shuhang/benchmark/assets/correlation")
-output_md_path = Path("/work/users/s/h/shuhang/benchmark/correlation_analysis.md")
+BASE_DIR = Path(__file__).resolve().parents[2]
+exps_dir = BASE_DIR / "exps"
+exps_ub_dir = BASE_DIR / "exps_upperbound"
+bioactivity_dir = BASE_DIR / "src" / "mockdock" / "bioactivity_data"
+assets_dir = BASE_DIR / "assets" / "correlation"
+output_md_path = BASE_DIR / "correlation_analysis.md"
+
 
 # Strict order requested by the user
 MODEL_ORDER = ["A2C", "AHC", "PPO", "PPOD", "REINFORCE", "REINVENT", "LibINVENT", "GenMol", "InVirtuoGen"]

@@ -229,36 +229,31 @@ def compute_aggregates(df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
 # ─── Plotting Functions ─────────────────────────────────────────────
 
 
-def get_model_palette(models: list[str]) -> dict[str, str | tuple]:
+MODEL_PALETTE = {
+    "Reference Set": "#70757A",
+    "Reference":     "#70757A",
+    "A2C":           "#5E2CA5",
+    "AHC":           "#0263E0",
+    "PPO":           "#0096C7",
+    "PPOD":          "#00897B",
+    "REINFORCE":     "#2E7D32",
+    "REINVENT":      "#D48806",
+    "LibINVENT":     "#E65100",
+    "GenMol":        "#D62828",
+    "InVirtuoGen":   "#780000",
+}
+
+
+def get_model_palette(models: list[str]) -> dict[str, str]:
     """Get a consistent color palette mapping for the models, where the reference set is grey."""
-    base_palette = sns.color_palette("colorblind")
-    palette_map = {}
-    
-    # Filter out Reference Set from standard models ordering to assign colors
-    actual_models_order = [m for m in MODEL_PLOT_ORDER if m != REFERENCE_SET_LABEL]
-    
-    color_idx = 0
-    for m in actual_models_order:
-        if m == "GenMol":
-            palette_map[m] = base_palette[9]
-        else:
-            palette_map[m] = base_palette[color_idx % len(base_palette)]
-        color_idx += 1
-        
-    for m in models:
-        if m != REFERENCE_SET_LABEL and m not in palette_map:
-            palette_map[m] = base_palette[color_idx % len(base_palette)]
-            color_idx += 1
-            
-    palette_map[REFERENCE_SET_LABEL] = "#808080"
-    return palette_map
+    return {m: MODEL_PALETTE.get(m, "#70757A") for m in models}
 
 
 def _plot_metric_panels(
     full_df: pl.DataFrame,
     metrics_map: dict[str, str],
     output_path_stem: Path,
-    figure_title: str,
+    figure_title: str = "",
     ncols: int = 3,
     plot_types: dict[str, str] = None,
 ):
@@ -319,9 +314,9 @@ def _plot_metric_panels(
                 alpha=0.85,
                 ax=ax,
             )
-        ax.set_title(label, fontsize=15, fontweight="bold", pad=12)
+        ax.set_title(chr(ord('A') + idx), loc="left", fontsize=14, fontweight="bold", pad=6)
         ax.set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
-        ax.set_ylabel("Metric Value", fontsize=12, labelpad=8)
+        ax.set_ylabel(label, fontsize=12, labelpad=8)
         ax.tick_params(axis="both", labelsize=11)
         ax.tick_params(axis="x", rotation=30)
         
@@ -340,32 +335,95 @@ def _plot_metric_panels(
     handles, labels = axes_flat[0].get_legend_handles_labels()
     if handles:
         if nrows == 1:
-            rect_top = 0.76
-            suptitle_y = 0.99
-            bbox_y = 0.94
+            rect_top = 0.85
+            bbox_y = 1.02
         else:
-            rect_top = 0.86
-            suptitle_y = 0.99
-            bbox_y = 0.95
+            rect_top = 0.92
+            bbox_y = 0.99
 
         fig.legend(
             handles,
             labels,
             loc="upper center",
             bbox_to_anchor=(0.5, bbox_y),
-            ncol=min(3, len(labels)),
+            ncol=min(4, len(labels)),
             frameon=False,
             fontsize=13,
         )
-    fig.suptitle(figure_title, y=suptitle_y, fontsize=18, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, rect_top])
     fig.savefig(output_path_stem.with_suffix(".svg"), bbox_inches="tight")
-    fig.savefig(output_path_stem.with_suffix(".png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
+
+    # Output each panel as an individual SVG
+    prefix = output_path_stem.name.split("_")[0]
+    for idx, (metric, label) in enumerate(available):
+        letter = chr(ord('a') + idx)
+        indiv_fig, indiv_ax = plt.subplots(figsize=(7.5, 4.8))
+        ptype = plot_types.get(metric, "bar")
+        if ptype == "box":
+            sns.boxenplot(
+                data=pdf,
+                x="target",
+                y=metric,
+                hue="model",
+                hue_order=hue_order,
+                order=targets,
+                palette=palette,
+                linewidth=1.0,
+                showfliers=False,
+                ax=indiv_ax,
+            )
+        else:
+            sns.barplot(
+                data=pdf,
+                x="target",
+                y=metric,
+                hue="model",
+                hue_order=hue_order,
+                order=targets,
+                palette=palette,
+                estimator=np.mean,
+                errorbar=("ci", 95),
+                capsize=0.05,
+                err_kws={"linewidth": 1.2},
+                edgecolor="black",
+                linewidth=0.8,
+                alpha=0.85,
+                ax=indiv_ax,
+            )
+        indiv_ax.set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
+        indiv_ax.set_ylabel(label, fontsize=12, labelpad=8)
+        indiv_ax.tick_params(axis="both", labelsize=11)
+        indiv_ax.tick_params(axis="x", rotation=30)
+        indiv_ax.yaxis.grid(True, linestyle="--", alpha=0.5)
+        indiv_ax.xaxis.grid(False)
+        sns.despine(ax=indiv_ax, top=True, right=True)
+
+        handles, labels = indiv_ax.get_legend_handles_labels()
+        if indiv_ax.get_legend() is not None:
+            indiv_ax.get_legend().remove()
+        if handles:
+            indiv_ax.legend(
+                handles,
+                labels,
+                loc="lower center",
+                bbox_to_anchor=(0.5, 1.02),
+                ncol=min(5, len(labels)),
+                frameon=False,
+                fontsize=11,
+            )
+
+        indiv_path = output_path_stem.parent / f"{prefix}{letter}_{metric}.svg"
+        indiv_fig.savefig(indiv_path, bbox_inches="tight")
+        plt.close(indiv_fig)
+        print(f"Generated individual panel: {indiv_path.name}")
 
 
 def plot_figure_1_generation(full_df: pl.DataFrame, output_dir: Path):
     """Figure 1: Intrinsic/extrinsic generation quality across benchmarks."""
+    if "effective_yield_rate" not in full_df.columns and "effective_hit_rate" in full_df.columns:
+        full_df = full_df.with_columns(pl.col("effective_hit_rate").alias("effective_yield_rate"))
+
     metrics_map = {
         "validity": "Validity",
         "uniqueness": "Uniqueness",
@@ -378,7 +436,7 @@ def plot_figure_1_generation(full_df: pl.DataFrame, output_dir: Path):
         full_df=full_df,
         metrics_map=metrics_map,
         output_path_stem=output_dir / "fig1_generation_metrics",
-        figure_title="Generation Metrics Across Benchmarks (mean +/- 95% CI)",
+        figure_title="",
         ncols=3,
     )
 
@@ -730,26 +788,7 @@ def plot_figure_3_quality(
     else:
         set_label = ""
 
-    # ── Panel layout ─────────────────────────────────────────────────────
-    # Active panels: dynamically render subplots that have valid data
-    plot_molskill = "molskill_score" in effective_df.columns and effective_df["molskill_score"].notna().any()
-    plot_stoplight = "stoplight_score" in effective_df.columns and effective_df["stoplight_score"].notna().any()
-    plot_aizynth = "aizynthfinder_state_score" in effective_df.columns and effective_df["aizynthfinder_state_score"].notna().any()
-
-    active_panels = ["qed", "sa"]
-    if plot_molskill:
-        active_panels.append("molskill_score")
-    if plot_stoplight:
-        active_panels.append("stoplight_score")
-    if plot_aizynth:
-        active_panels.append("aizynthfinder_state_score")
-
-    n_panels = len(active_panels)
-    ncols = 3
-    nrows = int(np.ceil(n_panels / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(6.5 * ncols, 4.8 * nrows), squeeze=False)
-    axes_flat = axes.flatten()
-
+    # ── Individual SVGs for Figure 3 panels ─────────────────────────────
     unique_models = list(effective_df["model"].unique())
     hue_order = [m for m in MODEL_PLOT_ORDER if m in unique_models] + [
         m for m in unique_models if m not in MODEL_PLOT_ORDER
@@ -757,8 +796,19 @@ def plot_figure_3_quality(
     targets = sorted(effective_df["target"].unique())
     palette = get_model_palette(unique_models)
 
-    for idx, col_name in enumerate(active_panels):
-        ax = axes_flat[idx]
+    panels_config = [
+        ("a", "qed", "fig3a_qed", "QED Score", "A. QED (\u2191)"),
+        ("b", "sa", "fig3b_sa", "SA Score", "B. SA Score (\u2193)"),
+        ("c", "molskill_score", "fig3c_molskill", "MolSkill Score", "C. MolSkill Score (\u2193)"),
+        ("d", "stoplight_score", "fig3d_stoplight", "Stoplight Score", "D. Stoplight Score (\u2193)"),
+        ("e", "aizynthfinder_state_score", "fig3e_aizynthfinder", "AIZynthFinder State Score", "E. AIZynthFinder State Score (\u2191)"),
+    ]
+
+    for panel_letter, col_name, file_stem, ylabel, title in panels_config:
+        if col_name not in effective_df.columns or not effective_df[col_name].notna().any():
+            continue
+
+        fig, ax = plt.subplots(figsize=(7.5, 4.8))
         sns.boxplot(
             data=effective_df,
             x="target",
@@ -771,55 +821,35 @@ def plot_figure_3_quality(
             showfliers=False,
             ax=ax,
         )
-        if col_name == "qed":
-            ax.set_title(f"QED (\u2191){set_label}", fontsize=15, fontweight="bold", pad=12)
-            ax.set_ylabel("QED Score", fontsize=12, labelpad=8)
-        elif col_name == "sa":
-            ax.set_title(f"SA Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
-            ax.set_ylabel("SA Score", fontsize=12, labelpad=8)
-        elif col_name == "molskill_score":
-            ax.set_title(f"MolSkill Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
-            ax.set_ylabel("MolSkill Score", fontsize=12, labelpad=8)
-        elif col_name == "stoplight_score":
-            ax.set_title(f"Stoplight Score (\u2193){set_label}", fontsize=15, fontweight="bold", pad=12)
-            ax.set_ylabel("Stoplight Score", fontsize=12, labelpad=8)
-        elif col_name == "aizynthfinder_state_score":
-            ax.set_title(f"AIZynthFinder State Score (\u2191){set_label}", fontsize=15, fontweight="bold", pad=12)
-            ax.set_ylabel("State Score", fontsize=12, labelpad=8)
-
+        ax.set_title(title, loc="left", fontsize=13, fontweight="bold", pad=8)
         ax.set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
-
-    for idx in range(n_panels, len(axes_flat)):
-        axes_flat[idx].axis("off")
-
-    for ax in axes_flat[:n_panels]:
+        ax.set_ylabel(ylabel, fontsize=12, labelpad=8)
         ax.tick_params(axis="both", labelsize=11)
         ax.tick_params(axis="x", rotation=30)
         ax.yaxis.grid(True, linestyle="--", alpha=0.5)
         ax.xaxis.grid(False)
         sns.despine(ax=ax, top=True, right=True)
+
+        handles, labels = ax.get_legend_handles_labels()
         if ax.get_legend() is not None:
             ax.get_legend().remove()
+        if handles:
+            ax.legend(
+                handles,
+                labels,
+                loc="lower center",
+                bbox_to_anchor=(0.5, 1.02),
+                ncol=min(5, len(labels)),
+                frameon=False,
+                fontsize=11,
+            )
 
-    handles, labels = axes_flat[0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.95),
-        ncol=5,
-        frameon=False,
-        fontsize=13,
-    )
+        output_path = output_dir / f"{file_stem}.svg"
+        fig.savefig(output_path, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Generated Figure 3 panel: {output_path.name}")
 
-    fig.suptitle("Chemical Quality Metrics Across Benchmarks", y=0.99, fontsize=18, fontweight="bold")
-    fig.tight_layout(rect=[0, 0, 1, 0.86])
-
-    output_path_stem = output_dir / "fig3_quality_metrics"
-    fig.savefig(output_path_stem.with_suffix(".svg"), bbox_inches="tight")
-    fig.savefig(output_path_stem.with_suffix(".png"), dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    print("Generated Figure 3 with Effective Yield Rate compound set!")
+    print("Generated Figure 3 individual SVG panels with Effective Yield Rate compound set!")
 
 
 
@@ -908,13 +938,11 @@ def plot_figure_4_trajectory(exps_dir: Path, output_dir: Path, k: int = 10):
 
         plt.xlabel("Cumulative Oracle Calls", fontsize=12, labelpad=8)
         plt.ylabel(f"Running Top-{k} Mean Reward Score", fontsize=12, labelpad=8)
-        plt.title(f"Optimization Trajectory: {target}", fontsize=14, fontweight="bold", pad=12)
         plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, fontsize=11)
         plt.grid(True, linestyle="--", alpha=0.5)
         sns.despine(top=True, right=True)
         plt.tight_layout()
         plt.savefig(output_dir / f"fig4_trajectory_{target}.svg", bbox_inches="tight")
-        plt.savefig(output_dir / f"fig4_trajectory_{target}.png", dpi=300, bbox_inches="tight")
         plt.close()
 
 
