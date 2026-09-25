@@ -22,7 +22,7 @@ Generative models are evaluated on their ability to grow or decorate a fixed 2D 
 What mockdock provides
 ----------------------
 
-* **Curated Target Benchmarks**: Seven protein targets (CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2) with pre-computed AutoGrid maps and bioactivity baselines.
+* **Curated Benchmark Tasks**: Pre-configured protein–ligand tasks (including CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2) with pre-computed AutoGrid maps and bioactivity baselines, fully extensible to custom systems.
 * **Standardized Oracle Interface**: :class:`~mockdock.MDOracle` handles SMILES sanitization, conformer generation, docking execution, pose RMSD validation, and score normalization.
 * **Docking Backend**: **AutoDock-GPU** (GPU-accelerated v1.6).
 * **Post-hoc Evaluation**: :class:`~mockdock.MDEvaluator` calculates standardized metrics covering generation quality, medicinal chemistry alerts, and oracle call efficiency.
@@ -86,7 +86,7 @@ Documentation Sections
    * - :doc:`evaluation`
      - How to run :class:`~mockdock.MDEvaluator`, full breakdown of all 22 metrics, and multi-model aggregate analysis.
    * - :doc:`reference/index`
-     - Complete reference on the 7 standard targets, scoring equations, creating custom targets, and automation scripts.
+     - Complete reference on benchmark tasks, scoring equations, creating custom targets, and automation scripts.
    * - :doc:`api/index`
      - Python API reference for all public classes, methods, and modules.
 

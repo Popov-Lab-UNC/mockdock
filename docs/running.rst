@@ -41,7 +41,7 @@ You can inspect the list of available curated target systems directly in Python:
    print(benchmarks)
    # ['CHK1', 'DPP4', 'ITK', 'PEPCK', 'PptT', 'TTK', 'VEGFR2']
 
-To learn more about the biological background, active fragments, and PDB structures for each target, see :doc:`reference/benchmarks`.
+To learn more about the biological background, active fragments, and PDB structures for each benchmark task, see :doc:`reference/benchmarks`.
 
 2. Initializing the Oracle
 --------------------------
@@ -193,5 +193,5 @@ Next Steps
 ----------
 
 * **Evaluate your benchmark run**: Proceed to :doc:`evaluation` to compute standardized metrics across generative quality, medicinal chemistry alerts, and docking optimization.
-* **Explore target specifics**: Check :doc:`reference/benchmarks` for details on all 7 systems.
+* **Explore task specifics**: Check :doc:`reference/benchmarks` for details on available benchmark tasks.
 * **Understand the scoring formula**: Read :doc:`reference/scoring` to learn about RMSD constraints and min-max normalization.

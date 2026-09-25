@@ -161,7 +161,7 @@ Generated Summary Artifacts:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * ``metrics_summary.csv``: Per-model, per-benchmark detailed evaluation table.
-* ``metrics_summary_macro.csv``: Macro-averaged metrics across all 7 benchmark targets.
+* ``metrics_summary_macro.csv``: Macro-averaged metrics across evaluated benchmark tasks.
 * **Publication Figures**:
   * **Figure 1**: Generative Quality & Diversity metrics across models.
   * **Figure 2**: Optimization & Docking Performance (Top-10 reward, MedChem-filtered Top-10, AUC).
