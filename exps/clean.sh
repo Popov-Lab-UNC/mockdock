@@ -1,0 +1,1 @@
+for d in *; do if [ -d "$d" ]; then cd "$d" && rm -f *.err *.log && rm -rf outputs run_2026* && cd ..; fi; done

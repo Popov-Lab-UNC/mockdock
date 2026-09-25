@@ -214,7 +214,6 @@ generated_configs_v1/
 variance_runs/
 variance_analysis/
 legacy_runs/
-exps/
 logs/
 *.log
 *.err
