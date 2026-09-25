@@ -55,22 +55,22 @@ The docked pose of the candidate must maintain the experimental binding mode of 
 
 Raw docking energies are normalized against target-specific calibration bounds:
 
-.. math::
+.. code-block:: text
 
-   \text{norm\_score} = \frac{\text{docking\_score} - \text{low\_score}}{\text{high\_score} - \text{low\_score}}
+   norm_score = (docking_score - low_score) / (high_score - low_score)
 
 Where:
-* ``low_score`` corresponds to the worst average docking score in the baseline ChEMBL dataset (mapped to 0.0).
-* ``high_score`` corresponds to the best average docking score in the baseline ChEMBL dataset (mapped to 1.0).
+* ``low_score`` corresponds to the weak-affinity baseline in the reference dataset (mapped to 0.0).
+* ``high_score`` corresponds to the potent-affinity baseline in the reference dataset (mapped to 1.0).
 
 5. Reward Clipping
 ^^^^^^^^^^^^^^^^^^
 
-By default (``clip_reward_upper_bound = True``):
+By default (``clip_reward_upper_bound = True``), normalized scores are clipped to ``[0.0, 1.0]``:
 
-.. math::
+.. code-block:: text
 
-   \text{reward\_score} = \min(\max(\text{norm\_score}, 0.0), 1.0)
+   reward_score = min(max(norm_score, 0.0), 1.0)
 
 This ensures rewards remain strictly within ``[0.0, 1.0]`` for reinforcement learning stability. Both ``norm_score`` (unclipped) and ``reward_score`` (clipped) are preserved in the results DataFrame.
 
