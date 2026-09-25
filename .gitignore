@@ -223,8 +223,9 @@ custom_configs/
 custom_data/
 
 # mockdock: Local data cache (large binary files)
-data/
-data_v1/
+/data/
+/data_v1/
+!src/mockdock/data/
 
 # mockdock: Validation result CSVs (outputs, not source)
 validation_results_*.csv
