@@ -16,7 +16,7 @@ When a molecule is submitted to :meth:`~mockdock.MDOracle.score`, it passes thro
    1. 2D Substructure Match? ──[No]──► Reward = 0.0
           │ [Yes]
           ▼
-   2. 3D Conformer Prep & Docking (AD-GPU or Vina)
+   2. 3D Conformer Prep & Docking (AutoDock-GPU)
           │
           ▼
    3. 3D Pose RMSD <= Threshold (2.0 Å)? ──[No]──► Reward = 0.0
@@ -39,7 +39,7 @@ If the fragment is missing, the molecule is assigned a reward score of ``0.0`` i
 
 * RDKit generates a 3D conformer with energy minimization (ETKDG / UFF).
 * Meeko generates the PDBQT representation with assigned partial charges.
-* The docking engine (AutoDock-GPU or AutoDock Vina) runs against the target's pre-computed grid maps.
+* AutoDock-GPU runs against the target's pre-computed grid maps.
 * The lowest predicted binding energy (kcal/mol) is recorded as ``docking_score`` (more negative = stronger binding).
 
 3. 3D Pose RMSD Alignment

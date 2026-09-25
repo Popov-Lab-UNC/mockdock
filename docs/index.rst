@@ -24,7 +24,7 @@ What mockdock provides
 
 * **Curated Target Benchmarks**: Seven protein targets (CHK1, DPP4, ITK, PEPCK, PptT, TTK, VEGFR2) with pre-computed AutoGrid maps and bioactivity baselines.
 * **Standardized Oracle Interface**: :class:`~mockdock.MDOracle` handles SMILES sanitization, conformer generation, docking execution, pose RMSD validation, and score normalization.
-* **Docking Backends**: **AutoDock-GPU** (GPU) and **AutoDock Vina** (CPU).
+* **Docking Backend**: **AutoDock-GPU** (GPU-accelerated v1.6).
 * **Post-hoc Evaluation**: :class:`~mockdock.MDEvaluator` calculates standardized metrics covering generation quality, medicinal chemistry alerts, and oracle call efficiency.
 
 At a glance
@@ -80,7 +80,7 @@ Documentation Sections
    * - Section
      - Description
    * - :doc:`installation`
-     - System requirements, AutoDock-GPU binary setup, CPU Vina fallback, and environment configuration.
+     - System requirements, AutoDock-GPU binary setup, and environment configuration.
    * - :doc:`running`
      - How to initialize oracles, query fragment constraints, batch score candidates, inspect session states, and connect with generative models.
    * - :doc:`evaluation`

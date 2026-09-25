@@ -72,15 +72,6 @@ Or with uv:
 
    uv sync --all-extras
 
-AutoDock Vina Backend (CPU Fallback)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-To enable CPU-based docking via AutoDock Vina (no GPU required):
-
-.. code-block:: bash
-
-   pip install -e ".[vina]"
-
 Receptor Preparation & Custom Benchmark Tools
 ---------------------------------------------
 

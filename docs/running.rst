@@ -21,7 +21,7 @@ Overview
    │                                                           │
    │  1. 2D Substructure Filter                                │
    │  2. 3D Conformation Prep (RDKit / Meeko)                 │
-   │  3. Docking Engine (AutoDock-GPU / Vina)                  │
+   │  3. Docking Engine (AutoDock-GPU)                         │
    │  4. 3D Pose RMSD Constraint Check                         │
    │  5. Score Normalization & Clipping                        │
    │                                                           │
@@ -55,7 +55,6 @@ Instantiate :class:`~mockdock.MDOracle` for your target of choice:
    oracle = MDOracle(
        benchmark_name="CHK1",
        budget=1000,             # Total allowed molecule scoring calls
-       docking_backend="auto",   # Uses AutoDock-GPU if available, falls back to Vina
        run_dir="./my_run",       # Directory where results.csv and logs are stored
    )
 
@@ -64,12 +63,8 @@ Configuration Parameters:
 
 * ``benchmark_name`` (*str*): The name of the target benchmark (e.g. ``"CHK1"``, ``"VEGFR2"``).
 * ``budget`` (*int*, default: ``1000``): Total scoring budget. Once exhausted, calls return cached or zero rewards.
-* ``docking_backend`` (*str*, default: ``"auto"``): Docking engine to use:
-  * ``"auto"``: Automatically selects AutoDock-GPU if detected on ``PATH`` or ``ADGPU_EXECUTABLE``, otherwise falls back to AutoDock Vina.
-  * ``"adgpu"``: Explicitly require AutoDock-GPU.
-  * ``"vina"``: Explicitly require AutoDock Vina (CPU).
 * ``run_dir`` (*str | Path*, optional): Output directory for the session. Live results are written to ``<run_dir>/results.csv`` after every batch.
-* ``adgpu_executable`` (*str | Path*, optional): Custom path to the ``adgpu`` binary.
+* ``adgpu_executable`` (*str | Path*, optional): Custom path or binary name for the ``adgpu`` executable (defaults to searching ``PATH`` or ``ADGPU_EXECUTABLE``).
 
 3. Accessing Initial Starting Compounds
 ---------------------------------------
