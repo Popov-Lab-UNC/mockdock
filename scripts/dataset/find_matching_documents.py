@@ -131,8 +131,10 @@ def fetch_assays_for_target(
 
                     cache_rows.append(
                         {
+                            "molecule_id": mol_id,
                             "molecule_chembl_id": mol_id,
                             "canonical_smiles": smiles,
+                            "pactivity_value": pchembl,
                             "pchembl_value": pchembl,
                             "assay_chembl_id": assay_id,
                             "document_chembl_id": doc_id,
@@ -258,8 +260,10 @@ def fetch_assays_for_targets_sqlite(
 
                     cache_rows.append(
                         {
+                            "molecule_id": mol_id,
                             "molecule_chembl_id": mol_id,
                             "canonical_smiles": smiles,
+                            "pactivity_value": pchembl,
                             "pchembl_value": pchembl,
                             "assay_chembl_id": assay_id,
                             "document_chembl_id": doc_id,

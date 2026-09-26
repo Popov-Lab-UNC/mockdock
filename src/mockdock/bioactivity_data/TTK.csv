@@ -1,4 +1,4 @@
-molecule_chembl_id,canonical_smiles,pchembl_value,mean_docking_score,norm_score,reward_score,score
+molecule_id,canonical_smiles,pactivity_value,mean_docking_score,norm_score,reward_score,score
 CHEMBL3410072,N#Cc1ccc(-c2cc(NCC3CCOCC3)c3ncc(-c4ccc(C(=O)NC5CC5)cc4)n3n2)cc1,8.38,-11.703999999999999,0.9721095334685596,0.9721095334685596,0.9721095334685596
 CHEMBL3410062,CC(C)CNc1nccn2c(-c3ccc(C(=O)NC(C)C)cc3)cnc12,6.34,-8.382,0.12981744421906682,0.12981744421906682,0.12981744421906682
 CHEMBL3410078,O=C(NC1CC1)c1ccc(-c2cnc3c(NCC4CCOCC4)cc(Oc4ccccc4O)nn23)cc1,8.59,-10.984,0.789553752535497,0.789553752535497,0.789553752535497

@@ -46,11 +46,12 @@ def set_publication_style():
 
 def get_pactivity(df: pl.DataFrame, config_path: Path):
     """
-    Use ChEMBL pValue only; error if missing.
+    Use pActivity / pChEMBL value; error if missing.
     """
-    if "pchembl_value" not in df.columns:
-        raise RuntimeError("Missing pchembl_value; cannot compute pActivity.")
-    return df.get_column("pchembl_value").to_numpy(), "pActivity (ChEMBL pValue)"
+    act_col = "pactivity_value" if "pactivity_value" in df.columns else "pchembl_value"
+    if act_col not in df.columns:
+        raise RuntimeError("Missing pactivity_value/pchembl_value; cannot compute pActivity.")
+    return df.get_column(act_col).to_numpy(), f"pActivity ({act_col})"
 
 
 def _load_workflow_config(config_path: Path) -> dict:
@@ -112,8 +113,8 @@ def run_variance_tests(
 
     for config_path in configs:
         config_data = _load_workflow_config(config_path)
-        pdb_id = config_data.get("pdb_id", config_path.stem)
-        print(f"[{pdb_id}] Initializing maps and data...")
+        structure_id = config_data.get("structure_id") or config_data.get("pdb_id", config_path.stem)
+        print(f"[{structure_id}] Initializing maps and data...")
 
         # 1. Run initialization (retrieve + grid) ONCE
         init_run_dir = run_base_dir / "init"
@@ -159,8 +160,8 @@ def run_variance_tests(
 
             config = _load_workflow_config(config_path)
             target_id = config.get("target_id")
-            pdb_id = config.get("pdb_id")
-            target_pdb_name = f"{target_id}_{pdb_id}"
+            structure_id = config.get("structure_id") or config.get("pdb_id")
+            target_pdb_name = f"{target_id}_{structure_id}"
 
             # Re-use grid and data from init
             src_grid_dir = init_run_dir / target_pdb_name
@@ -187,7 +188,7 @@ def run_variance_tests(
             dst_work.mkdir(parents=True, exist_ok=True)
 
             # Keep cleaned-data filename consistent with workflow naming.
-            prefix = f"{target_id}_{pdb_id}_{doc_id}"
+            prefix = f"{target_id}_{structure_id}_{doc_id}"
             assay_id = config.get("assay_id")
             if assay_id:
                 prefix += f"_{assay_id}"
@@ -259,14 +260,15 @@ def analyze_variance_results(
         # Merge docking scores
         merged = pl.DataFrame()
         for i, df in enumerate(df_list):
-            if "pchembl_value" not in df.columns:
-                raise RuntimeError("Missing pchembl_value in results; cannot analyze variance.")
-            subset = df.select(["canonical_smiles", "docking_score", "pchembl_value"])
+            act_col = "pactivity_value" if "pactivity_value" in df.columns else "pchembl_value"
+            if act_col not in df.columns:
+                raise RuntimeError(f"Missing pactivity_value/pchembl_value in results; cannot analyze variance.")
+            subset = df.select(["canonical_smiles", "docking_score", act_col])
             subset = subset.rename({"docking_score": f"score_{i}"})
             if merged.is_empty():
                 merged = subset
             else:
-                cols_to_drop = [c for c in ["pchembl_value"] if c in merged.columns]
+                cols_to_drop = [c for c in [act_col] if c in merged.columns]
                 merged = merged.join(subset.drop(cols_to_drop), on="canonical_smiles", how="inner")
 
         score_cols = [c for c in merged.columns if c.startswith("score_")]

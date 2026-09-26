@@ -11,7 +11,7 @@ def test_loader_initial_and_validation_split_quartile(monkeypatch, tmp_path: Pat
     df = pl.DataFrame(
         {
             "canonical_smiles": ["A", "B", "C", "D"],
-            "pchembl_value": [1.0, 2.0, 3.0, 4.0],
+            "pactivity_value": [1.0, 2.0, 3.0, 4.0],
         }
     )
     loader = BenchmarkLoader("CHK1", scratch_dir=tmp_path)
@@ -20,7 +20,7 @@ def test_loader_initial_and_validation_split_quartile(monkeypatch, tmp_path: Pat
 
     full_df, threshold, act_col = loader.get_full_data_and_threshold()
     assert len(full_df) == 4
-    assert act_col == "pchembl_value"
+    assert act_col == "pactivity_value"
     assert threshold == 1.75
 
     initial = loader.get_initial_compounds()
@@ -34,7 +34,7 @@ def test_loader_uses_memory_cache_after_first_load(monkeypatch, tmp_path: Path):
 
     def _fetch(*_):
         calls["n"] += 1
-        return pl.DataFrame({"canonical_smiles": ["C"], "pchembl_value": [5.0]})
+        return pl.DataFrame({"canonical_smiles": ["C"], "pactivity_value": [5.0]})
 
     loader = BenchmarkLoader("CHK1", scratch_dir=tmp_path)
     monkeypatch.setattr("mockdock.loader.fetch_chembl_data", _fetch)

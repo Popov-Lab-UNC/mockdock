@@ -1,5 +1,5 @@
 benchmark_name = "TTK"
-pdb_id = "3WZJ"
+structure_id = "3WZJ"
 target_id = "CHEMBL3983"
 doc_id = "CHEMBL3407417"
 assay_id = "CHEMBL3411333"

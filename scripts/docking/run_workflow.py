@@ -111,10 +111,11 @@ def run_docking_workflow(
     target_id: str = config.get("target_id", "")
     doc_id: str = config.get("doc_id", "")
     assay_id: str = config.get("assay_id", "")
-    pdb_id: str = config.get("pdb_id", "")
+    structure_id: str = config.get("structure_id") or config.get("pdb_id", "")
+    pdb_id: str = structure_id
     benchmark_name: str = config.get("benchmark_name", "")
     ligand_resname: str = config.get("ligand_resname", "")
-    activity_col = "pchembl_value"
+    activity_col = "pactivity_value"
 
     if run_dir:
         run_base = Path(run_dir)
@@ -259,8 +260,12 @@ def run_docking_workflow(
             return result
 
         df = pl.read_csv(df_path)
-        if "pchembl_value" not in df.columns:
-            raise RuntimeError("Missing pchembl_value in cleaned data; cannot proceed.")
+        if "pactivity_value" in df.columns:
+            activity_col = "pactivity_value"
+        elif "pchembl_value" in df.columns:
+            activity_col = "pchembl_value"
+        else:
+            raise RuntimeError("Missing pactivity_value/pchembl_value in cleaned data; cannot proceed.")
         if df.is_empty():
             print("   Warning: No compounds to dock. Skipping.")
             result.status = WorkflowStatus.SUCCESS.value
@@ -403,8 +408,10 @@ def run_docking_workflow(
         results_file = work_dir / f"{data_prefix}_results.csv"
         if results_file.exists():
             df = pl.read_csv(results_file)
-            if "pchembl_value" not in df.columns:
-                raise RuntimeError("Missing pchembl_value in results; cannot plot.")
+            if activity_col not in df.columns and "pchembl_value" in df.columns:
+                activity_col = "pchembl_value"
+            if activity_col not in df.columns:
+                raise RuntimeError(f"Missing {activity_col} in results; cannot plot.")
             plot_docking_results(
                 df,
                 score_col="docking_score",

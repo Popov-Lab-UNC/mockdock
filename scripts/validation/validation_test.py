@@ -24,10 +24,10 @@ Usage
 Extending
 ---------
   To add your own benchmark:
-    1. Create mockdock/configs/<MyBenchmark>.yaml  (see existing files for format)
+    1. Create mockdock/configs/<MyBenchmark>.toml  (see existing files for format)
     2. Add bioactivity data at mockdock/bioactivity_data/<MyBenchmark>.csv
-       (columns: molecule_chembl_id, canonical_smiles, pchembl_value)
-    3. Place pre-built grids in mockdock/grids/<PDB_ID>/  OR let the oracle
+       (columns: molecule_id, canonical_smiles, pactivity_value)
+    3. Place pre-built grids in mockdock/grids/<STRUCTURE_ID>/  OR let the oracle
        auto-prepare them (requires autogrid4 + reduce2).
 """
 
@@ -131,7 +131,7 @@ def run_validation(
                 if not initial_df.is_empty():
                     # Keep only the relevant columns for display
                     display_cols = [
-                        c for c in ["canonical_smiles", "pchembl_value"] if c in initial_df.columns
+                        c for c in ["molecule_id", "canonical_smiles", "pactivity_value", "pchembl_value"] if c in initial_df.columns
                     ]
                     print(f"\n--- Lower 25% compounds for {bm_name} ({len(initial_df)}) ---")
                     print(initial_df.select(display_cols))

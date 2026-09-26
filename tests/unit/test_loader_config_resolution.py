@@ -21,3 +21,8 @@ def test_find_config_raises_when_missing(tmp_path: Path):
     config_dir.mkdir()
     with pytest.raises(FileNotFoundError):
         BenchmarkLoader._find_config("missing", config_dir)
+
+
+def test_loader_loads_structure_id():
+    loader = BenchmarkLoader("CHK1")
+    assert loader.structure_id == "2R0U"

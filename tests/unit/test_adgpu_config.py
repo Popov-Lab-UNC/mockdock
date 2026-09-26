@@ -56,7 +56,7 @@ def test_mdoracle_adgpu_executable_config(mock_loader, mock_which, tmp_path, mon
 
     # Set up mock loader return values so MDOracle init succeeds without file access errors
     mock_loader_instance = mock_loader.return_value
-    mock_loader_instance.pdb_id = "2R0U"
+    mock_loader_instance.structure_id = "2R0U"
     mock_loader_instance.fragment_smiles = "C"
     mock_loader_instance.rmsd_threshold = 2.0
     mock_loader_instance.require_fragment_match = True

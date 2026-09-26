@@ -55,21 +55,24 @@ def fetch_chembl_data(
     Fetch bioactivity data from ChEMBL for a specific target and document.
 
     Returns:
-        DataFrame with canonical_smiles, molecule_chembl_id, and pchembl_value.
+        DataFrame with canonical_smiles, molecule_id, and pactivity_value.
     """
 
     def process_data(temp_df):
         # 0. Initial raw count
         n_retrieved = len(temp_df)
 
-        # 1. Require pchembl_value (unit-agnostic)
-        if "pchembl_value" not in temp_df.columns:
+        # 1. Require pactivity_value or pchembl_value (unit-agnostic)
+        act_col = "pactivity_value" if "pactivity_value" in temp_df.columns else "pchembl_value"
+        if act_col not in temp_df.columns:
             # If it's cached data, it should have it, but just in case
-            raise RuntimeError("ChEMBL data missing pchembl_value.")
+            raise RuntimeError("ChEMBL data missing pactivity_value/pchembl_value.")
 
-        # 2. Basic cleanup and casting
-        temp_df = temp_df.with_columns(pl.col("pchembl_value").cast(pl.Float64, strict=False))
-        temp_df = temp_df.drop_nulls(subset=["canonical_smiles", "pchembl_value"])
+        # 2. Basic cleanup and casting -> standardise column to pactivity_value
+        temp_df = temp_df.with_columns(
+            pl.col(act_col).cast(pl.Float64, strict=False).alias("pactivity_value")
+        )
+        temp_df = temp_df.drop_nulls(subset=["canonical_smiles", "pactivity_value"])
 
         n_orig = len(temp_df)
 
@@ -82,11 +85,12 @@ def fetch_chembl_data(
         if n_orig > n_clean:
             print(f"   Standardization: Removed {n_orig - n_clean} invalid/failed compounds.")
 
-        # 4. Deduplicate by canonical_smiles using median pchembl_value
+        # 4. Deduplicate by canonical_smiles using median pactivity_value
         n_before = len(temp_df)
+        id_col = "molecule_id" if "molecule_id" in temp_df.columns else "molecule_chembl_id"
         agg_exprs = [
-            pl.first("molecule_chembl_id").alias("molecule_chembl_id"),
-            pl.median("pchembl_value").alias("pchembl_value"),
+            pl.first(id_col).alias("molecule_id"),
+            pl.median("pactivity_value").alias("pactivity_value"),
         ]
         if "assay_chembl_id" in temp_df.columns:
             agg_exprs.append(pl.first("assay_chembl_id").alias("assay_chembl_id"))
@@ -283,6 +287,6 @@ def fetch_chembl_data(
         "n_standardized": n_clean,
         "n_deduplicated": n_after,
     }
-    print("   Using pchembl_value (unit-agnostic) from ChEMBL")
+    print("   Using pactivity_value (standardized) from ChEMBL")
 
     return (df, stats) if return_stats else df

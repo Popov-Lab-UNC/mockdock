@@ -62,13 +62,13 @@ def _load_benchmark_config(benchmark_name: str) -> dict:
         return tomllib.load(f)
 
 
-def _find_results_csv(run_dir: Path, target_id: str, pdb_id: str, doc_id: str) -> Path | None:
+def _find_results_csv(run_dir: Path, target_id: str, structure_id: str, doc_id: str) -> Path | None:
     """Locate the per-compound results CSV inside a single variance run folder.
 
     Expected layout::
-        run_N/<target_id>_<pdb_id>/<doc_id>/<target_id>_<pdb_id>_<doc_id>_*_results.csv
+        run_N/<target_id>_<structure_id>/<doc_id>/<target_id>_<structure_id>_<doc_id>_*_results.csv
     """
-    subdir = run_dir / f"{target_id}_{pdb_id}"
+    subdir = run_dir / f"{target_id}_{structure_id}"
     if not subdir.exists():
         return None
 
@@ -90,26 +90,30 @@ def process_benchmark(benchmark_name: str) -> None:
 
     cfg = _load_benchmark_config(benchmark_name)
     target_id = cfg["target_id"]
-    pdb_id = cfg["pdb_id"]
+    structure_id = cfg.get("structure_id") or cfg.get("pdb_id")
     doc_id = cfg["doc_id"]
+
+    # ── Read bioactivity CSV and determine ID column ────────────────────────
+    bio_df = pl.read_csv(csv_path)
+    id_col = "molecule_id" if "molecule_id" in bio_df.columns else "molecule_chembl_id"
 
     # ── Collect per-compound docking scores from all variance runs ──────────
     all_run_frames: list[pl.DataFrame] = []
     run_dirs = sorted(p for p in VARIANCE_RUNS_DIR.glob("run_*") if p.is_dir())
     for run_idx, run_dir in enumerate(run_dirs, start=1):
-        results_csv = _find_results_csv(run_dir, target_id, pdb_id, doc_id)
+        results_csv = _find_results_csv(run_dir, target_id, structure_id, doc_id)
         if results_csv is None:
             print(f"  [WARN] {benchmark_name}: no results CSV in {run_dir.name}, skipping.")
             continue
 
         run_df = pl.read_csv(results_csv)
-        # Keep only chembl ID and docking score; tag the run number
-        if "molecule_chembl_id" not in run_df.columns or "docking_score" not in run_df.columns:
+        run_id_col = "molecule_id" if "molecule_id" in run_df.columns else "molecule_chembl_id"
+        if run_id_col not in run_df.columns or "docking_score" not in run_df.columns:
             print(
                 f"  [WARN] {benchmark_name}: {run_dir.name} CSV missing expected columns, skipping."
             )
             continue
-        run_df = run_df.select(["molecule_chembl_id", "docking_score"]).with_columns(
+        run_df = run_df.select([pl.col(run_id_col).alias(id_col), "docking_score"]).with_columns(
             pl.lit(run_idx).alias("run_idx")
         )
         all_run_frames.append(run_df)
@@ -119,16 +123,14 @@ def process_benchmark(benchmark_name: str) -> None:
         return
 
     stacked = pl.concat(all_run_frames)
-    mean_scores = stacked.group_by("molecule_chembl_id").agg(
+    mean_scores = stacked.group_by(id_col).agg(
         pl.col("docking_score").mean().alias("mean_docking_score")
     )
 
-    # ── Read bioactivity CSV and join ────────────────────────────────────────
-    bio_df = pl.read_csv(csv_path)
     for col in ["mean_docking_score", "norm_score", "reward_score", "score"]:
         if col in bio_df.columns:
             bio_df = bio_df.drop(col)
-    merged = bio_df.join(mean_scores, on="molecule_chembl_id", how="left")
+    merged = bio_df.join(mean_scores, on=id_col, how="left")
 
     # ── Compute low_score and high_score from variance run data ──────────────
     # high_score = best (min) mean_docking_score; low_score = worst (max) mean_docking_score.

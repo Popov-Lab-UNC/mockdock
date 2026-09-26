@@ -28,9 +28,9 @@ class GridPrepError(Exception):
     pass
 
 
-def _download_mmcif(pdb_id: str, output_dir: Path) -> Path:
+def _download_mmcif(structure_id: str, output_dir: Path) -> Path:
     """
-    Download an mmCIF for a PDB id into output_dir and return the local path.
+    Download an mmCIF for a structure ID into output_dir and return the local path.
     Prefer ProDy's fetchPDB; fall back to direct RCSB download.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -38,20 +38,20 @@ def _download_mmcif(pdb_id: str, output_dir: Path) -> Path:
     structure_path = None
     try:
         # ProDy returns the downloaded file path or None
-        structure_path = fetchPDB(pdb_id, folder=str(output_dir), compressed=False, format="cif")
+        structure_path = fetchPDB(structure_id, folder=str(output_dir), compressed=False, format="cif")
     except Exception as e:
         print(f"   ProDy fetchPDB (cif) failed: {e}")
 
     if structure_path is None:
         print("   Falling back to direct RCSB download (mmCIF)...")
-        url = f"https://files.rcsb.org/download/{pdb_id.upper()}.cif"
+        url = f"https://files.rcsb.org/download/{structure_id.upper()}.cif"
         try:
             response = requests.get(url)
             response.raise_for_status()
-            structure_path = output_dir / f"{pdb_id.lower()}.cif"
+            structure_path = output_dir / f"{structure_id.lower()}.cif"
             structure_path.write_text(response.text)
         except Exception as e:
-            raise PDBDownloadError(f"Failed to download PDB structure {pdb_id}: {e}")
+            raise PDBDownloadError(f"Failed to download structure {structure_id}: {e}")
 
     return Path(structure_path)
 
@@ -201,7 +201,7 @@ def _pick_receptor_chains_from_ligand(
 
 
 def extract_protein_and_ligand(
-    pdb_id: str, ligand_resname: str, output_dir: str | Path = "."
+    structure_id: str, ligand_resname: str, output_dir: str | Path = "."
 ) -> tuple[Path, Path]:
     """
     mmCIF-first receptor/ligand extraction:
@@ -214,11 +214,11 @@ def extract_protein_and_ligand(
         raise ValueError("ligand_resname must be specified.")
 
     outdir = Path(output_dir)
-    structure_path = _download_mmcif(pdb_id, outdir)
+    structure_path = _download_mmcif(structure_id, outdir)
     structure = _parse_mmcif(structure_path)
 
-    protein_pdb = outdir / f"{pdb_id}_protein.pdb"
-    ligand_pdb = outdir / f"{pdb_id}_ligand.pdb"
+    protein_pdb = outdir / f"{structure_id}_protein.pdb"
+    ligand_pdb = outdir / f"{structure_id}_ligand.pdb"
 
     lig_chain, lig_resname, lig_resnum, altloc_token = _pick_ligand_instance(
         structure, ligand_resname
@@ -262,7 +262,7 @@ class ReceptorPreparer:
 
     def get_receptor_and_ligand_pdb(
         self,
-        pdb_id: str,
+        structure_id: str,
         output_dir: Path,
         ligand_resname: str,
         protein_pdb_path: str | Path | None = None,
@@ -285,7 +285,7 @@ class ReceptorPreparer:
             print(f"Using provided protein ({protein_pdb.name}) and ligand ({ligand_pdb.name})")
             return protein_pdb, ligand_pdb
         else:
-            return extract_protein_and_ligand(pdb_id, ligand_resname, output_dir=output_dir)
+            return extract_protein_and_ligand(structure_id, ligand_resname, output_dir=output_dir)
 
     def run_reduce2(self, protein_pdb: Path) -> Path:
         """Run mmtbx.reduce2 to add hydrogens (preferred)."""
@@ -378,7 +378,7 @@ class ReceptorPreparer:
 
     def prepare_receptor_and_grid(
         self,
-        pdb_id: str,
+        structure_id: str,
         ligand_resname: str,
         output_dir: str | Path = ".",
         allow_bad_res: bool = False,
@@ -391,14 +391,14 @@ class ReceptorPreparer:
 
         # 1. Obtain PDBs
         protein_pdb, ligand_pdb = self.get_receptor_and_ligand_pdb(
-            pdb_id, output_dir, ligand_resname, protein_pdb_path, ligand_pdb_path
+            structure_id, output_dir, ligand_resname, protein_pdb_path, ligand_pdb_path
         )
 
         # 2. Add hydrogens
         receptor_input = self.run_reduce2(protein_pdb)
 
         # 3. Run mk_prepare_receptor
-        base_name = f"rec_{pdb_id.lower()}"
+        base_name = f"rec_{structure_id.lower()}"
         try:
             gpf_path = self.run_mk_prepare_receptor(
                 receptor_input, ligand_pdb, base_name, output_dir, allow_bad_res

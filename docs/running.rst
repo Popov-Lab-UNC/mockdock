@@ -77,7 +77,7 @@ Many generative workflows (e.g. fragment decorators, genetic algorithms, reinfor
    initial_df = oracle.get_initial_compounds()
 
    print(initial_df.head())
-   # Columns: ['molecule_chembl_id', 'canonical_smiles', 'pchembl_value']
+   # Columns: ['molecule_id', 'canonical_smiles', 'pactivity_value']
 
 4. Querying Fragment Constraints
 --------------------------------

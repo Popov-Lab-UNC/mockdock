@@ -72,7 +72,7 @@ class MDOracle:
         self.max_budget = budget
         self.budget_used = 0
         self._generation_round = 0
-        self._pdb_id: str | None = None  # set after config load below
+        self._structure_id: str | None = None  # set after config load below
         self.n_cpus = n_cpus or effective_cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else detect_gpus()
         self.results_df = pl.DataFrame()
@@ -110,7 +110,7 @@ class MDOracle:
         _pkg = Path(__file__).parent
         self._pkg_grids_dir = _pkg / "grids"
         self._grids_base_dir = _scratch / "grids"
-        self._grid_dir = self._grids_base_dir / self.pdb_id
+        self._grid_dir = self._grids_base_dir / self.structure_id
         # Lazy: cache dirs are created only when actually needed (before first ChEMBL
         # fetch or grid generation) so that a fresh install with pre-built grids and
         # bundled bioactivity data never creates directories unnecessarily.
@@ -197,9 +197,9 @@ class MDOracle:
         return self._loader.ligand_resname
 
     @property
-    def pdb_id(self) -> str:
-        """PDB ID of the benchmark system."""
-        return self._loader.pdb_id
+    def structure_id(self) -> str:
+        """Structure ID (or PDB ID) of the benchmark system."""
+        return self._loader.structure_id
 
     def set_backend_config(self, **kwargs):
         """Override default backend settings (e.g. vina_exhaustiveness, n_poses)."""
@@ -646,20 +646,20 @@ class MDOracle:
 
         # Locate grid: package-bundled first, then scratch
         fld_files = []
-        pkg_grid_dir = self._pkg_grids_dir / self.pdb_id
+        pkg_grid_dir = self._pkg_grids_dir / self.structure_id
         if pkg_grid_dir.exists():
             fld_files = list(pkg_grid_dir.glob("*.maps.fld"))
             if fld_files:
                 self._grid_dir = pkg_grid_dir
-                print(f"[mockdock] Using pre-built package grids for {self.pdb_id}")
+                print(f"[mockdock] Using pre-built package grids for {self.structure_id}")
 
         if not fld_files:
             fld_files = list(self._grid_dir.glob("*.maps.fld"))
             if fld_files:
-                print(f"[mockdock] Using scratch grids for {self.pdb_id}")
+                print(f"[mockdock] Using scratch grids for {self.structure_id}")
 
         if not fld_files:
-            print(f"[mockdock] No pre-built grid found — preparing receptor for {self.pdb_id}...")
+            print(f"[mockdock] No pre-built grid found — preparing receptor for {self.structure_id}...")
             try:
                 from .receptor import ReceptorPreparer
             except ImportError as e:
@@ -675,19 +675,19 @@ class MDOracle:
                 reduce2_executable="mmtbx.reduce2",
             )
             fld_path = preparer.prepare_receptor_and_grid(
-                self.pdb_id,
+                self.structure_id,
                 ligand_resname=self._loader.ligand_resname,
-                output_dir=self._grids_base_dir / self.pdb_id,
+                output_dir=self._grids_base_dir / self.structure_id,
                 allow_bad_res=True,
             )
         else:
             fld_path = fld_files[0]
-            print(f"[mockdock] Using existing grids for {self.pdb_id}: {fld_path.name}")
+            print(f"[mockdock] Using existing grids for {self.structure_id}: {fld_path.name}")
 
         # Analyzer
-        ref_path = self._grid_dir / f"{self.pdb_id}_ligand_corrected.sdf"
+        ref_path = self._grid_dir / f"{self.structure_id}_ligand_corrected.sdf"
         if not ref_path.exists():
-            ref_path = self._grid_dir / f"{self.pdb_id}_ligand.pdb"
+            ref_path = self._grid_dir / f"{self.structure_id}_ligand.pdb"
         self._docking_analyzer = DockingAnalyzer(
             reference_ligand_path=ref_path if ref_path.exists() else None,
             fragment_smiles=self._loader.fragment_smiles,

@@ -147,7 +147,7 @@ def build_reference_set_cache(target: str, reference_cache_dir: Path, force: boo
             "has_fragment": True,
             "passes_medchem": True,
         }
-        for optional_col in ("molecule_chembl_id", "pchembl_value"):
+        for optional_col in ("molecule_id", "molecule_chembl_id", "pactivity_value", "pchembl_value"):
             if optional_col in reference_df.columns:
                 row[optional_col] = row_data.get(optional_col)
         rows.append(row)

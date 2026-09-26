@@ -91,7 +91,7 @@ def load_cache_compounds(
     with open(source_path, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            mol_id = row.get("molecule_chembl_id")
+            mol_id = row.get("molecule_id") or row.get("molecule_chembl_id")
             smiles = row.get("canonical_smiles")
             if not mol_id or not smiles:
                 continue
@@ -112,7 +112,7 @@ def load_bioactivity_compounds(benchmark_name: str) -> list[tuple[str, str]]:
     with open(source_path, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            mol_id = row.get("molecule_chembl_id")
+            mol_id = row.get("molecule_id") or row.get("molecule_chembl_id")
             smiles = row.get("canonical_smiles")
             if mol_id and smiles:
                 rows.append((mol_id, smiles))
@@ -210,17 +210,17 @@ def main() -> None:
     for config_path in configs:
         cfg = load_config(config_path)
         target_id = cfg.get("target_id")
-        pdb_id = cfg.get("pdb_id")
+        structure_id = cfg.get("structure_id") or cfg.get("pdb_id")
         doc_id = cfg.get("doc_id")
         assay_id = cfg.get("assay_id")
         ligand_resname = cfg.get("ligand_resname")
         benchmark_name = cfg.get("benchmark_name", config_path.stem)
 
-        if not all([target_id, pdb_id, doc_id, ligand_resname]):
+        if not all([target_id, structure_id, doc_id, ligand_resname]):
             print(f"  [SKIP] {benchmark_name}: missing required config keys")
             continue
 
-        system_key = f"{target_id}_{pdb_id}_{doc_id}_{assay_id}" if assay_id else f"{target_id}_{pdb_id}_{doc_id}"
+        system_key = f"{target_id}_{structure_id}_{doc_id}_{assay_id}" if assay_id else f"{target_id}_{structure_id}_{doc_id}"
         rcsb_chembl_id, crystal_smiles = fetch_ligand_metadata_for_resname(ligand_resname)
 
         chembl_id = rcsb_chembl_id
@@ -273,7 +273,7 @@ def main() -> None:
         rows.append(
             {
                 "system_key": system_key,
-                "molecule_chembl_id": chembl_id,
+                "molecule_id": chembl_id,
                 "label": "Crystal ligand",
             }
         )
@@ -285,7 +285,7 @@ def main() -> None:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["system_key", "molecule_chembl_id", "label"])
+        writer = csv.DictWriter(f, fieldnames=["system_key", "molecule_id", "label"])
         writer.writeheader()
         writer.writerows(rows)
 

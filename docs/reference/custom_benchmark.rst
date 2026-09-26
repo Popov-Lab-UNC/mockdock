@@ -11,7 +11,7 @@ Add a new configuration file at ``src/mockdock/configs/<BenchmarkName>.toml``:
 .. code-block:: toml
 
    benchmark_name = "MyTarget"
-   pdb_id = "1ABC"
+   structure_id = "1ABC"
    target_id = "CHEMBL1234"
    doc_id = "CHEMBL5678"
    assay_id = "CHEMBL9012"
@@ -33,20 +33,20 @@ Save the reference bioactivity dataset to ``src/mockdock/bioactivity_data/<Bench
 
 Required columns:
 
-* ``molecule_chembl_id``: ChEMBL compound identifier.
+* ``molecule_id``: Compound identifier.
 * ``canonical_smiles``: Standardized SMILES string.
-* ``pchembl_value``: Experimental affinity measurement (:math:`-\log_{10} \text{IC}_{50}` / :math:`K_i`).
+* ``pactivity_value``: Experimental affinity measurement (:math:`-\log_{10} \text{IC}_{50}` / :math:`K_i`).
 
 Step 3: Prepare Docking Grids & Crystal Ligand
 ----------------------------------------------
 
-Place pre-computed AutoGrid files in ``src/mockdock/grids/<PDB_ID>/``:
+Place pre-computed AutoGrid files in ``src/mockdock/grids/<Structure_ID>/``:
 
-* ``<PDB_ID>.maps.fld``: Grid definition field file.
+* ``<Structure_ID>.maps.fld``: Grid definition field file.
 * Associated atom map files (``.C.map``, ``.A.map``, ``.OA.map``, ``.e.map``, ``.d.map``, etc.).
-* ``<PDB_ID>_ligand_corrected.sdf``: Cleaned crystal ligand SDF with correct bond orders.
+* ``<Structure_ID>_ligand_corrected.sdf``: Cleaned crystal ligand SDF with correct bond orders.
 
-Alternatively, if receptor tools are installed (``pip install -e ".[receptor]"``), **mockdock** can fetch and prepare the receptor PDB from the RCSB PDB using :class:`~mockdock.ReceptorPreparer`.
+Alternatively, if receptor tools are installed (``pip install -e ".[receptor]"``), **mockdock** can fetch and prepare the receptor structure from RCSB PDB using :class:`~mockdock.ReceptorPreparer`.
 
 Step 4: 5-Fold Variance Calibration
 -----------------------------------
@@ -63,7 +63,7 @@ Run the variance calibration script across 5 independent seeds to calibrate dock
 
 This generates:
 
-* ``docking_vs_activity.png``: Pearson, Spearman, and :math:`R^2` correlation between docking scores and experimental :math:`\text{pChEMBL}` values.
+* ``docking_vs_activity.png``: Pearson, Spearman, and :math:`R^2` correlation between docking scores and experimental :math:`\text{pActivity}` values.
 * ``rmsd_distribution.png``: Distribution of fragment overlay RMSDs.
 * Baseline energy statistics (:math:`\text{low\_score}` and :math:`\text{high\_score}`).
 

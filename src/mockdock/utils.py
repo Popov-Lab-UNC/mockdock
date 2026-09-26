@@ -183,13 +183,13 @@ def check_2d_match(mol: Chem.Mol, fragment_mol: Chem.Mol | None) -> bool:
 def plot_docking_results(
     df: pl.DataFrame,
     score_col: str = "docking_score",
-    activity_col: str = "pchembl_value",
+    activity_col: str = "pactivity_value",
     valid_col: str = "valid_pose_found",
     output_path: str | None = None,
 ):
     """
-    Plot docking scores vs pChEMBL values.
-    Assumes activity_col is already log-scaled (e.g., pchembl_value).
+    Plot docking scores vs experimental activity values.
+    Assumes activity_col is already log-scaled (e.g., pactivity_value).
     """
     # 1. Filter out failed scores (999.9), nulls, and NaNs
     clean_df = df.filter(
@@ -301,7 +301,7 @@ def plot_docking_results(
 
 def plot_activity_distribution(
     df: pl.DataFrame,
-    activity_col: str = "pchembl_value",
+    activity_col: str = "pactivity_value",
     output_path: str | None = None,
 ):
     """
@@ -312,6 +312,10 @@ def plot_activity_distribution(
         activity_col: Column name for activity values.
         output_path: If provided, save the plot to this path.
     """
+    # If default column not found but legacy exists, fall back
+    if activity_col not in df.columns and "pchembl_value" in df.columns:
+        activity_col = "pchembl_value"
+
     # Filter nulls
     clean_df = df.filter(pl.col(activity_col).is_not_null())
 
@@ -321,12 +325,9 @@ def plot_activity_distribution(
 
     activities = clean_df.get_column(activity_col).to_numpy()
 
-    if activity_col != "pchembl_value":
-        raise ValueError("pchembl_value is required for activity plots.")
-
     p_activities = activities
-    activity_label = "pActivity (from pchembl_value)"
-    title_suffix = "pchembl_value"
+    activity_label = f"pActivity ({activity_col})"
+    title_suffix = activity_col
 
     plt.figure(figsize=(10, 6))
     sns.histplot(p_activities, kde=True, bins=30, color="skyblue")

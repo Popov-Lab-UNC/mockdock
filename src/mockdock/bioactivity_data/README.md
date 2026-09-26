@@ -4,14 +4,15 @@ This directory contains bundled ground-truth bioactivity data for each benchmark
 
 ## File Naming Convention
 
-Files are named by `benchmark_name` as defined in the corresponding config YAML:
+Files are named by `benchmark_name` as defined in the corresponding config TOML:
 
 ```
 bioactivity_data/
 ├── CHK1.csv
 ├── DPP4.csv
 ├── ITK.csv
-├── PCK1.csv
+├── PEPCK.csv
+├── PptT.csv
 ├── TTK.csv
 └── VEGFR2.csv
 ```
@@ -20,24 +21,24 @@ bioactivity_data/
 
 | Column              | Description                                     |
 |---------------------|-------------------------------------------------|
-| molecule_chembl_id  | ChEMBL compound identifier                      |
+| molecule_id         | Compound identifier                             |
 | canonical_smiles    | Standardized/canonicalized SMILES string        |
-| pchembl_value       | −log₁₀(IC₅₀/Ki/Kd) activity value             |
+| pactivity_value     | −log₁₀(IC₅₀/Ki/Kd) activity value               |
 
 ## Data Splitting
 
-The oracle computes the lower 25% of the pChEMBL range as the **initial set** 
+The oracle computes the lower 25% of the experimental activity range as the **initial set** 
 (returned by `get_initial_compounds()`), and the remaining upper 75% as the 
 **validation set** (returned by `get_validation_compounds()`).
 
 ## Adding Your Own Benchmark
 
 1. Name your CSV `<benchmark_name>.csv` matching the `benchmark_name` field in your config.
-2. Ensure columns `molecule_chembl_id`, `canonical_smiles`, and `pchembl_value` are present.
+2. Ensure columns `molecule_id`, `canonical_smiles`, and `pactivity_value` are present.
 3. Place the CSV in this directory.
 
 If no bundled CSV is found, the oracle will fall back to a local scratch cache
-at `~/.mockdock/bioactivity_data/<benchmark_name>_chembl.csv`, and ultimately to a live ChEMBL API call.
+at `~/.mockdock/bioactivity_data/<benchmark_name>_activity.csv`, and ultimately to a live ChEMBL API call.
 
 ## Regenerating This Data
 

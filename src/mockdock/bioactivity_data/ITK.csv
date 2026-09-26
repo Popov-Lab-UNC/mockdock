@@ -1,4 +1,4 @@
-molecule_chembl_id,canonical_smiles,pchembl_value,mean_docking_score,norm_score,reward_score,score
+molecule_id,canonical_smiles,pactivity_value,mean_docking_score,norm_score,reward_score,score
 CHEMBL1765785,O=C(Nc1ccc(N2CCCCC2)cc1)c1cc(-c2ccncc2)c[nH]c1=O,6.85,-8.022,0.1452145214521454,0.1452145214521454,0.1452145214521454
 CHEMBL1738828,O=C(Nc1cc(-c2ccncc2)c[nH]c1=O)c1ccccc1,5.89,-7.67,0.0,0.0,0.0
 CHEMBL1765783,CNc1cc(F)cc(-c2c[nH]c(=O)c(NC(=O)c3ccc(N4CCC[C@H]4CN4CCCC4)cc3)c2)c1,7.7,-9.538,0.770627062706271,0.770627062706271,0.770627062706271

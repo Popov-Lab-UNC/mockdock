@@ -16,10 +16,11 @@ except ImportError:
 
 
 def _get_pactivity(df: pl.DataFrame, config_path: Path | None = None):
-    """Use ChEMBL pValue only; error if missing."""
-    if "pchembl_value" not in df.columns:
-        raise RuntimeError("Missing pchembl_value; cannot compute pActivity.")
-    return df.get_column("pchembl_value").to_numpy(), "pActivity (ChEMBL pValue)"
+    """Use pActivity / pChEMBL value; error if missing."""
+    act_col = "pactivity_value" if "pactivity_value" in df.columns else "pchembl_value"
+    if act_col not in df.columns:
+        raise RuntimeError("Missing pactivity_value/pchembl_value; cannot compute pActivity.")
+    return df.get_column(act_col).to_numpy(), f"pActivity ({act_col})"
 
 
 PALETTE = {
@@ -52,8 +53,9 @@ def _load_crystal_mapping(mapping_path: Path) -> dict[str, dict[str, str]]:
         label = row.get("label")
         if label is None or str(label).strip() == "":
             label = "Crystal ligand"
+        mol_id = row.get("molecule_id") or row.get("molecule_chembl_id")
         mapping[row["system_key"]] = {
-            "molecule_id": str(row["molecule_chembl_id"]),
+            "molecule_id": str(mol_id),
             "label": str(label),
         }
     return mapping
@@ -68,15 +70,15 @@ def _load_config(config_path: Path) -> dict:
 
 def _system_keys_from_config(cfg: dict) -> list[str]:
     target_id = cfg.get("target_id")
-    pdb_id = cfg.get("pdb_id")
+    structure_id = cfg.get("structure_id") or cfg.get("pdb_id")
     doc_id = cfg.get("doc_id")
     assay_id = cfg.get("assay_id")
-    if not all([target_id, pdb_id, doc_id]):
+    if not all([target_id, structure_id, doc_id]):
         return []
 
-    keys = [f"{target_id}_{pdb_id}_{doc_id}"]
+    keys = [f"{target_id}_{structure_id}_{doc_id}"]
     if assay_id:
-        keys.append(f"{target_id}_{pdb_id}_{doc_id}_{assay_id}")
+        keys.append(f"{target_id}_{structure_id}_{doc_id}_{assay_id}")
     return keys
 
 
@@ -334,6 +336,9 @@ def plot_system_variance(
 
         id_col = None
         for df in df_list:
+            if "molecule_id" in df.columns:
+                id_col = "molecule_id"
+                break
             if "molecule_chembl_id" in df.columns:
                 id_col = "molecule_chembl_id"
                 break
@@ -341,17 +346,18 @@ def plot_system_variance(
                 id_col = "canonical_smiles"
                 break
 
-        if id_col is None or any("pchembl_value" not in df.columns for df in df_list):
+        act_col = "pactivity_value" if any("pactivity_value" in df.columns for df in df_list) else "pchembl_value"
+        if id_col is None or any(act_col not in df.columns for df in df_list):
             continue
 
         merged = None
         for i, df in enumerate(df_list):
-            columns = [id_col, "docking_score", "pchembl_value"]
+            columns = [id_col, "docking_score", act_col]
             subset = df.select(columns).rename({"docking_score": f"score_{i}"})
             if merged is None:
                 merged = subset
             else:
-                merged = merged.join(subset.drop("pchembl_value"), on=id_col, how="inner")
+                merged = merged.join(subset.drop(act_col), on=id_col, how="inner")
 
         if merged is None or merged.is_empty():
             continue

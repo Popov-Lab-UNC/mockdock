@@ -1,4 +1,4 @@
-molecule_chembl_id,canonical_smiles,pchembl_value,mean_docking_score,norm_score,reward_score,score
+molecule_id,canonical_smiles,pactivity_value,mean_docking_score,norm_score,reward_score,score
 ralt-1,CC1=NC2=C(C=C(C=C2)CN(C)C3=CC=C(S3)C(=O)N[C@@H](CCC(=O)O)C(=O)O)C(=O)N1,7.154901959985743,-16.74,0.8416910276590955,0.8416910276590955,0.8416910276590955
 2a,CC1=NC2=C(C=C(C=C2)CN(C)C3=CC=C(S3)C(=O)N[C@H](CCC(=O)O)C(=O)O)C(=O)N1,7.154901959985743,-16.728,0.8403418034630087,0.8403418034630087,0.8403418034630087
 2b,COC(=O)CC[C@H](NC(=O)C1=CC=C(N(C)CC2=CC3=C(NC(C)=NC3=O)C=C2)S1)C(=O)OC,4.903089986991944,-12.89,0.40881493141443664,0.40881493141443664,0.40881493141443664

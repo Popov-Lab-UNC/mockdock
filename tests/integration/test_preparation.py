@@ -29,9 +29,9 @@ def test_preparation_pipeline():
         oracle = MDOracle(benchmark_name, scratch_dir=tmp_path)
         preparer = ReceptorPreparer()
         fld_path = preparer.prepare_receptor_and_grid(
-            oracle.pdb_id,
+            oracle.structure_id,
             ligand_resname=oracle.ligand_resname,
-            output_dir=tmp_path / "grids" / oracle.pdb_id,
+            output_dir=tmp_path / "grids" / oracle.structure_id,
             allow_bad_res=True,
         )
         assert fld_path.exists()
@@ -44,9 +44,9 @@ def test_preparation_pipeline():
         docking_tasks = ligand_preparer.prepare_batch(test_smiles, tmp_path / "ligands")
         assert len(docking_tasks) == len(test_smiles)
 
-        grid_dir = tmp_path / "grids" / oracle.pdb_id
+        grid_dir = tmp_path / "grids" / oracle.structure_id
         analyzer = DockingAnalyzer(
-            reference_ligand_path=grid_dir / f"{oracle.pdb_id}_ligand.pdb",
+            reference_ligand_path=grid_dir / f"{oracle.structure_id}_ligand.pdb",
             fragment_smiles=oracle.fragment_smiles,
             rmsd_threshold=oracle.rmsd_threshold,
         )

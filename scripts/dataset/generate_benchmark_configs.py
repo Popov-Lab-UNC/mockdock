@@ -146,14 +146,15 @@ def main():
         mcs_smiles = row["mcs_smiles"]
 
         config = {
+            "structure_id": pdb_id,
             "pdb_id": pdb_id,
             "output_dir": f"{pdb_id}_workflow",
             "target_id": target_id,
             "doc_id": doc_id,
             "assay_id": assay_id,
             "ligand_csv_path": None,
-            "activity_column": "pchembl_value",
-            "id_column": "molecule_chembl_id",
+            "activity_column": "pactivity_value",
+            "id_column": "molecule_id",
             "ligand_resname": row.ligand_resname,
             "protein_pdb_path": None,
             "ligand_pdb_path": None,

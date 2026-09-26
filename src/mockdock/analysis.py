@@ -31,7 +31,7 @@ def aggregate_results_per_id(
     df: pl.DataFrame,
     score_col: str = "docking_score",
     valid_col: str = "valid_pose_found",
-    activity_col: str = "pchembl_value",
+    activity_col: str = "pactivity_value",
 ) -> pl.DataFrame:
     """
     Aggregate results to one row per compound ID.
@@ -39,7 +39,7 @@ def aggregate_results_per_id(
     """
 
     def _select_id_column() -> str:
-        for col in ["molecule_chembl_id", "canonical_smiles", "smiles"]:
+        for col in ["molecule_id", "molecule_chembl_id", "canonical_smiles", "smiles"]:
             if col in df.columns:
                 return col
         return "canonical_smiles"
@@ -101,7 +101,9 @@ def aggregate_results_per_id(
     desired_order = [
         id_col,
         "canonical_smiles",
+        "molecule_id",
         "molecule_chembl_id",
+        "pactivity_value",
         "pchembl_value",
         activity_col,
         score_col,
@@ -295,7 +297,7 @@ class DockingAnalyzer:
         meta_map = {}
         if df_metadata is not None:
             if id_col not in df_metadata.columns:
-                for potential in ["molecule_chembl_id", "Name", "NAME", "compound_id"]:
+                for potential in ["molecule_id", "molecule_chembl_id", "Name", "NAME", "compound_id"]:
                     if potential in df_metadata.columns:
                         id_col = potential
                         break

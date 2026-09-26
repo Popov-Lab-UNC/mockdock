@@ -42,7 +42,7 @@ class BenchmarkLoader:
         with open(config_path, "rb") as f:
             raw = tomllib.load(f)
 
-        self.pdb_id: str = raw["pdb_id"]
+        self.structure_id: str = raw["structure_id"]
         self.target_id: str = raw.get("target_id", "")
         self.doc_id: str | None = raw.get("doc_id")
         self.fragment_smiles: str = raw["fragment_smiles"]
@@ -59,7 +59,7 @@ class BenchmarkLoader:
         self.filter_during_optimization: bool = raw.get("filter_during_optimization", True)
         self.clip_reward_upper_bound: bool = raw.get("clip_reward_upper_bound", True)
 
-        self._chembl_data: pl.DataFrame | None = None
+        self._activity_data: pl.DataFrame | None = None
         self._threshold: float | None = None
 
     # ── Config helpers ────────────────────────────────────────────────
@@ -100,11 +100,16 @@ class BenchmarkLoader:
         Lookup order:
         1. In-memory cache
         2. Package-bundled CSV (mockdock/bioactivity_data/<name>.csv)
-        3. Scratch cache (~/.mockdock/bioactivity_data/<name>_chembl.csv)
+        3. Scratch cache (~/.mockdock/bioactivity_data/<name>_activity.csv)
         4. Live ChEMBL fetch
         """
-        if self._chembl_data is not None:
-            return self._chembl_data, self._threshold, "pchembl_value"
+        if self._activity_data is not None:
+            act_col = (
+                "pactivity_value"
+                if "pactivity_value" in self._activity_data.columns
+                else "pchembl_value"
+            )
+            return self._activity_data, self._threshold, act_col
 
         df = pl.DataFrame()
 
@@ -113,7 +118,9 @@ class BenchmarkLoader:
             df = pl.read_csv(pkg_file)
 
         if df.is_empty():
-            cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
+            cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_activity.csv"
+            if not cache_file.exists():
+                cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
             if cache_file.exists():
                 df = pl.read_csv(cache_file)
 
@@ -121,19 +128,19 @@ class BenchmarkLoader:
             df = fetch_chembl_data(self.target_id, self.doc_id)
             if not df.is_empty():
                 self._bioactivity_data_dir.mkdir(parents=True, exist_ok=True)
-                cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_chembl.csv"
+                cache_file = self._bioactivity_data_dir / f"{self.benchmark_name}_activity.csv"
                 df.write_csv(cache_file)
 
         if df.is_empty():
             return df, 0.0, ""
 
-        act_col = "pchembl_value"
+        act_col = "pactivity_value" if "pactivity_value" in df.columns else "pchembl_value"
         pvals = df.get_column(act_col).to_numpy()
 
         # Use the empirical 25th percentile as the activity threshold (lower bioactivity)
         threshold = float(np.quantile(pvals, 0.25)) if pvals.size > 0 else 0.0
 
-        self._chembl_data = df
+        self._activity_data = df
         self._threshold = threshold
         return df, threshold, act_col
 

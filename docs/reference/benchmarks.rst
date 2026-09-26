@@ -31,7 +31,7 @@ Task Overview
 
    * - Task
      - Target Protein
-     - PDB ID
+     - Structure ID
      - Fragment SMILES
      - Calibration [0.0 → 1.0]
    * - **CHK1**
@@ -57,7 +57,7 @@ Task Overview
    * - **PptT**
      - Phosphopantetheinyl Transferase
      - ``8GKF``
-     - ``CC1=NC(c2c(N1)ccc([*])c2)=O``
+     - ``CC1=NC(=O)c2ccccc2N1``
      - [-6.30, -11.50]
    * - **TTK**
      - Mitotic Kinase TTK / MPS1

@@ -75,8 +75,8 @@ print(metrics["novelty"])               # Novelty fraction vs seed set
 
 ## Available Benchmarks
 
-| Benchmark | Target ID | PDB ID | Reference Ligand | Calibration Bounds |
-|-----------|-----------|--------|------------------|-------------------|
+| Benchmark | Target ID | Structure ID | Reference Ligand | Calibration Bounds |
+|-----------|-----------|--------------|------------------|-------------------|
 | **CHK1**  | CHEMBL4630 | 2R0U   | M54             | [-6.44, -11.79]   |
 | **DPP4**  | CHEMBL284  | 2HHA   | 3TP             | [-6.21, -11.23]   |
 | **ITK**   | CHEMBL2959 | 3QGW   | L7A             | [-6.55, -11.45]   |

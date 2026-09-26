@@ -52,27 +52,28 @@ def _metrics_from_results_csv(csv_path: Path) -> dict:
         res = pd.read_csv(csv_path)
     except Exception:
         return metrics
-    if "pchembl_value" not in res.columns:
+    act_col = "pactivity_value" if "pactivity_value" in res.columns else "pchembl_value"
+    if act_col not in res.columns:
         return metrics
-    res["pchembl_value"].dropna().to_numpy()
+    res[act_col].dropna().to_numpy()
 
-    # best_any: score_best_any vs pchembl_value (all rows with valid score)
+    # best_any: score_best_any vs act_col (all rows with valid score)
     score_col = "score_best_any" if "score_best_any" in res.columns else "docking_score"
     x_all = res[score_col].replace(999.9, np.nan).dropna()
-    valid = res.loc[x_all.index, "pchembl_value"].notna()
+    valid = res.loc[x_all.index, act_col].notna()
     idx = x_all.index[valid]
     if len(idx) >= 2:
         x_vals = res.loc[idx, score_col].to_numpy()
-        y_vals = res.loc[idx, "pchembl_value"].to_numpy()
+        y_vals = res.loc[idx, act_col].to_numpy()
         metrics["best_any"] = _compute_corr_stats(x_vals, y_vals)
 
-    # rmsd_constrained: docking_score vs pchembl_value (only valid_pose_found)
+    # rmsd_constrained: docking_score vs act_col (only valid_pose_found)
     if "valid_pose_found" in res.columns and "docking_score" in res.columns:
         valid_mask = res["valid_pose_found"].fillna(False).astype(bool)
-        sub = res.loc[valid_mask, ["docking_score", "pchembl_value"]].dropna()
+        sub = res.loc[valid_mask, ["docking_score", act_col]].dropna()
         if len(sub) >= 2:
             metrics["rmsd_constrained"] = _compute_corr_stats(
-                sub["docking_score"].to_numpy(), sub["pchembl_value"].to_numpy()
+                sub["docking_score"].to_numpy(), sub[act_col].to_numpy()
             )
 
     return metrics

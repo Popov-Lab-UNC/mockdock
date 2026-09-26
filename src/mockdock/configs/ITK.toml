@@ -1,5 +1,5 @@
 benchmark_name = "ITK"
-pdb_id = "3QGW"
+structure_id = "3QGW"
 target_id = "CHEMBL2959"
 doc_id = "CHEMBL1765075"
 assay_id = "CHEMBL1768448"

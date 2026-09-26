@@ -1,5 +1,5 @@
 benchmark_name = "DPP4"
-pdb_id = "2HHA"
+structure_id = "2HHA"
 target_id = "CHEMBL284"
 doc_id = "CHEMBL1137276"
 assay_id = "CHEMBL856512"
