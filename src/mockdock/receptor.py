@@ -38,7 +38,9 @@ def _download_mmcif(structure_id: str, output_dir: Path) -> Path:
     structure_path = None
     try:
         # ProDy returns the downloaded file path or None
-        structure_path = fetchPDB(structure_id, folder=str(output_dir), compressed=False, format="cif")
+        structure_path = fetchPDB(
+            structure_id, folder=str(output_dir), compressed=False, format="cif"
+        )
     except Exception as e:
         print(f"   ProDy fetchPDB (cif) failed: {e}")
 

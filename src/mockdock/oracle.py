@@ -659,7 +659,9 @@ class MDOracle:
                 print(f"[mockdock] Using scratch grids for {self.structure_id}")
 
         if not fld_files:
-            print(f"[mockdock] No pre-built grid found — preparing receptor for {self.structure_id}...")
+            print(
+                f"[mockdock] No pre-built grid found — preparing receptor for {self.structure_id}..."
+            )
             try:
                 from .receptor import ReceptorPreparer
             except ImportError as e:

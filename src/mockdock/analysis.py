@@ -297,7 +297,13 @@ class DockingAnalyzer:
         meta_map = {}
         if df_metadata is not None:
             if id_col not in df_metadata.columns:
-                for potential in ["molecule_id", "molecule_chembl_id", "Name", "NAME", "compound_id"]:
+                for potential in [
+                    "molecule_id",
+                    "molecule_chembl_id",
+                    "Name",
+                    "NAME",
+                    "compound_id",
+                ]:
                     if potential in df_metadata.columns:
                         id_col = potential
                         break
