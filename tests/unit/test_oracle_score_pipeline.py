@@ -34,3 +34,16 @@ def test_analyze_results_zero_denom_branch():
     oracle._filter_poses_for_molecule = lambda *_: (-10.0, True, -10.0, "x.dlg", 0)
     scores, _ = oracle._analyze_results([("CC", "CC")], [[{"dlg_path": "x.dlg"}]])
     assert scores["CC"] == 1.0
+
+
+def test_analyze_results_disabled_pose_rmsd():
+    loader_cfg = SimpleNamespace(require_pose_rmsd=False, low_score=-8.0, high_score=-12.0)
+    oracle = _build_oracle(loader_cfg)
+    oracle.require_pose_rmsd = False
+    # Even if valid_pose_found is True and best_valid is -10.0 from an unconstrained pose
+    oracle._filter_poses_for_molecule = lambda *_: (-10.0, True, -10.0, "x.dlg", 0)
+    scores, batch = oracle._analyze_results([("CC", "CC")], [[{"dlg_path": "x.dlg"}]])
+    assert scores["CC"] == 0.5
+    assert batch[0]["skip_reason"] is None
+    assert batch[0]["reward_score"] == 0.5
+

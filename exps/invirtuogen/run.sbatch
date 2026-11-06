@@ -14,8 +14,8 @@
 set -euo pipefail
 module load autodock-gpu
 
-WORKDIR=/work/users/s/h/shuhang/benchmark
-INVGEN_DIR=/work/users/s/h/shuhang/invirtuogen
+WORKDIR=/hickory/users/s/h/shuhang/devel/mockdock
+INVGEN_DIR=/hickory/users/s/h/shuhang/utils/invirtuogen
 INVGEN_PYTHON="$INVGEN_DIR/.venv/bin/python"
 SCRIPT_DIR="$WORKDIR/exps/invirtuogen"
 CKPT="$INVGEN_DIR/checkpoints/invirtuo_gen_big.ckpt"
@@ -24,7 +24,7 @@ OUT_DIR="$SCRIPT_DIR/outputs"
 BUDGET=1000
 SEED=0
 NUM_RUNS=5
-CLIP_REWARD_UPPER_BOUND=false
+CLIP_REWARD_UPPER_BOUND=true
 
 if [ "${CLIP_REWARD_UPPER_BOUND}" = true ]; then
     CLIP_REWARD_FLAG="--clip-reward-upper-bound"
@@ -32,7 +32,7 @@ else
     CLIP_REWARD_FLAG="--no-clip-reward-upper-bound"
 fi
 
-source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
+source /hickory/users/s/h/shuhang/devel/mockdock/.venv/bin/activate
 
 echo "========================================================"
 # Print execution info

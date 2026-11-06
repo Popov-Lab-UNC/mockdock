@@ -7,7 +7,7 @@ ligand_resname = "M54"
 fragment_smiles = "O=c1[nH]ccc2ccc3ccccc3c12"
 fragment_smiles_with_dummies = "*c1ccc2c(*)c(*)c3c(*)c[nH]c(=O)c3c2c1"
 require_fragment_match = true
-require_pose_rmsd = true
+require_pose_rmsd = false
 filter_during_optimization = true
 clip_reward_upper_bound = true
 low_score = -6.44

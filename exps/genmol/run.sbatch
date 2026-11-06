@@ -15,8 +15,8 @@ set -euo pipefail
 module load apptainer
 module load autodock-gpu
 
-WORKDIR=/work/users/s/h/shuhang/benchmark
-GENMOL_DIR=/work/users/s/h/shuhang/genmol
+WORKDIR=/hickory/users/s/h/shuhang/devel/mockdock
+GENMOL_DIR=/hickory/users/s/h/shuhang/utils/genmol
 IMAGE="$GENMOL_DIR/genmol.sif"
 SCRIPT_DIR="$WORKDIR/exps/genmol"
 OUT_DIR="$SCRIPT_DIR/outputs"
@@ -24,7 +24,7 @@ OUT_DIR="$SCRIPT_DIR/outputs"
 BUDGET=1000
 SEED=0
 NUM_RUNS=5
-CLIP_REWARD_UPPER_BOUND=false
+CLIP_REWARD_UPPER_BOUND=true
 
 if [ "${CLIP_REWARD_UPPER_BOUND}" = true ]; then
     CLIP_REWARD_FLAG="--clip-reward-upper-bound"
@@ -35,10 +35,10 @@ fi
 # ── Host Python environment (mockdock + newer RDKit/Meeko) ────────────────────
 # GenMol/rdkit-pypi stays inside the container; only mockdock runs on the host.
 # Create the venv once with:
-#   python3 -m venv /work/users/s/h/shuhang/benchmark/.venv
-#   source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
-#   pip install -e /work/users/s/h/shuhang/benchmark
-source /work/users/s/h/shuhang/benchmark/.venv/bin/activate
+#   python3 -m venv /hickory/users/s/h/shuhang/devel/mockdock/.venv
+#   source /hickory/users/s/h/shuhang/devel/mockdock/.venv/bin/activate
+#   pip install -e /hickory/users/s/h/shuhang/devel/mockdock
+source /hickory/users/s/h/shuhang/devel/mockdock/.venv/bin/activate
 
 echo "========================================================"
 echo " GenMol x mockdock Evaluation"

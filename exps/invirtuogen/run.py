@@ -297,17 +297,17 @@ def torch_cuda_is_available_host() -> bool:
 @click.option("--out", default=None)
 @click.option(
     "--ckpt",
-    default="/work/users/s/h/shuhang/invirtuogen/checkpoints/invirtuo_gen_big.ckpt",
+    default="/hickory/users/s/h/shuhang/utils/invirtuogen/checkpoints/invirtuo_gen_big.ckpt",
     help="Path to the InVirtuoGen checkpoint file.",
 )
 @click.option(
     "--invgen-python",
-    default="/work/users/s/h/shuhang/invirtuogen/.venv/bin/python",
+    default="/hickory/users/s/h/shuhang/utils/invirtuogen/.venv/bin/python",
     help="Path to python inside InVirtuoGen virtual environment.",
 )
 @click.option(
     "--invgen-dir",
-    default="/work/users/s/h/shuhang/invirtuogen",
+    default="/hickory/users/s/h/shuhang/utils/invirtuogen",
     help="Root directory of InVirtuoGen repo.",
 )
 @click.option("--batch-size", default=64, show_default=True)

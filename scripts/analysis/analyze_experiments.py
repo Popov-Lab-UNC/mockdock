@@ -906,11 +906,15 @@ def plot_figure_4_trajectory(exps_dir: Path, output_dir: Path, k: int = 10):
                 df = pl.read_csv(csv)
                 score_col = "reward_score" if "reward_score" in df.columns else "norm_score"
                 scores = df[score_col].to_list()
+                smiles_col = "smiles" if "smiles" in df.columns else "original_smiles"
+                smiles = df[smiles_col].to_list() if smiles_col in df.columns else [None] * len(scores)
                 running = []
-                buffer = []
-                for score in scores:
-                    buffer.append(score)
-                    running.append(float(np.mean(sorted(buffer, reverse=True)[:k])))
+                seen_unique: dict[str | int, float] = {}
+                for idx, (score, smi) in enumerate(zip(scores, smiles)):
+                    key = smi if smi is not None else idx
+                    if key not in seen_unique or score > seen_unique[key]:
+                        seen_unique[key] = score
+                    running.append(float(np.mean(sorted(seen_unique.values(), reverse=True)[:k])))
                 if running:
                     curves.append(running)
             if not curves:

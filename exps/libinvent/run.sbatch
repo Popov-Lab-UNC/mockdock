@@ -14,13 +14,14 @@
 module load autodock-gpu
 module load autogrid
 
-source /work/users/s/h/shuhang/REINVENT4/.venv/bin/activate
+source /hickory/users/s/h/shuhang/utils/REINVENT4/.venv/bin/activate
+export PATH="/hickory/users/s/h/shuhang/utils/REINVENT4/.venv/bin:$PATH"
 
-SCRIPT_DIR=/work/users/s/h/shuhang/benchmark/exps/libinvent
+SCRIPT_DIR=/hickory/users/s/h/shuhang/devel/mockdock/exps/libinvent
 OUT_DIR=${SCRIPT_DIR}/outputs
 
 # Path to Lib-INVENT prior model.
-LIBINVENT_PRIOR=/work/users/s/h/shuhang/REINVENT4/priors/libinvent.prior
+LIBINVENT_PRIOR=/hickory/users/s/h/shuhang/utils/REINVENT4/priors/libinvent.prior
 
 BUDGET=1000
 SEED=1
@@ -28,7 +29,7 @@ N_WARMUP=25
 NUM_RUNS=5
 DEVICE="cuda:0"
 DOCKING_BACKEND="auto"
-CLIP_REWARD_UPPER_BOUND=false
+CLIP_REWARD_UPPER_BOUND=true
 BENCHMARKS=(DPP4 CHK1 ITK PEPCK TTK VEGFR2 PptT)
 
 if [ "${CLIP_REWARD_UPPER_BOUND}" = true ]; then

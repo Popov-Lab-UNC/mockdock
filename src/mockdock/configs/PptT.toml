@@ -7,7 +7,7 @@ fragment_smiles = "CC1=NC(=O)c2ccccc2N1"
 fragment_smiles_with_dummies = "CC1=NC(c2c(N1)ccc([*])c2)=O"
 libinvent_scaffold_with_dummies = "O=C1N=C([*])Nc2c1cc([*])cc2"
 require_fragment_match = true
-require_pose_rmsd = true
+require_pose_rmsd = false
 filter_during_optimization = true
 clip_reward_upper_bound = true
 low_score = -9.254

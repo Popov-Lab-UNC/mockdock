@@ -42,6 +42,7 @@ class MDOracle:
         budget: int = 1000,
         docking_backend: str = "autodock_gpu",
         clip_reward_upper_bound: bool | None = None,
+        require_pose_rmsd: bool | None = None,
         scratch_dir: str | Path | None = None,
         run_dir: str | Path | None = None,
         n_cpus: int | None = None,
@@ -60,6 +61,8 @@ class MDOracle:
             clip_reward_upper_bound: Whether to cap reward_score at 1.0.
                 A minimum of 0.0 is always enforced. If None, use the benchmark
                 config value (defaults to True in config loader).
+            require_pose_rmsd: Whether to gate rewards by fragment pose RMSD.
+                If None, use the benchmark config value.
             scratch_dir: Directory to store persistent cache assets (grids,
                 bioactivity data). Defaults to ~/.mockdock.
             run_dir: Directory for this run's outputs (docking results, live CSV,
@@ -100,6 +103,11 @@ class MDOracle:
             self._loader.clip_reward_upper_bound
             if clip_reward_upper_bound is None
             else bool(clip_reward_upper_bound)
+        )
+        self._require_pose_rmsd = (
+            self._loader.require_pose_rmsd
+            if require_pose_rmsd is None
+            else bool(require_pose_rmsd)
         )
 
         # ── Directory layout (all private) ────────────────────────────
@@ -170,7 +178,7 @@ class MDOracle:
         return {
             "rmsd_threshold": self._loader.rmsd_threshold,
             "require_fragment_match": self._loader.require_fragment_match,
-            "require_pose_rmsd": self._loader.require_pose_rmsd,
+            "require_pose_rmsd": self._require_pose_rmsd,
             "filter_during_optimization": self._loader.filter_during_optimization,
             "clip_reward_upper_bound": self._clip_reward_upper_bound,
             "low_score": self._loader.low_score,
@@ -184,6 +192,17 @@ class MDOracle:
     @property
     def budget_remaining(self) -> int:
         return max(0, self.max_budget - self.budget_used)
+
+    @property
+    def require_pose_rmsd(self) -> bool:
+        """Whether fragment pose RMSD gating is enforced."""
+        if hasattr(self, "_require_pose_rmsd"):
+            return self._require_pose_rmsd
+        return getattr(self._loader, "require_pose_rmsd", True)
+
+    @require_pose_rmsd.setter
+    def require_pose_rmsd(self, value: bool) -> None:
+        self._require_pose_rmsd = bool(value)
 
     @property
     def rmsd_threshold(self) -> float:
@@ -378,12 +397,12 @@ class MDOracle:
                 skip_reason = "failed_ligand_prep"
             elif math.isnan(best_any):
                 skip_reason = "failed_docking"
-            elif math.isnan(best_valid) and self._loader.require_pose_rmsd:
+            elif math.isnan(best_valid) and self.require_pose_rmsd:
                 skip_reason = "failed_rmsd"
 
             norm_score = 0.0
             # With require_pose_rmsd, reward only if a pose exists under the RMSD cap.
-            rmsd_reward_ok = (not self._loader.require_pose_rmsd) or (
+            rmsd_reward_ok = (not self.require_pose_rmsd) or (
                 skip_reason != "failed_rmsd" and valid_pose_found and math.isfinite(best_valid)
             )
             if (
@@ -399,14 +418,14 @@ class MDOracle:
                 else:
                     norm_score = 1.0 if best_valid <= self._loader.high_score else 0.0
 
-            if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
+            if self.require_pose_rmsd and skip_reason == "failed_rmsd":
                 norm_score = 0.0
 
             clip_reward_upper_bound = getattr(self, "_clip_reward_upper_bound", True)
             reward_score = (
                 min(max(norm_score, 0.0), 1.0) if clip_reward_upper_bound else max(norm_score, 0.0)
             )
-            if self._loader.require_pose_rmsd and skip_reason == "failed_rmsd":
+            if self.require_pose_rmsd and skip_reason == "failed_rmsd":
                 reward_score = 0.0
             final_scores_list.append((original, reward_score))
             batch_results.append(
@@ -448,7 +467,7 @@ class MDOracle:
             if math.isnan(best_any) or best_a < best_any:
                 best_any = best_a
 
-            if self._loader.require_pose_rmsd:
+            if self.require_pose_rmsd:
                 if passed:
                     valid_pose_found = True
                     if math.isnan(best_valid) or best_v < best_valid:
@@ -491,6 +510,7 @@ class MDOracle:
         top_df = (
             self.results_df.filter(pl.col("skip_reason").is_null())
             .sort("reward_score", descending=True)
+            .unique(subset=["smiles"], keep="first")
             .head(n)
         )
         self._ensure_components()
@@ -525,6 +545,7 @@ class MDOracle:
             df = (
                 self.results_df.filter(pl.col("skip_reason").is_null())
                 .sort("reward_score", descending=True)
+                .unique(subset=["smiles"], keep="first")
                 .head(top_n)
             )
 

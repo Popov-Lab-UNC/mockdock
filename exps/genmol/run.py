@@ -293,7 +293,7 @@ def run_benchmark(
 @click.option("--out", default=None)
 @click.option(
     "--model-path",
-    default="/work/users/s/h/shuhang/genmol/model_v2.ckpt",
+    default="/hickory/users/s/h/shuhang/utils/genmol/model_v2.ckpt",
     help="Path to the GenMol checkpoint.",
 )
 @click.option("--batch-size", default=64, show_default=True)
@@ -305,17 +305,17 @@ def run_benchmark(
 )
 @click.option(
     "--container-image",
-    default="/work/users/s/h/shuhang/genmol/genmol.sif",
+    default="/hickory/users/s/h/shuhang/utils/genmol/genmol.sif",
     help="Path to the Apptainer SIF image for GenMol generation.",
 )
 @click.option(
     "--genmol-dir",
-    default="/work/users/s/h/shuhang/genmol",
+    default="/hickory/users/s/h/shuhang/utils/genmol",
     help="GenMol source directory (mounted as /opt/genmol in container).",
 )
 @click.option(
     "--workdir",
-    default="/work/users/s/h/shuhang/benchmark",
+    default="/hickory/users/s/h/shuhang/devel/mockdock",
     help="Benchmark working directory.",
 )
 def main(

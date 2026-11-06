@@ -7,7 +7,7 @@ ligand_resname = "3TP"
 fragment_smiles = "CC(C)C(N)C(=O)N1CCCC1"
 fragment_smiles_with_dummies = "*C1CCN(C(=O)C(N)C(*)*)C1"
 require_fragment_match = true
-require_pose_rmsd = true
+require_pose_rmsd = false
 filter_during_optimization = true
 clip_reward_upper_bound = true
 low_score = -8.778

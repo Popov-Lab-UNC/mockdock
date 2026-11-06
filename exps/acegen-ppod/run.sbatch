@@ -15,11 +15,12 @@
 module load autodock-gpu
 module load autogrid
 
-source /work/users/s/h/shuhang/acegen-open/.venv/bin/activate
+source /hickory/users/s/h/shuhang/utils/acegen-open/.venv/bin/activate
+export PATH="/hickory/users/s/h/shuhang/utils/acegen-open/.venv/bin:$PATH"
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-SCRIPT_DIR=/work/users/s/h/shuhang/benchmark/exps/acegen-ppod
-ACEGEN_ROOT=/work/users/s/h/shuhang/acegen-open
+SCRIPT_DIR=/hickory/users/s/h/shuhang/devel/mockdock/exps/acegen-ppod
+ACEGEN_ROOT=/hickory/users/s/h/shuhang/utils/acegen-open
 OUT_DIR=${SCRIPT_DIR}/outputs
 
 # ── Parameters ────────────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ BUDGET=1000
 SEED=0
 N_WARMUP=25
 NUM_RUNS=5
-CLIP_REWARD_UPPER_BOUND=false
+CLIP_REWARD_UPPER_BOUND=true
 
 if [ "${CLIP_REWARD_UPPER_BOUND}" = true ]; then
     CLIP_REWARD_FLAG="--clip-reward-upper-bound"

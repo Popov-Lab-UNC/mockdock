@@ -100,7 +100,8 @@ def _run_reinvent(
     budget_stop_marker: pathlib.Path,
     dry_run: bool,
 ):
-    cmd = ["reinvent", "-l", str(log_file), str(toml_file)]
+    reinvent_bin = shutil.which("reinvent") or str(pathlib.Path(sys.executable).parent / "reinvent")
+    cmd = [reinvent_bin, "-l", str(log_file), str(toml_file)]
     env = os.environ.copy()
     add_paths = [str(plugin_root), str((SCRIPT_DIR.parents[1] / "src").resolve())]
     env["PYTHONPATH"] = os.pathsep.join(add_paths + [env.get("PYTHONPATH", "")]).strip(
@@ -264,8 +265,9 @@ def main(
             f"Lib-INVENT prior not found: {prior_path}. Set --prior-file or LIBINVENT_PRIOR."
         )
 
-    if not dry_run and shutil.which("reinvent") is None:
-        raise SystemExit("`reinvent` executable not found in PATH. Activate REINVENT4 environment.")
+    reinvent_bin = shutil.which("reinvent") or (pathlib.Path(sys.executable).parent / "reinvent")
+    if not dry_run and not (shutil.which("reinvent") or pathlib.Path(reinvent_bin).exists()):
+        raise SystemExit("`reinvent` executable not found in PATH or venv bin. Activate REINVENT4 environment.")
 
     log.info("Benchmarks : %s", selected)
     log.info("Budget     : %d", budget)
