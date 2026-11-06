@@ -201,9 +201,8 @@ class MDEvaluator:
         if not scored_df.is_empty():
             # Deduplicate by SMILES, retaining the highest reward_score (and matching norm/docking score)
             # per unique molecule.
-            unique_scored = (
-                scored_df.sort(reward_col, descending=True)
-                .unique(subset=[smiles_col], keep="first")
+            unique_scored = scored_df.sort(reward_col, descending=True).unique(
+                subset=[smiles_col], keep="first"
             )
             top = unique_scored.sort(reward_col, descending=True)
             metrics["avg_top_1"] = float(top.head(1)[reward_col].mean())
@@ -229,9 +228,8 @@ class MDEvaluator:
             filtered_scored_df = scored_df.filter(pl.col(smiles_col).is_in(list(passing_smiles)))
 
             if not filtered_scored_df.is_empty():
-                unique_filtered = (
-                    filtered_scored_df.sort(reward_col, descending=True)
-                    .unique(subset=[smiles_col], keep="first")
+                unique_filtered = filtered_scored_df.sort(reward_col, descending=True).unique(
+                    subset=[smiles_col], keep="first"
                 )
                 top_f = unique_filtered.sort(reward_col, descending=True)
                 metrics["avg_top_1_filtered"] = float(top_f.head(1)[reward_col].mean())
@@ -517,7 +515,9 @@ class MDEvaluator:
             if key not in final_seen or s > final_seen[key]:
                 final_seen[key] = s
 
-        final_top_k_val = float(np.mean(sorted(final_seen.values(), reverse=True)[:k])) if final_seen else 0.0
+        final_top_k_val = (
+            float(np.mean(sorted(final_seen.values(), reverse=True)[:k])) if final_seen else 0.0
+        )
         target = frac * final_top_k_val
         if target <= 0:
             return 1

@@ -46,4 +46,3 @@ def test_analyze_results_disabled_pose_rmsd():
     assert scores["CC"] == 0.5
     assert batch[0]["skip_reason"] is None
     assert batch[0]["reward_score"] == 0.5
-

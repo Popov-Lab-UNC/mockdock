@@ -105,9 +105,7 @@ class MDOracle:
             else bool(clip_reward_upper_bound)
         )
         self._require_pose_rmsd = (
-            self._loader.require_pose_rmsd
-            if require_pose_rmsd is None
-            else bool(require_pose_rmsd)
+            self._loader.require_pose_rmsd if require_pose_rmsd is None else bool(require_pose_rmsd)
         )
 
         # ── Directory layout (all private) ────────────────────────────
