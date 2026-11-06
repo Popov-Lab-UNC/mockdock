@@ -1,6 +1,6 @@
 from .analysis import DockingAnalyzer
 from .data import fetch_chembl_data
-from .docking import AutoDockGPUOracle, AutoDockVinaOracle, DockingOracle
+from .docking import AutoDockGPUOracle, DockingOracle
 from .evaluator import MDEvaluator
 from .filters import MDFilters
 from .ligand_prep import LigandPreparer
@@ -31,7 +31,6 @@ def __getattr__(name):
 __all__ = [
     "fetch_chembl_data",
     "AutoDockGPUOracle",
-    "AutoDockVinaOracle",
     "DockingOracle",
     "ReceptorPreparer",
     "extract_protein_and_ligand",

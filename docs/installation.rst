@@ -11,7 +11,7 @@ Requirements
 Step 1: Install AutoDock-GPU
 ----------------------------
 
-**mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ (tested with **v1.6**) as its primary docking and scoring backend.
+**mockdock** uses `AutoDock-GPU <https://github.com/ccsb-scripps/AutoDock-GPU>`_ (tested with **v1.6**) as its docking and scoring backend.
 
 Download a pre-compiled binary directly from `GitHub Releases <https://github.com/ccsb-scripps/AutoDock-GPU/releases>`_ or compile from source following the instructions in the `AutoDock-GPU repository <https://github.com/ccsb-scripps/AutoDock-GPU>`_.
 
@@ -54,13 +54,13 @@ Or using `uv <https://github.com/astral-sh/uv>`_:
    uv venv
    uv sync
 
-Optional Backends & Extras
---------------------------
+Optional Extras
+---------------
 
 All Optional Dependencies Combined
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To install all optional backends and development/docs tools together:
+To install all optional dependencies and development/docs tools together:
 
 .. code-block:: bash
 

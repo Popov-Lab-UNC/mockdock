@@ -11,7 +11,7 @@ from .utils import get_robust_match
 def unroll_multiconf_rdkit_mols(rdkit_mols: list[Chem.Mol]) -> list[Chem.Mol]:
     """Split one RDKit mol with multiple conformers into one mol per conformer.
 
-    Meeko/Vina often returns a single mol with N conformers; RMSD and pose indices
+    Meeko often returns a single mol with N conformers; RMSD and pose indices
     are defined per conformer. This must match the logic in filter_poses_by_rmsd
     so export uses the same pose ordering as scoring.
     """
@@ -215,7 +215,7 @@ class DockingAnalyzer:
              best_valid_pose_index, best_any_pose_index)
 
         pose_index values are 0-based indices into the list returned by
-        RDKitMolCreate.from_pdbqt_mol (after Vina multi-conformer unrolling).
+        RDKitMolCreate.from_pdbqt_mol (after multi-conformer unrolling).
         -1 indicates no pose was found.
         """
         try:

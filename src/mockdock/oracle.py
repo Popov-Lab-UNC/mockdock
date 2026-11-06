@@ -12,7 +12,7 @@ from rdkit import Chem
 
 # Local imports
 from .analysis import DockingAnalyzer
-from .docking import AutoDockGPUOracle, AutoDockVinaOracle
+from .docking import AutoDockGPUOracle
 from .filters import MDFilters
 from .ligand_prep import LigandPreparer
 from .loader import BenchmarkLoader
@@ -40,7 +40,7 @@ class MDOracle:
         self,
         benchmark_name: str,
         budget: int = 1000,
-        docking_backend: str = "auto",
+        docking_backend: str = "autodock_gpu",
         clip_reward_upper_bound: bool | None = None,
         scratch_dir: str | Path | None = None,
         run_dir: str | Path | None = None,
@@ -56,7 +56,7 @@ class MDOracle:
                 'PEPCK', 'TTK', 'VEGFR2'). Run MDOracle.list_benchmarks() for
                 the full list.
             budget: Total number of compounds allowed to be scored.
-            docking_backend: Backend to use ('autodock_gpu', 'vina', or 'auto').
+            docking_backend: Backend to use ('autodock_gpu' or 'auto').
             clip_reward_upper_bound: Whether to cap reward_score at 1.0.
                 A minimum of 0.0 is always enforced. If None, use the benchmark
                 config value (defaults to True in config loader).
@@ -90,7 +90,6 @@ class MDOracle:
         self._backend_config = {
             "adgpu_executable": adgpu_executable
             or os.environ.get("ADGPU_EXECUTABLE", AutoDockGPUOracle.DEFAULT_ADGPU_EXECUTABLE),
-            "vina_exhaustiveness": 32,
             "n_poses": 10,
         }
 
@@ -202,7 +201,7 @@ class MDOracle:
         return self._loader.structure_id
 
     def set_backend_config(self, **kwargs):
-        """Override default backend settings (e.g. vina_exhaustiveness, n_poses)."""
+        """Override default backend settings (e.g. n_poses)."""
         self._backend_config.update(kwargs)
 
     @classmethod
@@ -618,8 +617,6 @@ class MDOracle:
         print(f"[mockdock] Benchmark: {self.benchmark_name}")
         print(f"[mockdock] Backend:   {self._resolved_backend.upper()}")
         print(f"[mockdock] Hardware:  {self.n_cpus} CPUs, {self.n_gpus} GPUs")
-        if self._resolved_backend == "vina":
-            print(f"[mockdock] Vina exhaustiveness: {self._backend_config['vina_exhaustiveness']}")
         print(f"[mockdock] {sep}")
 
     def _get_full_data_and_threshold(self) -> tuple[pl.DataFrame, float, str]:
@@ -700,23 +697,14 @@ class MDOracle:
         self._ligand_preparer = LigandPreparer(n_cpus=self.n_cpus)
 
         # Docking oracle
-        if self._resolved_backend == "autodock_gpu":
-            self._docking_oracle = AutoDockGPUOracle(
-                receptor_file=fld_path,
-                adgpu_executable=self._backend_config["adgpu_executable"],
-                save_dir=self._results_dir,
-                n_poses=self._backend_config["n_poses"],
-                n_cpus=self.n_cpus,
-                n_gpus=self.n_gpus,
-            )
-        else:
-            self._docking_oracle = AutoDockVinaOracle(
-                receptor_file=fld_path,
-                exhaustiveness=self._backend_config["vina_exhaustiveness"],
-                save_dir=self._results_dir,
-                n_poses=self._backend_config["n_poses"],
-                n_cpus=self.n_cpus,
-            )
+        self._docking_oracle = AutoDockGPUOracle(
+            receptor_file=fld_path,
+            adgpu_executable=self._backend_config["adgpu_executable"],
+            save_dir=self._results_dir,
+            n_poses=self._backend_config["n_poses"],
+            n_cpus=self.n_cpus,
+            n_gpus=self.n_gpus,
+        )
 
     def _update_results_df(self, new_results: list[dict]):
         """

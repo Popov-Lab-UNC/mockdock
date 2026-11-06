@@ -23,8 +23,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Vina docking backend (alternative to AutoDock-GPU)
-vina = ["vina>=1.2.7"]
 # Receptor preparation from raw PDB (only needed if pre-built grids are absent)
 receptor = ["prody>=2.4.1"]
 # Documentation build dependencies
@@ -93,7 +91,6 @@ markers = [
     "unit: fast deterministic unit tests",
     "integration: tests that exercise multiple components or external assets",
     "slow: tests with high runtime cost",
-    "requires_vina: tests requiring the vina dependency/runtime",
     "requires_receptor_tools: tests requiring receptor preparation executables",
 ]
 

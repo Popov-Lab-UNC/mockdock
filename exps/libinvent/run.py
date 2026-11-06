@@ -224,7 +224,7 @@ def run_benchmark(
     "--docking-backend",
     default="auto",
     show_default=True,
-    type=click.Choice(["auto", "autodock_gpu", "vina"], case_sensitive=False),
+    type=click.Choice(["auto", "autodock_gpu"], case_sensitive=False),
 )
 @click.option(
     "--clip-reward-upper-bound/--no-clip-reward-upper-bound",

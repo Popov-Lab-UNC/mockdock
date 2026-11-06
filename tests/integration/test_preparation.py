@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 from rdkit import Chem
 
+pytest.importorskip("prody")
+
 from mockdock.analysis import DockingAnalyzer
 from mockdock.ligand_prep import LigandPreparer
 from mockdock.oracle import MDOracle

@@ -57,7 +57,6 @@ autodoc_mock_imports = [
     "rdkit.Chem.FilterCatalog",
     "rdkit.DataStructs",
     "polars",
-    "vina",
     "prody",
     "meeko",
     "gemmi",

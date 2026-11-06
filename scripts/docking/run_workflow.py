@@ -34,7 +34,7 @@ from typing import cast
 
 from mockdock.analysis import DockingAnalyzer, aggregate_results_per_id
 from mockdock.data import fetch_chembl_data
-from mockdock.docking import AutoDockGPUOracle, AutoDockVinaOracle
+from mockdock.docking import AutoDockGPUOracle
 from mockdock.ligand_prep import LigandPreparer
 from mockdock.receptor import ReceptorPreparer
 from mockdock.utils import (
@@ -302,23 +302,13 @@ def run_docking_workflow(
             # 2. Setup Components
             preparer = LigandPreparer(n_cpus=actual_n_cpus, generate_isomers=not no_isomers)
 
-            if resolved == "autodock_gpu":
-                oracle = AutoDockGPUOracle(
-                    receptor_file=fld_path,
-                    adgpu_executable=adgpu_exe,
-                    save_dir=work_dir / "results",
-                    n_cpus=actual_n_cpus,
-                    n_gpus=actual_n_gpus,
-                )
-            else:
-                extra_vina = config.get("vina_config", {})
-                oracle = AutoDockVinaOracle(
-                    receptor_file=fld_path,
-                    save_dir=work_dir / "results",
-                    exhaustiveness=extra_vina.get("exhaustiveness", 32),
-                    n_poses=extra_vina.get("n_poses", 10),
-                    n_cpus=actual_n_cpus,
-                )
+            oracle = AutoDockGPUOracle(
+                receptor_file=fld_path,
+                adgpu_executable=adgpu_exe,
+                save_dir=work_dir / "results",
+                n_cpus=actual_n_cpus,
+                n_gpus=actual_n_gpus,
+            )
 
             analyzer = DockingAnalyzer(
                 reference_ligand_path=reference_ligand_path,
@@ -449,7 +439,7 @@ def main():
         "--backend",
         type=str,
         default="auto",
-        choices=["auto", "autodock_gpu", "vina"],
+        choices=["auto", "autodock_gpu"],
         help="Docking software backend.",
     )
     parser.add_argument(

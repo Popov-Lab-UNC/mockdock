@@ -2,7 +2,6 @@
 import asyncio
 import multiprocessing
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -64,38 +63,34 @@ def effective_cpu_count() -> int:
 
 
 def resolve_backend(
-    requested_backend: str,
-    n_gpus: int,
+    requested_backend: str = "auto",
+    n_gpus: int | None = None,
     adgpu_executable: str = "adgpu",
 ) -> str:
     """
-    Resolve which docking backend to use based on request and availability.
+    Resolve which docking backend to use.
+
+    AutoDock-GPU is the only supported standalone docking engine.
 
     Args:
-        requested_backend: 'autodock_gpu', 'vina', or 'auto'.
-        n_gpus: Number of GPUs available (used for 'auto').
+        requested_backend: 'autodock_gpu' or 'auto'.
+        n_gpus: Number of GPUs available (optional, kept for signature compatibility).
         adgpu_executable: Name or path of the AutoDock-GPU executable.
 
     Returns:
-        The resolved backend string ('autodock_gpu' or 'vina').
+        The resolved backend string ('autodock_gpu').
+
+    Raises:
+        ValueError: If an unsupported backend is requested.
     """
-    adgpu_ok = shutil.which(adgpu_executable) is not None or (
-        Path(adgpu_executable).exists() and os.access(adgpu_executable, os.X_OK)
-    )
     requested = requested_backend.lower()
+    if requested in ("autodock_gpu", "auto"):
+        return "autodock_gpu"
 
-    if requested == "autodock_gpu":
-        if adgpu_ok:
-            return "autodock_gpu"
-        print(
-            f"[mockdock] Warning: AutoDock-GPU not found ('{adgpu_executable}'). Falling back to Vina."
-        )
-        return "vina"
-    if requested == "vina":
-        return "vina"
-
-    # "auto"
-    return "autodock_gpu" if (adgpu_ok and n_gpus > 0) else "vina"
+    raise ValueError(
+        f"Unsupported docking backend '{requested_backend}'. "
+        f"AutoDock-GPU is the only supported docking engine in mockdock."
+    )
 
 
 # ── RDKit chemistry utilities ─────────────────────────────────────────────────
