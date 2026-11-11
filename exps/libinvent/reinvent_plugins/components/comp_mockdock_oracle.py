@@ -36,11 +36,15 @@ class Parameters:
     run_dir: List[str]
     docking_backend: List[str]
     clip_reward_upper_bound: Optional[List[bool]] = None
+    model: Optional[List[str]] = None
+    require_pose_rmsd: Optional[List[bool]] = None
 
 
 @add_tag("__component")
 class MockdockOracle:
     """Score molecules with mockdock and return normalized rewards [0, 1]."""
+
+    no_cache: bool = True
 
     def __init__(self, params: Parameters):
         self._benchmark = params.benchmark[0]
@@ -52,6 +56,12 @@ class MockdockOracle:
             if params.clip_reward_upper_bound is not None
             else True
         )
+        self._require_pose_rmsd = (
+            bool(params.require_pose_rmsd[0])
+            if params.require_pose_rmsd is not None
+            else None
+        )
+        self._model = params.model[0] if params.model is not None else "libinvent"
         self._finalized = False
         self._generation_time_sec = 0.0
         self._generated_ligands = 0
@@ -89,6 +99,8 @@ class MockdockOracle:
             run_dir=self._run_dir,
             docking_backend=self._backend,
             clip_reward_upper_bound=self._clip_reward_upper_bound,
+            require_pose_rmsd=self._require_pose_rmsd,
+            model=self._model,
         )
         atexit.register(self._finalize)
         logger.info(

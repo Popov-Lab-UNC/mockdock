@@ -70,10 +70,23 @@ class MDEvaluator:
     is instantiated, making this lightweight and safe to run on a login node.
     """
 
-    def __init__(self, benchmark_name: str, scratch_dir: Path | str | None = None):
+    def __init__(
+        self,
+        benchmark_name: str,
+        scratch_dir: Path | str | None = None,
+        model: str | None = None,
+        fragment_smiles: str | None = None,
+    ):
         self.benchmark_name = benchmark_name
+        self._model = model
         self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
         self._filters = MDFilters(active_rulesets=["PAINS", "BMS"])
+        if fragment_smiles is not None:
+            self.fragment_smiles = fragment_smiles
+        elif hasattr(self._loader, "get_fragment_smiles"):
+            self.fragment_smiles = self._loader.get_fragment_smiles(model)
+        else:
+            self.fragment_smiles = getattr(self._loader, "fragment_smiles", "")
 
     def compute_metrics(
         self, results_csv: Path | str, output_path: Path | str | None = None
@@ -92,7 +105,13 @@ class MDEvaluator:
             ref_smiles = set(ref_smiles_df[col].to_list())
         ref_smiles_canonical = self._canonicalize_smiles_set(ref_smiles)
 
-        fragment_smiles = self._loader.fragment_smiles
+        fragment_smiles = self.fragment_smiles
+        libinvent_frag = getattr(self._loader, "libinvent_fragment_smiles", None)
+        if libinvent_frag and (
+            "libinvent" in str(results_csv).lower()
+            or (self._model and "libinvent" in self._model.lower())
+        ):
+            fragment_smiles = libinvent_frag
 
         print(f"[{self.benchmark_name}] Computing metrics for {results_csv.name}...")
 

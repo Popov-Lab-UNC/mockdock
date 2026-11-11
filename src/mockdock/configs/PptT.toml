@@ -6,6 +6,7 @@ ligand_resname = "D16"
 fragment_smiles = "CC1=NC(=O)c2ccccc2N1"
 fragment_smiles_with_dummies = "CC1=NC(c2c(N1)ccc([*])c2)=O"
 libinvent_scaffold_with_dummies = "O=C1N=C([*])Nc2c1cc([*])cc2"
+libinvent_fragment_smiles = "O=c1nc[nH]c2ccccc12"
 require_fragment_match = true
 require_pose_rmsd = false
 filter_during_optimization = true

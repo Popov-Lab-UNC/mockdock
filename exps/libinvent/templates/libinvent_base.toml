@@ -49,4 +49,5 @@ budget = __BUDGET__
 run_dir = "__RUN_DIR__"
 docking_backend = "__DOCKING_BACKEND__"
 clip_reward_upper_bound = __CLIP_REWARD_UPPER_BOUND__
+require_pose_rmsd = __REQUIRE_POSE_RMSD__
 

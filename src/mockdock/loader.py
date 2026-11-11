@@ -50,6 +50,7 @@ class BenchmarkLoader:
         self.libinvent_scaffold_with_dummies: str | None = raw.get(
             "libinvent_scaffold_with_dummies"
         )
+        self.libinvent_fragment_smiles: str | None = raw.get("libinvent_fragment_smiles")
         self.rmsd_threshold: float = raw.get("rmsd_threshold", 2.0)
         self.low_score: float | None = raw.get("low_score")
         self.high_score: float | None = raw.get("high_score")
@@ -61,6 +62,12 @@ class BenchmarkLoader:
 
         self._activity_data: pl.DataFrame | None = None
         self._threshold: float | None = None
+
+    def get_fragment_smiles(self, model: str | None = None) -> str:
+        """Return the target fragment SMILES, accounting for model-specific overrides."""
+        if model and "libinvent" in model.lower() and self.libinvent_fragment_smiles:
+            return self.libinvent_fragment_smiles
+        return self.fragment_smiles
 
     # ── Config helpers ────────────────────────────────────────────────
 

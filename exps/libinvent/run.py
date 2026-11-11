@@ -7,7 +7,9 @@ component plugin that calls MDOracle.score().
 
 from __future__ import annotations
 
+import csv
 import datetime
+import json
 import logging
 import math
 import os
@@ -15,14 +17,16 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from collections import defaultdict
 
 import click
+import polars as pl
 
 PROJECT_SRC = (pathlib.Path(__file__).resolve().parents[2] / "src").resolve()
 if str(PROJECT_SRC) not in sys.path:
     sys.path.insert(0, str(PROJECT_SRC))
 
-from mockdock import MDOracle
+from mockdock import MDEvaluator, MDOracle
 
 BENCHMARKS = ["DPP4", "CHK1", "ITK", "PEPCK", "TTK", "VEGFR2", "PptT"]
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
@@ -129,6 +133,7 @@ def run_benchmark(
     device: str,
     docking_backend: str,
     clip_reward_upper_bound: bool,
+    require_pose_rmsd: bool | None,
     dry_run: bool,
 ):
     output_dir = out_root / benchmark
@@ -142,6 +147,8 @@ def run_benchmark(
         run_dir=benchmark_run_dir,
         docking_backend=docking_backend,
         clip_reward_upper_bound=clip_reward_upper_bound,
+        require_pose_rmsd=require_pose_rmsd,
+        model="libinvent",
     )
     scaffold = _require_scaffold(oracle)
 
@@ -158,6 +165,9 @@ def run_benchmark(
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     # Keep RL running long enough that budget, not step count, controls termination.
     max_steps = max(1_000_000, math.ceil(remaining_budget / 64))
+    eff_pose_rmsd = (
+        require_pose_rmsd if require_pose_rmsd is not None else oracle.require_pose_rmsd
+    )
     toml_values = {
         "__DEVICE__": device,
         "__TB_LOGDIR__": str(output_dir / "tb_logs"),
@@ -173,6 +183,7 @@ def run_benchmark(
         "__RUN_DIR__": str(benchmark_run_dir),
         "__DOCKING_BACKEND__": docking_backend,
         "__CLIP_REWARD_UPPER_BOUND__": "true" if clip_reward_upper_bound else "false",
+        "__REQUIRE_POSE_RMSD__": "true" if eff_pose_rmsd else "false",
     }
     toml_text = _render_toml(template, toml_values)
     toml_file = output_dir / f"libinvent_{benchmark}_{ts}.toml"
@@ -186,7 +197,198 @@ def run_benchmark(
         budget_stop_marker=benchmark_run_dir / "budget_exhausted.json",
         dry_run=dry_run,
     )
+
+    if not dry_run:
+        summary_csv_candidates = sorted(output_dir.glob(f"libinvent_{benchmark}_{ts}*.csv"))
+        if summary_csv_candidates:
+            reconcile_libinvent_run(
+                benchmark=benchmark,
+                benchmark_run_dir=benchmark_run_dir,
+                summary_csv_path=summary_csv_candidates[0],
+                budget=budget,
+            )
+        else:
+            log.warning(
+                "No summary CSV found for reconciliation matching libinvent_%s_%s*.csv in %s",
+                benchmark,
+                ts,
+                output_dir,
+            )
+
     log.info("Benchmark %s finished. Outputs: %s", benchmark, output_dir)
+
+
+def reconcile_libinvent_run(
+    benchmark: str,
+    benchmark_run_dir: pathlib.Path,
+    summary_csv_path: pathlib.Path,
+    budget: int = 1000,
+) -> None:
+    """Reconcile LibINVENT results.csv with REINVENT4 raw generation summary.
+
+    Ensures invalid assemblies (state 0) and duplicates (state 2) are counted
+    against the oracle budget on identical footing with all other generative models.
+    """
+    results_csv = benchmark_run_dir / "results.csv"
+    if not results_csv.exists() or not summary_csv_path.exists():
+        log.warning("Cannot reconcile: missing %s or %s", results_csv, summary_csv_path)
+        return
+
+    existing_df = pl.read_csv(results_csv)
+    docked_rows_by_smiles = defaultdict(list)
+    for row in existing_df.iter_rows(named=True):
+        smi = row["original_smiles"] or row["smiles"]
+        docked_rows_by_smiles[smi].append(row)
+
+    with open(summary_csv_path, mode="r", encoding="utf-8") as fh:
+        raw_summary_rows = list(csv.DictReader(fh))
+
+    reconciled_rows = []
+    docked_usage_counter = defaultdict(int)
+
+    for idx, row in enumerate(raw_summary_rows):
+        smi = row.get("SMILES", "")
+        state = str(row.get("SMILES_state", "1")).strip()
+        step = int(row.get("step", 1))
+        is_over_budget = idx >= budget
+
+        if is_over_budget:
+            reconciled_rows.append(
+                {
+                    "smiles": smi,
+                    "original_smiles": smi,
+                    "docking_score": None,
+                    "norm_score": 0.0,
+                    "reward_score": 0.0,
+                    "valid_pose_found": False,
+                    "dlg_path": None,
+                    "pose_index": None,
+                    "best_any_score": None,
+                    "skip_reason": "budget_exhausted",
+                    "n_conformers": 0,
+                    "generation_round": step,
+                    "generation_index": idx + 1,
+                }
+            )
+            continue
+
+        if state == "0":  # INVALID
+            reconciled_rows.append(
+                {
+                    "smiles": smi,
+                    "original_smiles": smi,
+                    "docking_score": None,
+                    "norm_score": 0.0,
+                    "reward_score": 0.0,
+                    "valid_pose_found": False,
+                    "dlg_path": None,
+                    "pose_index": None,
+                    "best_any_score": None,
+                    "skip_reason": "invalid_molecule",
+                    "n_conformers": 0,
+                    "generation_round": step,
+                    "generation_index": idx + 1,
+                }
+            )
+        else:  # VALID (1) or DUPLICATE (2)
+            candidates = docked_rows_by_smiles.get(smi, [])
+            usage = docked_usage_counter[smi]
+            if usage < len(candidates):
+                base_row = dict(candidates[usage])
+                docked_usage_counter[smi] += 1
+            elif candidates:
+                base_row = dict(candidates[0])
+            else:
+                base_row = {
+                    "smiles": smi,
+                    "original_smiles": smi,
+                    "docking_score": None,
+                    "norm_score": 0.0,
+                    "reward_score": 0.0,
+                    "valid_pose_found": False,
+                    "dlg_path": None,
+                    "pose_index": None,
+                    "best_any_score": None,
+                    "skip_reason": "duplicate" if state == "2" else None,
+                    "n_conformers": 0,
+                }
+            base_row["generation_round"] = step
+            base_row["generation_index"] = idx + 1
+            reconciled_rows.append(base_row)
+
+    SCHEMA = {
+        "smiles": pl.String,
+        "original_smiles": pl.String,
+        "docking_score": pl.Float64,
+        "norm_score": pl.Float64,
+        "reward_score": pl.Float64,
+        "valid_pose_found": pl.Boolean,
+        "dlg_path": pl.String,
+        "pose_index": pl.Int64,
+        "best_any_score": pl.Float64,
+        "skip_reason": pl.String,
+        "n_conformers": pl.Int64,
+        "generation_round": pl.Int64,
+        "generation_index": pl.Int64,
+    }
+
+    clean_rows = []
+    for r in reconciled_rows:
+        clean_rows.append(
+            {
+                "smiles": str(r.get("smiles", "")) if r.get("smiles") is not None else "",
+                "original_smiles": (
+                    str(r.get("original_smiles", "")) if r.get("original_smiles") is not None else ""
+                ),
+                "docking_score": (
+                    float(r["docking_score"]) if r.get("docking_score") is not None else None
+                ),
+                "norm_score": float(r["norm_score"]) if r.get("norm_score") is not None else 0.0,
+                "reward_score": (
+                    float(r["reward_score"]) if r.get("reward_score") is not None else 0.0
+                ),
+                "valid_pose_found": bool(r.get("valid_pose_found", False)),
+                "dlg_path": str(r["dlg_path"]) if r.get("dlg_path") is not None else None,
+                "pose_index": (
+                    int(r["pose_index"]) if r.get("pose_index") is not None else None
+                ),
+                "best_any_score": (
+                    float(r["best_any_score"]) if r.get("best_any_score") is not None else None
+                ),
+                "skip_reason": (
+                    str(r["skip_reason"]) if r.get("skip_reason") is not None else None
+                ),
+                "n_conformers": (
+                    int(r.get("n_conformers", 0)) if r.get("n_conformers") is not None else 0
+                ),
+                "generation_round": int(r.get("generation_round", 1)),
+                "generation_index": int(r.get("generation_index", 1)),
+            }
+        )
+
+    reconciled_df = pl.DataFrame(clean_rows, schema=SCHEMA)
+    reconciled_df.write_csv(results_csv)
+    log.info(
+        "Reconciled %s with %d raw attempts from %s",
+        results_csv,
+        len(reconciled_df),
+        summary_csv_path.name,
+    )
+
+    try:
+        ev = MDEvaluator(benchmark, model="libinvent")
+        eval_metrics = ev.compute_metrics(
+            results_csv, output_path=benchmark_run_dir / "eval_metrics.json"
+        )
+        log.info(
+            "Updated eval_metrics.json for %s (validity=%.3f, uniqueness=%.3f, effective_yield=%.3f)",
+            benchmark,
+            eval_metrics.get("validity", 0.0),
+            eval_metrics.get("uniqueness", 0.0),
+            eval_metrics.get("effective_yield_rate", 0.0),
+        )
+    except Exception as exc:
+        log.warning("Failed to recompute eval_metrics for %s: %s", benchmark, exc)
 
 
 @click.command()
@@ -233,6 +435,11 @@ def run_benchmark(
     show_default=True,
     help="Cap reward_score at 1.0 (minimum 0.0 is always enforced).",
 )
+@click.option(
+    "--require-pose-rmsd/--no-require-pose-rmsd",
+    default=None,
+    help="Gate rewards by fragment pose RMSD (defaults to benchmark config if not set).",
+)
 @click.option("--dry-run", is_flag=True, default=False, help="Generate files only.")
 def main(
     benchmarks,
@@ -245,6 +452,7 @@ def main(
     device,
     docking_backend,
     clip_reward_upper_bound,
+    require_pose_rmsd,
     dry_run,
 ):
     selected = list(benchmarks) if benchmarks else BENCHMARKS
@@ -289,6 +497,7 @@ def main(
             device=device,
             docking_backend=docking_backend,
             clip_reward_upper_bound=clip_reward_upper_bound,
+            require_pose_rmsd=require_pose_rmsd,
             dry_run=dry_run,
         )
 

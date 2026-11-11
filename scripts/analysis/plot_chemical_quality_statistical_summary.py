@@ -192,16 +192,32 @@ def plot_quality_summary(
 
 
 def main() -> None:
-    macro_csv = ANALYSIS_DIR / "chemical_quality_stats_macro_summary.csv"
-    target_summary_csv = ANALYSIS_DIR / "chemical_quality_stats_target_summary.csv"
+    import argparse
+    parser = argparse.ArgumentParser(description="Plot chemical quality statistical summary.")
+    parser.add_argument(
+        "--analysis-dir",
+        type=Path,
+        default=PROJECT_ROOT / "analysis_exps_upperbound",
+        help="Path to analysis directory containing chemical quality stats CSVs.",
+    )
+    parser.add_argument(
+        "--paper-fig-dir",
+        type=Path,
+        default=PAPER_FIG_DIR,
+        help="Path to paper figures directory.",
+    )
+    args = parser.parse_args()
+
+    macro_csv = args.analysis_dir / "chemical_quality_stats_macro_summary.csv"
+    target_summary_csv = args.analysis_dir / "chemical_quality_stats_target_summary.csv"
 
     if not macro_csv.exists():
         print(f"Error: {macro_csv} not found.")
         sys.exit(1)
 
     output_dirs = [
-        ANALYSIS_DIR / "figures",
-        PAPER_FIG_DIR,
+        args.analysis_dir / "figures",
+        args.paper_fig_dir,
     ]
 
     plot_quality_summary(macro_csv, target_summary_csv, output_dirs)

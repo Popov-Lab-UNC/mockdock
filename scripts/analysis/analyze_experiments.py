@@ -112,7 +112,7 @@ def process_single(args_tuple):
             with open(metrics_json) as f:
                 metrics = json.load(f)
         else:
-            evaluator = MDEvaluator(target, scratch_dir=scratch_dir)
+            evaluator = MDEvaluator(target, scratch_dir=scratch_dir, model=model)
             metrics = evaluator.compute_metrics(csv_path)
 
         # Optional runtime metadata from oracle-side metrics.json
@@ -686,8 +686,8 @@ def plot_figure_3_quality(
             continue
 
         try:
-            evaluator = MDEvaluator(target)
-            fragment_smiles = evaluator._loader.fragment_smiles
+            evaluator = MDEvaluator(target, model=model)
+            fragment_smiles = evaluator.fragment_smiles
             frag_q = Chem.MolFromSmiles(fragment_smiles) if fragment_smiles else None
             if frag_q is None and fragment_smiles:
                 frag_q = Chem.MolFromSmarts(fragment_smiles)
@@ -788,7 +788,7 @@ def plot_figure_3_quality(
     else:
         set_label = ""
 
-    # ── Individual SVGs for Figure 3 panels ─────────────────────────────
+    # ── Combined & Individual SVGs for Figure 3 panels ───────────────────
     unique_models = list(effective_df["model"].unique())
     hue_order = [m for m in MODEL_PLOT_ORDER if m in unique_models] + [
         m for m in unique_models if m not in MODEL_PLOT_ORDER
@@ -803,6 +803,80 @@ def plot_figure_3_quality(
         ("d", "stoplight_score", "fig3d_stoplight", "Stoplight Score", "D. Stoplight Score (\u2193)"),
         ("e", "aizynthfinder_state_score", "fig3e_aizynthfinder", "AIZynthFinder State Score", "E. AIZynthFinder State Score (\u2191)"),
     ]
+
+    # Generate combined 6-slot SVG for generate_figure4.py
+    active_panels = [
+        col for _, col, _, _, _ in panels_config
+        if col in effective_df.columns and effective_df[col].notna().any()
+    ]
+    if active_panels:
+        ncols = 3
+        nrows = 2
+        fig, axes = plt.subplots(nrows, ncols, figsize=(6.5 * ncols, 4.8 * nrows), squeeze=False)
+        axes_flat = axes.flatten()
+
+        for idx, col_name in enumerate(active_panels):
+            ax = axes_flat[idx]
+            sns.boxplot(
+                data=effective_df,
+                x="target",
+                y=col_name,
+                hue="model",
+                hue_order=hue_order,
+                order=targets,
+                palette=palette,
+                linewidth=0.8,
+                showfliers=False,
+                ax=ax,
+            )
+            if col_name == "qed":
+                ax.set_title(f"QED (\u2191)", fontsize=15, fontweight="bold", pad=12)
+                ax.set_ylabel("QED Score", fontsize=12, labelpad=8)
+            elif col_name == "sa":
+                ax.set_title(f"SA Score (\u2193)", fontsize=15, fontweight="bold", pad=12)
+                ax.set_ylabel("SA Score", fontsize=12, labelpad=8)
+            elif col_name == "molskill_score":
+                ax.set_title(f"MolSkill Score (\u2193)", fontsize=15, fontweight="bold", pad=12)
+                ax.set_ylabel("MolSkill Score", fontsize=12, labelpad=8)
+            elif col_name == "stoplight_score":
+                ax.set_title(f"Stoplight Score (\u2193)", fontsize=15, fontweight="bold", pad=12)
+                ax.set_ylabel("Stoplight Score", fontsize=12, labelpad=8)
+            elif col_name == "aizynthfinder_state_score":
+                ax.set_title(f"AIZynthFinder State Score (\u2191)", fontsize=15, fontweight="bold", pad=12)
+                ax.set_ylabel("State Score", fontsize=12, labelpad=8)
+
+            ax.set_xlabel("Benchmark Target", fontsize=12, labelpad=8)
+
+        for idx in range(len(active_panels), len(axes_flat)):
+            axes_flat[idx].axis("off")
+
+        for ax in axes_flat[:len(active_panels)]:
+            ax.tick_params(axis="both", labelsize=11)
+            ax.tick_params(axis="x", rotation=30)
+            ax.yaxis.grid(True, linestyle="--", alpha=0.5)
+            ax.xaxis.grid(False)
+            sns.despine(ax=ax, top=True, right=True)
+            if ax.get_legend() is not None:
+                ax.get_legend().remove()
+
+        handles, labels = axes_flat[0].get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.95),
+            ncol=5,
+            frameon=False,
+            fontsize=13,
+        )
+
+        fig.suptitle("Chemical Quality Metrics Across Benchmarks", y=0.99, fontsize=18, fontweight="bold")
+        fig.tight_layout(rect=[0, 0, 1, 0.86])
+
+        output_path_stem = output_dir / "fig3_quality_metrics"
+        fig.savefig(output_path_stem.with_suffix(".svg"), bbox_inches="tight")
+        plt.close(fig)
+        print(f"Generated Figure 3 combined panel: {output_path_stem.name}.svg", flush=True)
 
     for panel_letter, col_name, file_stem, ylabel, title in panels_config:
         if col_name not in effective_df.columns or not effective_df[col_name].notna().any():

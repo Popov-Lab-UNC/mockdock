@@ -4,14 +4,14 @@
 
 expansion:
   uspto:
-    - /work/users/s/h/shuhang/aizynthfinder/data/full_uspto_03_05_19_rollout_policy.hdf5
-    - /work/users/s/h/shuhang/aizynthfinder/data/full_uspto_03_05_19_unique_templates.hdf5
+    - /hickory/users/s/h/shuhang/utils/aizynthfinder/data/full_uspto_03_05_19_rollout_policy.hdf5
+    - /hickory/users/s/h/shuhang/utils/aizynthfinder/data/full_uspto_03_05_19_unique_templates.hdf5
 
 filter:
-  uspto_strict: /work/users/s/h/shuhang/aizynthfinder/data/filter_policy_strict.hdf5
+  uspto_strict: /hickory/users/s/h/shuhang/utils/aizynthfinder/data/filter_policy_strict.hdf5
 
 stock:
-  zinc: /work/users/s/h/shuhang/aizynthfinder/data/zinc_stock_17_04_20.hdf5
+  zinc: /hickory/users/s/h/shuhang/utils/aizynthfinder/data/zinc_stock_17_04_20.hdf5
 
 # Optimization parameters tailored for scanning large batches
 search:

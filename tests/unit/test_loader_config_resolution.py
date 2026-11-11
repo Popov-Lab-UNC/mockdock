@@ -26,3 +26,12 @@ def test_find_config_raises_when_missing(tmp_path: Path):
 def test_loader_loads_structure_id():
     loader = BenchmarkLoader("CHK1")
     assert loader.structure_id == "2R0U"
+
+
+def test_loader_libinvent_fragment_override():
+    loader = BenchmarkLoader("PptT")
+    assert loader.fragment_smiles == "CC1=NC(=O)c2ccccc2N1"
+    assert loader.libinvent_fragment_smiles == "O=c1nc[nH]c2ccccc12"
+    assert loader.get_fragment_smiles() == "CC1=NC(=O)c2ccccc2N1"
+    assert loader.get_fragment_smiles("genmol") == "CC1=NC(=O)c2ccccc2N1"
+    assert loader.get_fragment_smiles("libinvent") == "O=c1nc[nH]c2ccccc12"

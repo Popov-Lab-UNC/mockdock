@@ -39,8 +39,8 @@ from common.experiment_utils import (
     ensure_src_on_path,
 )
 
-BENCHMARK_VENV_PATH = "/work/users/s/h/shuhang/benchmark/.venv/lib/python3.12/site-packages"
-AIZYNTH_VENV_PATH = "/work/users/s/h/shuhang/aizynthfinder/.venv/lib/python3.12/site-packages"
+BENCHMARK_VENV_PATH = "/hickory/users/s/h/shuhang/devel/mockdock/.venv/lib/python3.12/site-packages"
+AIZYNTH_VENV_PATH = "/hickory/users/s/h/shuhang/utils/aizynthfinder/.venv/lib/python3.12/site-packages"
 DEFAULT_AIZYNTH_CONFIG = Path(__file__).resolve().parent / "aizynthfinder_config.yml"
 if BENCHMARK_VENV_PATH not in sys.path:
     sys.path.append(BENCHMARK_VENV_PATH)
@@ -424,6 +424,11 @@ def _init_aizynth_worker(config_path: str) -> None:
     
     # Restrict TensorFlow threads per process on CPU to prevent contention/thrashing
     import tensorflow as tf
+    try:
+        for gpu in tf.config.list_physical_devices("GPU"):
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except Exception:
+        pass
     tf.config.threading.set_intra_op_parallelism_threads(1)
     tf.config.threading.set_inter_op_parallelism_threads(1)
     tf.config.optimizer.set_experimental_options({"disable_meta_optimizer": True})
@@ -627,6 +632,24 @@ def main() -> None:
         action="store_true",
         help="Only build/score reference-set caches",
     )
+    parser.add_argument(
+        "--filter-model",
+        type=str,
+        default=None,
+        help="Optional comma-separated list of models to score (e.g. 'libinvent')",
+    )
+    parser.add_argument(
+        "--filter-run",
+        type=str,
+        default=None,
+        help="Optional comma-separated substrings/IDs of run directories to score (e.g. 'r01,r02')",
+    )
+    parser.add_argument(
+        "--filter-target",
+        type=str,
+        default=None,
+        help="Optional comma-separated targets to score (e.g. 'PptT,TTK,VEGFR2')",
+    )
 
     # Scorer-specific optional arguments
     parser.add_argument(
@@ -643,19 +666,19 @@ def main() -> None:
     parser.add_argument(
         "--stoplight-python",
         type=str,
-        default="/work/users/s/h/shuhang/stoplight/.venv/bin/python",
+        default="/hickory/users/s/h/shuhang/utils/stoplight/.venv/bin/python",
         help="Path to Python interpreter in Stoplight's virtual environment",
     )
     parser.add_argument(
         "--stoplight-script",
         type=str,
-        default="/work/users/s/h/shuhang/stoplight/Stoplight/stoplight.py",
+        default="/hickory/users/s/h/shuhang/utils/stoplight/Stoplight/stoplight.py",
         help="Path to Stoplight/stoplight.py script",
     )
     parser.add_argument(
         "--stoplight-dir",
         type=str,
-        default="/work/users/s/h/shuhang/stoplight",
+        default="/hickory/users/s/h/shuhang/utils/stoplight",
         help="Base directory of Stoplight codebase",
     )
     parser.add_argument(
@@ -698,8 +721,27 @@ def main() -> None:
     cache_files = []
     if not args.reference_only:
         print(f"Scanning for molecule_metrics_cache.csv files in {args.exps_dir}...")
-        cache_files = sorted(args.exps_dir.glob("*/*/*/molecule_metrics_cache.csv"))
-        print(f"Found {len(cache_files)} generated-molecule cache files.")
+        all_cache_files = sorted(args.exps_dir.glob("*/*/*/molecule_metrics_cache.csv"))
+        
+        filter_models = [m.strip() for m in args.filter_model.split(",")] if args.filter_model else None
+        filter_runs = [r.strip() for r in args.filter_run.split(",")] if args.filter_run else None
+        filter_targets = [t.strip() for t in args.filter_target.split(",")] if args.filter_target else None
+
+        for cf in all_cache_files:
+            try:
+                rel = cf.relative_to(args.exps_dir)
+                if len(rel.parts) >= 3:
+                    model, run_dir, target = rel.parts[0], rel.parts[1], rel.parts[2]
+                    if filter_models and model not in filter_models:
+                        continue
+                    if filter_runs and not any(fr in run_dir for fr in filter_runs):
+                        continue
+                    if filter_targets and target not in filter_targets:
+                        continue
+            except ValueError:
+                pass
+            cache_files.append(cf)
+        print(f"Found {len(cache_files)} generated-molecule cache files after filtering (out of {len(all_cache_files)} total).")
 
     if not args.skip_reference_set:
         reference_cache_dir = args.reference_cache_dir or (

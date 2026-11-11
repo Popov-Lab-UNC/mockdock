@@ -48,6 +48,8 @@ class MDOracle:
         n_cpus: int | None = None,
         n_gpus: int | None = None,
         adgpu_executable: str | None = None,
+        model: str | None = None,
+        fragment_smiles: str | None = None,
     ):
         """
         Initialize the oracle for a specific benchmark.
@@ -97,7 +99,14 @@ class MDOracle:
         }
 
         # ── Load config & bioactivity ──────────────────────────────────
+        self._model = model
         self._loader = BenchmarkLoader(benchmark_name, scratch_dir=scratch_dir)
+        if fragment_smiles is not None:
+            self._fragment_smiles = fragment_smiles
+        elif hasattr(self._loader, "get_fragment_smiles"):
+            self._fragment_smiles = self._loader.get_fragment_smiles(model)
+        else:
+            self._fragment_smiles = getattr(self._loader, "fragment_smiles", "")
         self._filters = MDFilters(active_rulesets=["PAINS", "BMS"])
         self._clip_reward_upper_bound = (
             self._loader.clip_reward_upper_bound
@@ -157,7 +166,7 @@ class MDOracle:
     @property
     def fragment_smiles(self) -> str:
         """Fragment SMILES that every submitted molecule must contain."""
-        return self._loader.fragment_smiles
+        return self._fragment_smiles
 
     @property
     def fragment_smiles_with_dummies(self) -> str | None:
@@ -708,7 +717,7 @@ class MDOracle:
             ref_path = self._grid_dir / f"{self.structure_id}_ligand.pdb"
         self._docking_analyzer = DockingAnalyzer(
             reference_ligand_path=ref_path if ref_path.exists() else None,
-            fragment_smiles=self._loader.fragment_smiles,
+            fragment_smiles=self.fragment_smiles,
             rmsd_threshold=self._loader.rmsd_threshold,
         )
 

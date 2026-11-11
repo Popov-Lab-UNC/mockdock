@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 STOPLIGHT_DIR = os.environ.get(
-    "STOPLIGHT_DIR", "/work/users/s/h/shuhang/stoplight"
+    "STOPLIGHT_DIR", "/hickory/users/s/h/shuhang/utils/stoplight"
 )
 os.chdir(STOPLIGHT_DIR)
 if STOPLIGHT_DIR not in sys.path:
