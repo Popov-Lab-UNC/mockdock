@@ -204,7 +204,7 @@ class DockingAnalyzer:
         return math.sqrt(sq_diff / len(self.ref_coords))
 
     def filter_poses_by_rmsd(
-        self, pose_file: Path, smiles: str
+        self, pose_file: Path, smiles: str | None = None
     ) -> tuple[float, bool, Chem.Mol | None, float, Chem.Mol | None, int, int]:
         """
         Parse DLG or PDBQT, filter poses by RMSD if applicable.

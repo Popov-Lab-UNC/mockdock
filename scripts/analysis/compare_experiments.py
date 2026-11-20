@@ -94,7 +94,7 @@ def main():
         "internal_diversity": ("Internal Diversity (Tanimoto)", "Higher is more diverse"),
         "scaffold_diversity": ("Scaffold Diversity", "Higher is more scaffold-diverse"),
         "snn": ("Average Max SNN (Exploration)", "Lower means further from starting compounds"),
-        "effective_novelty": ("Effective Novelty", "Fraction that are novel & non-identical"),
+        "novelty": ("Novelty", "Fraction of unique molecules not in initial compounds"),
         "fraction_medchem_pass": ("Fraction Passing MedChem Filters", "Pass rate of valid fragment-matching molecules"),
         "avg_top_10": ("Avg Top-10 Score", "Optimization Success"),
     }
@@ -222,7 +222,7 @@ def main():
                 interp = "More scaffold hopping" if diff > 0 else "Less scaffold hopping"
             elif m == "snn":
                 interp = "Broader exploration (further from seed)" if diff < 0 else "More exploitation (closer to seed)"
-            elif m == "effective_novelty":
+            elif m == "novelty":
                 interp = "Increased novelty" if diff > 0 else "Decreased novelty"
             elif m == "fraction_medchem_pass":
                 interp = "Improved chemical quality" if diff > 0 else "Decreased chemical quality"

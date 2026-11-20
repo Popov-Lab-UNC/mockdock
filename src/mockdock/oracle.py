@@ -77,7 +77,6 @@ class MDOracle:
         self.max_budget = budget
         self.budget_used = 0
         self._generation_round = 0
-        self._structure_id: str | None = None  # set after config load below
         self.n_cpus = n_cpus or effective_cpu_count()
         self.n_gpus = n_gpus if n_gpus is not None else detect_gpus()
         self.results_df = pl.DataFrame()
@@ -147,7 +146,6 @@ class MDOracle:
         self._docking_oracle = None
         self._ligand_preparer = None
         self._docking_analyzer = None
-        self._chembl_data = None  # maintained for backward compatibility or direct access if needed
 
     # ──────────────────────────────────────────────────────────────────
     # Public API
@@ -425,15 +423,10 @@ class MDOracle:
                 else:
                     norm_score = 1.0 if best_valid <= self._loader.high_score else 0.0
 
-            if self.require_pose_rmsd and skip_reason == "failed_rmsd":
-                norm_score = 0.0
-
             clip_reward_upper_bound = getattr(self, "_clip_reward_upper_bound", True)
             reward_score = (
                 min(max(norm_score, 0.0), 1.0) if clip_reward_upper_bound else max(norm_score, 0.0)
             )
-            if self.require_pose_rmsd and skip_reason == "failed_rmsd":
-                reward_score = 0.0
             final_scores_list.append((original, reward_score))
             batch_results.append(
                 {
@@ -469,7 +462,7 @@ class MDOracle:
             if not dlg_path:
                 continue
             best_v, passed, _, best_a, _, best_v_idx, best_a_idx = (
-                self._docking_analyzer.filter_poses_by_rmsd(dlg_path, smiles)
+                self._docking_analyzer.filter_poses_by_rmsd(dlg_path)
             )
             if math.isnan(best_any) or best_a < best_any:
                 best_any = best_a
@@ -646,12 +639,6 @@ class MDOracle:
         print(f"[mockdock] Backend:   {self._resolved_backend.upper()}")
         print(f"[mockdock] Hardware:  {self.n_cpus} CPUs, {self.n_gpus} GPUs")
         print(f"[mockdock] {sep}")
-
-    def _get_full_data_and_threshold(self) -> tuple[pl.DataFrame, float, str]:
-        """Backward compatibility shim (mirrors loader cache on the oracle instance)."""
-        out = self._loader.get_full_data_and_threshold()
-        self._chembl_data = self._loader._chembl_data
-        return out
 
     def _resolve_backend(self) -> str:
         """Resolve which docking backend to use."""

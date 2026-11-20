@@ -27,8 +27,8 @@ Python API
 
    # Print key summary metrics
    print(f"Top 10 Mean Reward: {metrics['avg_top_10']:.3f}")
-   print(f"Filtered Top 10 Reward: {metrics['avg_top_10_filtered']:.3f}")
    print(f"MedChem Pass Fraction: {metrics['fraction_medchem_pass']:.1%}")
+   print(f"Effective Yield Rate: {metrics['effective_yield_rate']:.1%}")
    print(f"Internal Diversity: {metrics['internal_diversity']:.3f}")
 
    # Save metrics to JSON
@@ -48,7 +48,7 @@ You can evaluate any session CSV directly from the terminal:
 Standard Metric Suite
 ---------------------
 
-:class:`~mockdock.MDEvaluator` computes 22 standardized metrics across four main categories:
+:class:`~mockdock.MDEvaluator` computes 17 standardized metrics across four main categories:
 
 1. Generative Quality & Diversity
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -85,14 +85,10 @@ Applies medicinal chemistry filters and property distributions to assess clinica
      - Mean Quantitative Estimate of Drug-likeness (QED).
    * - ``mean_sa``
      - Mean Synthetic Accessibility score (1 = easily synthesizable, 10 = difficult).
-   * - ``fraction_lipinski``
-     - Fraction of unique valid molecules satisfying all 4 Lipinski Rule-of-5 criteria (MW ≤ 500, LogP ≤ 5, HBD ≤ 5, HBA ≤ 10).
-   * - ``fraction_pains_free``
-     - Fraction of unique valid molecules with zero PAINS (Pan-Assay Interference) alerts.
-   * - ``fraction_bms_free``
-     - Fraction of unique valid molecules with zero BMS (Bristol Myers Squibb) structural alerts.
    * - ``fraction_medchem_pass``
-     - Fraction passing all structural alert filters (PAINS, BMS) and property rules (Lipinski, QED ≥ 0.5, SA ≤ 4.0).
+     - Fraction of unique valid fragment-containing molecules passing all structural alert filters (PAINS, BMS) and property rules.
+   * - ``effective_medchem_pass``
+     - Fraction of Effective Yield Rate molecules passing structural alerts (PAINS, BMS) and physchem bounds.
 
 3. Novelty & Fragment Constraints
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -109,10 +105,6 @@ Measures whether generated candidates retain the required pharmacophore while ex
      - Fraction of unique valid molecules containing the required target fragment substructure.
    * - ``novelty``
      - Fraction of unique valid molecules not present in the starting seed dataset.
-   * - ``nonidenticality``
-     - Fraction of generated molecules non-identical to their prompt/input parent.
-   * - ``effective_novelty``
-     - Fraction of molecules that are both novel and non-identical.
    * - ``snn``
      - Average maximum Tanimoto similarity to the nearest neighbor in the initial seed dataset.
    * - ``effective_yield_rate``
@@ -121,7 +113,7 @@ Measures whether generated candidates retain the required pharmacophore while ex
 4. Optimization & Docking Performance
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Evaluates target-specific binding affinity optimization and oracle sample efficiency.
+Evaluates target-specific binding affinity optimization and docked pose validity.
 
 .. list-table::
    :header-rows: 1
@@ -130,21 +122,11 @@ Evaluates target-specific binding affinity optimization and oracle sample effici
    * - Metric
      - Description
    * - ``avg_top_1`` / ``10`` / ``100``
-     - Mean bounded reward score of the top-1, top-10, and top-100 scoring molecules in the run.
-   * - ``avg_top_1_norm`` / ``10`` / ``100``
-     - Mean unbounded normalized docking score of the top-1, top-10, and top-100 molecules.
-   * - ``avg_top_10_filtered``
-     - Mean reward score of the top-10 molecules that satisfy all MedChem filters.
+     - Mean bounded reward score of the top-1, top-10, and top-100 unique molecules in the run.
    * - ``auc_top_10``
      - Area under the running top-10 reward trajectory across cumulative oracle calls (normalized to [0.0, 1.0]).
-   * - ``auc_top_10_filtered``
-     - AUC of the running top-10 curve restricted to MedChem-passing compounds.
    * - ``valid_pose_rate``
      - Fraction of docked compounds whose docked fragment overlays the crystal structure within the RMSD threshold (≤ 2.0 Å).
-   * - ``oracle_efficiency_80``
-     - Number of oracle calls required to reach 80% of the final top-10 reward score (lower indicates faster learning).
-   * - ``oracle_efficiency_100``
-     - Number of oracle calls required to reach a top-10 reward of 1.0.
 
 Multi-Experiment Aggregation & Plotting
 ---------------------------------------

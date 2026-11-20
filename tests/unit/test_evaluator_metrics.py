@@ -45,11 +45,10 @@ def test_compute_metrics_generates_expected_keys(tmp_path: Path, monkeypatch):
     assert "valid_pose_rate" in out
     assert out["avg_top_1"] >= out["avg_top_10"]
 
-    # Check filtered metrics
-    assert "avg_top_1_filtered" in out
-    assert "avg_top_10_filtered" in out
-    assert "auc_top_10_filtered" in out
+    # Check active medchem & yield metrics
     assert "fraction_medchem_pass" in out
+    assert "effective_yield_rate" in out
+    assert "effective_medchem_pass" in out
 
 
 def test_compute_metrics_deduplicates_unique_smiles(tmp_path: Path, monkeypatch):
@@ -90,5 +89,3 @@ def test_compute_metrics_deduplicates_unique_smiles(tmp_path: Path, monkeypatch)
     # With deduplication: top 2 unique are CCO (0.9) and CCN (0.1) -> avg_top_10 = (0.9 + 0.1) / 2 = 0.5
     assert out["avg_top_1"] == 0.9
     assert round(out["avg_top_10"], 4) == 0.5
-    assert round(out["avg_top_10_norm"], 4) == 0.5
-    assert round(out["avg_top_10_filtered"], 4) == 0.5

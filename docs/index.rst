@@ -84,7 +84,7 @@ Documentation Sections
    * - :doc:`running`
      - How to initialize oracles, query fragment constraints, batch score candidates, inspect session states, and connect with generative models.
    * - :doc:`evaluation`
-     - How to run :class:`~mockdock.MDEvaluator`, full breakdown of all 22 metrics, and multi-model aggregate analysis.
+     - How to run :class:`~mockdock.MDEvaluator`, full breakdown of all 17 metrics, and multi-model aggregate analysis.
    * - :doc:`reference/index`
      - Complete reference on benchmark tasks, scoring equations, creating custom targets, and automation scripts.
    * - :doc:`api/index`

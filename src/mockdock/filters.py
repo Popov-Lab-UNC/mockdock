@@ -21,12 +21,6 @@ class MDFilters:
 
         self.active_rulesets = active_rulesets
         self.data_path = Path(__file__).parent / "data" / "alert_collection.csv"
-
-        if not self.data_path.exists():
-            # Fallback or error if data not found
-            # In a real package we might download it or bundle it properly
-            pass
-
         self._catalog = self._build_catalog()
 
     def _build_catalog(self) -> list:
