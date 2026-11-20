@@ -749,6 +749,17 @@ def plot_figure_3_quality(
 
             if cache_rows:
                 pl.DataFrame(cache_rows).write_csv(cache_path)
+            else:
+                pl.DataFrame(
+                    schema={
+                        "smiles": pl.String,
+                        "qed": pl.Float64,
+                        "sa": pl.Float64,
+                        "is_novel": pl.Boolean,
+                        "has_fragment": pl.Boolean,
+                        "passes_medchem": pl.Boolean,
+                    }
+                ).write_csv(cache_path)
 
         except Exception as e:
             print(f"  Error processing molecules for {csv_path}: {e}")
@@ -769,7 +780,22 @@ def plot_figure_3_quality(
         print("No molecule-level data found for Figure 3.")
         return
 
-    mol_df = pl.DataFrame(all_mols_data)
+    mol_schema_overrides = {
+        "model": pl.String,
+        "target": pl.String,
+        "seed": pl.String,
+        "smiles": pl.String,
+        "qed": pl.Float64,
+        "sa": pl.Float64,
+        "is_novel": pl.Boolean,
+        "has_fragment": pl.Boolean,
+        "passes_medchem": pl.Boolean,
+        "molskill_score": pl.Float64,
+        "stoplight_score": pl.Float64,
+        "aizynthfinder_score": pl.Float64,
+        "aizynthfinder_state_score": pl.Float64,
+    }
+    mol_df = pl.DataFrame(all_mols_data, schema_overrides=mol_schema_overrides)
 
     # Ensure all 5 score columns exist in the DataFrame, filling with None if missing
     for col in ["qed", "sa", "molskill_score", "stoplight_score", "aizynthfinder_state_score"]:
