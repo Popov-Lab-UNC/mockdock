@@ -2,8 +2,8 @@ import csv
 import pathlib
 import sys
 import tempfile
+
 import polars as pl
-import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 from exps.libinvent.run import reconcile_libinvent_run
@@ -82,36 +82,46 @@ def test_reconcile_libinvent_run():
                 ],
             )
             writer.writeheader()
-            writer.writerow({
-                "SMILES": "c1ccccc1",
-                "SMILES_state": "1",
-                "step": "1",
-                "mockdock_score": "0.5",
-            })
-            writer.writerow({
-                "SMILES": "C===C",
-                "SMILES_state": "0",
-                "step": "1",
-                "mockdock_score": "0.0",
-            })
-            writer.writerow({
-                "SMILES": "Cc1ccccc1",
-                "SMILES_state": "1",
-                "step": "1",
-                "mockdock_score": "0.6",
-            })
-            writer.writerow({
-                "SMILES": "c1ccccc1",
-                "SMILES_state": "2",
-                "step": "2",
-                "mockdock_score": "0.5",
-            })
-            writer.writerow({
-                "SMILES": "CCc1ccccc1",
-                "SMILES_state": "1",
-                "step": "2",
-                "mockdock_score": "0.0",
-            })
+            writer.writerow(
+                {
+                    "SMILES": "c1ccccc1",
+                    "SMILES_state": "1",
+                    "step": "1",
+                    "mockdock_score": "0.5",
+                }
+            )
+            writer.writerow(
+                {
+                    "SMILES": "C===C",
+                    "SMILES_state": "0",
+                    "step": "1",
+                    "mockdock_score": "0.0",
+                }
+            )
+            writer.writerow(
+                {
+                    "SMILES": "Cc1ccccc1",
+                    "SMILES_state": "1",
+                    "step": "1",
+                    "mockdock_score": "0.6",
+                }
+            )
+            writer.writerow(
+                {
+                    "SMILES": "c1ccccc1",
+                    "SMILES_state": "2",
+                    "step": "2",
+                    "mockdock_score": "0.5",
+                }
+            )
+            writer.writerow(
+                {
+                    "SMILES": "CCc1ccccc1",
+                    "SMILES_state": "1",
+                    "step": "2",
+                    "mockdock_score": "0.0",
+                }
+            )
 
         reconcile_libinvent_run(
             benchmark="CHK1",
