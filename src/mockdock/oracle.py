@@ -300,7 +300,7 @@ class MDOracle:
         """
         Compute post-hoc evaluation metrics for this oracle run.
 
-        Delegates to MDEvaluator.from_oracle(self, **kwargs).compute_metrics().
+        Delegates to ``MDEvaluator.from_oracle(self, **kwargs).compute_metrics()``.
         """
         from .evaluator import MDEvaluator
 
@@ -957,7 +957,9 @@ class MDOracle:
             n_attempted = n_total - n_invalid - n_skipped_2d - n_skipped_filter - n_budget_exhausted
             best_reward = float(success_df["reward_score"].max()) if n_success > 0 else 0.0
             best_norm = float(success_df["norm_score"].max()) if n_success > 0 else 0.0
-            best_docking = float(success_df["docking_score"].min()) if n_success > 0 else float("nan")
+            best_docking = (
+                float(success_df["docking_score"].min()) if n_success > 0 else float("nan")
+            )
         else:
             n_total = 0
             n_success = 0

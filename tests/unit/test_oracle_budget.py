@@ -37,6 +37,7 @@ def test_oracle_score_batch_submission_order_and_budget_exhaustion(tmp_path: Pat
     # Mock components to isolate scoring flow
     oracle._ensure_components = lambda: None
     oracle._docking_analyzer = type("Analyzer", (), {"fragment_mol": None})()
+
     class MockPreparer:
         @staticmethod
         def prepare_batch(smiles, tmp_dir):

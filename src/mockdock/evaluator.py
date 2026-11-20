@@ -428,10 +428,7 @@ class MDEvaluator:
             elif self.run_dir is not None:
                 if effective_budget is None:
                     should_save = True
-                elif (
-                    self.budget_total is not None
-                    and effective_budget == self.budget_total
-                ):
+                elif self.budget_total is not None and effective_budget == self.budget_total:
                     should_save = True
                 elif self.budget_total is None:
                     should_save = True
@@ -530,7 +527,11 @@ class MDEvaluator:
 
             stat = mol_docking_stats.get(
                 can,
-                {"best_reward": float("-inf"), "best_docking": float("inf"), "valid_pose_found": False},
+                {
+                    "best_reward": float("-inf"),
+                    "best_docking": float("inf"),
+                    "valid_pose_found": False,
+                },
             )
             best_rew = stat["best_reward"] if stat["best_reward"] != float("-inf") else None
             best_dock = stat["best_docking"] if stat["best_docking"] != float("inf") else None
@@ -693,9 +694,7 @@ class MDEvaluator:
             return 0.0
 
         mols = [Chem.MolFromSmiles(s) for s in smiles_list]
-        fps = [
-            AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in mols if m is not None
-        ]
+        fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, 2048) for m in mols if m is not None]
 
         if len(fps) < 2:
             return 0.0
@@ -852,9 +851,7 @@ def main():
     parser.add_argument("run_dir", type=Path, help="Path to run directory")
     parser.add_argument("--budget", type=int, default=None, help="Evaluation budget cutoff")
     parser.add_argument("--output", type=Path, default=None, help="Output JSON path")
-    parser.add_argument(
-        "--scratch-dir", type=Path, default=None, help="mockdock scratch directory"
-    )
+    parser.add_argument("--scratch-dir", type=Path, default=None, help="mockdock scratch directory")
 
     args = parser.parse_args()
 
