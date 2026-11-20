@@ -163,13 +163,13 @@ def plot_quality_summary(
     ax_b.invert_yaxis()  # Top-down matching heatmap
     ax_b.set_xlabel("Mean Effective Yield Rate (EYR) Molecules / Run", fontsize=11, fontweight="bold", labelpad=8)
     ax_b.set_title("B", loc="left", fontsize=14, fontweight="bold", pad=10)
-    ax_b.legend(loc="upper right", frameon=True, fontsize=9.5, framealpha=0.95)
+    ax_b.legend(bbox_to_anchor=(0.5, -0.16), loc="upper center", ncol=1, frameon=True, fontsize=9.0, framealpha=0.95)
     ax_b.xaxis.grid(True, linestyle="--", alpha=0.5)
     ax_b.set_axisbelow(True)
 
     # Add vertical line at threshold N_min = 10
     ax_b.axvline(10, color="gray", linestyle=":", linewidth=1.2)
-    ax_b.text(12, len(models) - 0.6, "$N_{min} = 10$", color="#555555", fontsize=9, fontstyle="italic")
+    ax_b.text(15, -0.4, "$N_{\\mathrm{min}} = 10$", color="#555555", fontsize=9, fontstyle="italic", va="bottom")
 
     sns.despine(fig=fig)
     fig.subplots_adjust(bottom=0.22)

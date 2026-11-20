@@ -19,31 +19,34 @@ Python API
 
    from mockdock import MDEvaluator
 
-   # Initialize evaluator with target benchmark configuration
-   evaluator = MDEvaluator("CHK1")
+   # Point MDEvaluator directly at an MDOracle run directory
+   evaluator = MDEvaluator("./my_run")
 
-   # Compute metrics dictionary from a session CSV
-   metrics = evaluator.compute_metrics("my_run/results.csv")
+   # Compute metrics dictionary (automatically saves to ./my_run/eval_metrics.json)
+   metrics = evaluator.compute_metrics()
 
-   # Print key summary metrics
+   # Print formatted summary and key metrics
+   print(evaluator.summary(metrics))
    print(f"Top 10 Mean Reward: {metrics['avg_top_10']:.3f}")
    print(f"MedChem Pass Fraction: {metrics['fraction_medchem_pass']:.1%}")
    print(f"Effective Yield Rate: {metrics['effective_yield_rate']:.1%}")
    print(f"Internal Diversity: {metrics['internal_diversity']:.3f}")
 
-   # Save metrics to JSON
-   evaluator.compute_metrics("my_run/results.csv", output_path="my_run/eval_metrics.json")
-
 Command-Line Interface (CLI)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-You can evaluate any session CSV directly from the terminal:
+You can evaluate any run directory or session CSV directly from the terminal:
 
 .. code-block:: bash
 
-   python -m mockdock.evaluator my_run/results.csv \
-     --benchmark CHK1 \
-     --output my_run/eval_metrics.json
+   # Evaluate a run directory
+   python -m mockdock.evaluator ./my_run
+
+   # Evaluate at a sub-budget cutoff
+   python -m mockdock.evaluator ./my_run --budget 500 --output ./my_run/eval_500.json
+
+   # Evaluate an external CSV without status.json
+   python -m mockdock.evaluator external_results.csv --benchmark CHK1 --budget 1000
 
 Standard Metric Suite
 ---------------------
@@ -101,7 +104,7 @@ Measures whether generated candidates retain the required pharmacophore while ex
 
    * - Metric
      - Description
-   * - ``fragment_incorporation``
+   * - ``fragment_adherence``
      - Fraction of unique valid molecules containing the required target fragment substructure.
    * - ``novelty``
      - Fraction of unique valid molecules not present in the starting seed dataset.

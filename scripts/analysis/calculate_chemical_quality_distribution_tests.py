@@ -146,8 +146,10 @@ def compute_distribution_stats(
     If gen_clean has fewer than min_samples, returns stats with insufficient_sample=True
     to avoid reporting unrepresentative metrics.
     """
-    gen_clean = gen_vals[~np.isnan(gen_vals)]
-    ref_clean = ref_vals[~np.isnan(ref_vals)]
+    gen_arr = np.asarray(gen_vals, dtype=float)
+    ref_arr = np.asarray(ref_vals, dtype=float)
+    gen_clean = gen_arr[~np.isnan(gen_arr)]
+    ref_clean = ref_arr[~np.isnan(ref_arr)]
 
     n_gen = len(gen_clean)
     n_ref = len(ref_clean)
@@ -288,8 +290,18 @@ def analyze_experiments(
                         if metric_name not in eyr_df.columns or metric_name not in ref_df.columns:
                             continue
 
-                        gen_vals = eyr_df[metric_name].drop_nulls().to_numpy()
-                        ref_vals = ref_df[metric_name].drop_nulls().to_numpy()
+                        gen_vals = (
+                            eyr_df[metric_name]
+                            .cast(pl.Float64, strict=False)
+                            .drop_nulls()
+                            .to_numpy()
+                        )
+                        ref_vals = (
+                            ref_df[metric_name]
+                            .cast(pl.Float64, strict=False)
+                            .drop_nulls()
+                            .to_numpy()
+                        )
 
                         # Collect for pooled
                         key = (model_name, target, metric_name)

@@ -50,6 +50,7 @@ class MDOracle:
         adgpu_executable: str | None = None,
         model: str | None = None,
         fragment_smiles: str | None = None,
+        overwrite: bool = False,
     ):
         """
         Initialize the oracle for a specific benchmark.
@@ -136,16 +137,50 @@ class MDOracle:
             self._run_dir = Path(run_dir).resolve()
         else:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            self._run_dir = Path.cwd() / f"run_{timestamp}"
+            candidate = Path.cwd() / f"run_{timestamp}"
+            idx = 1
+            while candidate.exists() and not overwrite:
+                candidate = Path.cwd() / f"run_{timestamp}_{idx}"
+                idx += 1
+            self._run_dir = candidate
+
+        status_file = self._run_dir / "status.json"
+        results_file = self._run_dir / "results.csv"
+        if not overwrite and (status_file.exists() or results_file.exists()):
+            raise FileExistsError(
+                f"Run directory '{self._run_dir}' already contains status.json or results.csv "
+                f"from a previous run. Pass overwrite=True to overwrite."
+            )
+
         self._run_dir.mkdir(parents=True, exist_ok=True)
         self._results_dir = self._run_dir / "poses"
         self._results_dir.mkdir(parents=True, exist_ok=True)
+
+        if overwrite:
+            for fname in [
+                "results.csv",
+                "results.toml",
+                "eval_metrics.json",
+                "status.json",
+                "metrics.json",
+            ]:
+                stale = self._run_dir / fname
+                if stale.exists():
+                    stale.unlink()
+            if self._results_dir.exists():
+                for stale in self._results_dir.glob("*"):
+                    if stale.is_file() and stale.suffix.lower() in [".dlg", ".pdbqt"]:
+                        stale.unlink()
+
         print(f"[mockdock] Run directory: {self._run_dir}")
 
         # ── Lazy-initialised components (private) ─────────────────────
         self._docking_oracle = None
         self._ligand_preparer = None
         self._docking_analyzer = None
+
+        # Write initial status.json with zeroed counters
+        self._write_status()
 
     # ──────────────────────────────────────────────────────────────────
     # Public API
@@ -261,6 +296,16 @@ class MDOracle:
         print(f"[mockdock] Prepared {len(validation_df)} validation compounds")
         return validation_df
 
+    def evaluate(self, **kwargs) -> dict:
+        """
+        Compute post-hoc evaluation metrics for this oracle run.
+
+        Delegates to MDEvaluator.from_oracle(self, **kwargs).compute_metrics().
+        """
+        from .evaluator import MDEvaluator
+
+        return MDEvaluator.from_oracle(self, **kwargs).compute_metrics()
+
     def score(self, smiles_list: list[str]) -> dict[str, float]:
         """Dock a list of SMILES and return normalised scores."""
         self._generation_round += 1
@@ -268,9 +313,11 @@ class MDOracle:
             print("[mockdock] Oracle budget exhausted.")
             # Keep complete accounting: even after budget exhaustion, record
             # every model-emitted SMILES so results.csv remains a full audit log.
-            exhausted_rows = [
-                self._create_skipped_result(smi, "budget_exhausted", smi) for smi in smiles_list
-            ]
+            exhausted_rows = []
+            for smi in smiles_list:
+                r = self._create_skipped_result(smi, "budget_exhausted", smi)
+                r["oracle_call"] = None
+                exhausted_rows.append(r)
             self._update_results_df(exhausted_rows)
             return {smi: 0.0 for smi in smiles_list}
 
@@ -282,11 +329,10 @@ class MDOracle:
         out_of_budget_smiles = smiles_list[available_budget:]
 
         # 2. Pre-filter and standardize while preserving original SMILES
-        # valid_tasks: list of (canonical, original)
-        valid_tasks, skipped_results = self._filter_smiles(process_smiles)
-
-        for smi in out_of_budget_smiles:
-            skipped_results.append(self._create_skipped_result(smi, "budget_exhausted", smi))
+        # valid_tasks: list of (slot_idx, canonical, original)
+        # skipped_results: list of (slot_idx, result_dict)
+        process_slots = list(enumerate(process_smiles))
+        valid_tasks, skipped_results = self._filter_smiles(process_slots)
 
         final_scores = {smi: 0.0 for smi in smiles_list}
 
@@ -294,9 +340,7 @@ class MDOracle:
             # 3. Preparation and Docking
             with tempfile.TemporaryDirectory(prefix="mockdock_prep_") as tmp_dir:
                 temp_path = Path(tmp_dir)
-                # prepare_batch now returns list of {'smiles': str, 'pdbqt_paths': [Path]}
-                # preserving order of valid_tasks
-                process_canonicals = [t[0] for t in valid_tasks]
+                process_canonicals = [t[1] for t in valid_tasks]
                 docking_tasks = self._prepare_ligands(process_canonicals, temp_path)
 
                 # Run docking (accepts list[dict], returns list[dict])
@@ -306,51 +350,71 @@ class MDOracle:
                 scores_dict, batch_results = self._analyze_results(valid_tasks, docking_raw_results)
                 final_scores.update(scores_dict)
 
-                # 5. Finalize round
-                self.budget_used += len(process_smiles)
-                print(
-                    f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
-                    f"({len(valid_tasks)} passed pre-dock filters) (budget {self.budget_used}/{self.max_budget})"
-                )
-                self._update_results_df(skipped_results + batch_results)
-        else:
-            self.budget_used += len(process_smiles)
-            print(
-                f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
-                f"(0 passed pre-dock filters) (budget {self.budget_used}/{self.max_budget})"
+            in_budget_results = sorted(
+                skipped_results + batch_results, key=lambda x: x.get("slot_index", 0)
             )
-            self._update_results_df(skipped_results)
+        else:
+            in_budget_results = sorted(skipped_results, key=lambda x: x.get("slot_index", 0))
+
+        # Stamp oracle_call for in-budget rows
+        for i, r in enumerate(in_budget_results):
+            r["oracle_call"] = self.budget_used + 1 + i
+
+        # Budget exhausted rows (oracle_call is None)
+        exhausted_results = []
+        for smi in out_of_budget_smiles:
+            r = self._create_skipped_result(smi, "budget_exhausted", smi)
+            r["oracle_call"] = None
+            exhausted_results.append(r)
+
+        # 5. Finalize round
+        self.budget_used += len(process_smiles)
+        n_valid = len(valid_tasks)
+        print(
+            f"[mockdock] Round {self._generation_round}: processed {len(process_smiles)} molecules "
+            f"({n_valid} passed pre-dock filters) (budget {self.budget_used}/{self.max_budget})"
+        )
+        self._update_results_df(in_budget_results + exhausted_results)
 
         return final_scores
 
-    def _filter_smiles(self, smiles_list: list[str]):
+    def _filter_smiles(self, process_slots: list[tuple[int, str]] | list[str]):
         """Standardize and filter SMILES based on validity and 2D constraint."""
-        valid_tasks = []  # list of (canonical, original)
-        skipped_results = []
+        valid_tasks = []  # list of (slot_idx, canonical, original)
+        skipped_results = []  # list of dicts
 
-        for smi in smiles_list:
+        for idx, item in enumerate(process_slots):
+            if isinstance(item, tuple):
+                slot_idx, smi = item
+            else:
+                slot_idx, smi = idx, item
+
             canonical = standardize_smiles(smi)
             if canonical is None:
-                skipped_results.append(self._create_skipped_result(smi, "invalid_molecule", smi))
+                r = self._create_skipped_result(smi, "invalid_molecule", smi)
+                r["slot_index"] = slot_idx
+                skipped_results.append(r)
                 continue
 
             mol = Chem.MolFromSmiles(canonical)
             if mol is None:
-                skipped_results.append(self._create_skipped_result(smi, "invalid_molecule", smi))
+                r = self._create_skipped_result(smi, "invalid_molecule", smi)
+                r["slot_index"] = slot_idx
+                skipped_results.append(r)
                 continue
 
             if self._loader.require_fragment_match and not check_2d_match(
                 mol, self._docking_analyzer.fragment_mol
             ):
-                skipped_results.append(
-                    self._create_skipped_result(canonical, "failed_2d_match", smi)
-                )
+                r = self._create_skipped_result(canonical, "failed_2d_match", smi)
+                r["slot_index"] = slot_idx
+                skipped_results.append(r)
             elif self._loader.filter_during_optimization and not self._filters.passes(mol):
-                skipped_results.append(
-                    self._create_skipped_result(canonical, "failed_medchem_filter", smi)
-                )
+                r = self._create_skipped_result(canonical, "failed_medchem_filter", smi)
+                r["slot_index"] = slot_idx
+                skipped_results.append(r)
             else:
-                valid_tasks.append((canonical, smi))
+                valid_tasks.append((slot_idx, canonical, smi))
 
         return valid_tasks, skipped_results
 
@@ -390,7 +454,12 @@ class MDOracle:
         batch_results = []
         final_scores_list = []
 
-        for task_idx, (canonical, original) in enumerate(process_tasks):
+        for task_idx, task in enumerate(process_tasks):
+            if len(task) == 3:
+                slot_idx, canonical, original = task
+            else:
+                slot_idx, canonical, original = task_idx, task[0], task[1]
+
             task_results = raw_results[task_idx]
 
             best_valid, valid_pose_found, best_any, best_dlg, best_pose_idx = (
@@ -441,6 +510,7 @@ class MDOracle:
                     "best_any_score": best_any,
                     "skip_reason": skip_reason,
                     "n_conformers": len(task_results),
+                    "slot_index": slot_idx,
                 }
             )
 
@@ -467,16 +537,17 @@ class MDOracle:
             if math.isnan(best_any) or best_a < best_any:
                 best_any = best_a
 
+            if passed:
+                valid_pose_found = True
+
             if self.require_pose_rmsd:
                 if passed:
-                    valid_pose_found = True
                     if math.isnan(best_valid) or best_v < best_valid:
                         best_valid = best_v
                         best_dlg = str(dlg_path)
                         best_pose_idx = best_v_idx
             else:
                 if not math.isnan(best_a):
-                    valid_pose_found = True
                     if math.isnan(best_valid) or best_a < best_valid:
                         best_valid = best_a
                         best_dlg = str(dlg_path)
@@ -759,6 +830,7 @@ class MDOracle:
             "n_conformers": pl.Int64,
             "generation_round": pl.Int64,
             "generation_index": pl.Int64,
+            "oracle_call": pl.Int64,
         }
 
         new_df = pl.DataFrame(new_results, schema=schema)
@@ -784,7 +856,6 @@ class MDOracle:
                               analysis works without any data loss.
           results.toml — Same data sorted by reward_score DESC, human-readable TOML.
           status.json  — Summary counters / best scores for live monitoring
-                              (see n_molecules_attempted vs budget_used in code comments).
         """
         if self.results_df.is_empty():
             return
@@ -842,6 +913,12 @@ class MDOracle:
                 else:
                     toml_lines.append(f"{k} = 0")
 
+            call_val = r.get("oracle_call")
+            if call_val is not None:
+                toml_lines.append(f"oracle_call = {int(call_val)}")
+            else:
+                toml_lines.append("oracle_call = 0")
+
             # Boolean values
             val_pose = r.get("valid_pose_found")
             toml_lines.append(f"valid_pose_found = {'true' if val_pose else 'false'}")
@@ -860,39 +937,53 @@ class MDOracle:
             f.write("\n".join(toml_lines))
 
         # ── Status JSON (summary for live monitoring) ────────────────────
-        # - budget_used: oracle calls (includes invalid / 2D-fail / budget_exhausted rows).
-        # - n_molecules_attempted: passed all pre-dock filters (sent to docking).
-        # - n_molecules_success: skip_reason is null and valid_pose_found (docked; if
-        #   require_pose_rmsd, passed the fragment RMSD gate).
-        sr = pl.col("skip_reason")
-        success_df = self.results_df.filter(sr.is_null() & pl.col("valid_pose_found"))
-        n_total = len(self.results_df)
-        n_success = len(success_df)
-        # Skip reasons are set in _filter_smiles/_analyze_results via _create_skipped_result
-        n_skipped_2d = len(self.results_df.filter(pl.col("skip_reason") == "failed_2d_match"))
-        n_skipped_filter = len(
-            self.results_df.filter(pl.col("skip_reason") == "failed_medchem_filter")
-        )
-        n_invalid = len(self.results_df.filter(pl.col("skip_reason") == "invalid_molecule"))
-        n_budget_exhausted = len(
-            self.results_df.filter(pl.col("skip_reason") == "budget_exhausted")
-        )
-        # Molecules that passed pre-dock filtering (everything except pre-dock skips)
-        n_attempted = n_total - n_invalid - n_skipped_2d - n_skipped_filter - n_budget_exhausted
-        best_reward = float(success_df["reward_score"].max()) if n_success > 0 else 0.0
-        best_norm = float(success_df["norm_score"].max()) if n_success > 0 else 0.0
-        best_docking = float(success_df["docking_score"].min()) if n_success > 0 else float("nan")
+        self._write_status()
+
+    def _write_status(self):
+        """Write status.json atomically to the run directory."""
+        if not self.results_df.is_empty():
+            sr = pl.col("skip_reason")
+            success_df = self.results_df.filter(sr.is_null() & pl.col("valid_pose_found"))
+            n_total = len(self.results_df)
+            n_success = len(success_df)
+            n_skipped_2d = len(self.results_df.filter(pl.col("skip_reason") == "failed_2d_match"))
+            n_skipped_filter = len(
+                self.results_df.filter(pl.col("skip_reason") == "failed_medchem_filter")
+            )
+            n_invalid = len(self.results_df.filter(pl.col("skip_reason") == "invalid_molecule"))
+            n_budget_exhausted = len(
+                self.results_df.filter(pl.col("skip_reason") == "budget_exhausted")
+            )
+            n_attempted = n_total - n_invalid - n_skipped_2d - n_skipped_filter - n_budget_exhausted
+            best_reward = float(success_df["reward_score"].max()) if n_success > 0 else 0.0
+            best_norm = float(success_df["norm_score"].max()) if n_success > 0 else 0.0
+            best_docking = float(success_df["docking_score"].min()) if n_success > 0 else float("nan")
+        else:
+            n_total = 0
+            n_success = 0
+            n_skipped_2d = 0
+            n_skipped_filter = 0
+            n_invalid = 0
+            n_attempted = 0
+            best_reward = 0.0
+            best_norm = 0.0
+            best_docking = float("nan")
 
         def _json_clean(v):
             if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
                 return None
+            if not isinstance(v, (str, int, float, bool, type(None))):
+                return str(v)
             return v
 
         status = {
-            "benchmark": self.benchmark_name,
-            "budget_total": self.max_budget,
-            "budget_used": self.budget_used,
-            "generation_round": self._generation_round,
+            "schema_version": 1,
+            "benchmark": getattr(self, "benchmark_name", ""),
+            "model": getattr(self, "_model", None),
+            "fragment_smiles": getattr(self, "fragment_smiles", ""),
+            "budget_total": getattr(self, "max_budget", None),
+            "budget_used": getattr(self, "budget_used", 0),
+            "generation_round": getattr(self, "_generation_round", 0),
             "n_molecules_total": n_total,
             "n_molecules_invalid": n_invalid,
             "n_molecules_skipped_2d": n_skipped_2d,
@@ -902,8 +993,31 @@ class MDOracle:
             "best_reward_score": best_reward,
             "best_norm_score": best_norm,
             "best_docking_score": best_docking,
+            "require_pose_rmsd": getattr(self, "require_pose_rmsd", True),
+            "rmsd_threshold": getattr(self, "rmsd_threshold", 2.0),
+            "clip_reward_upper_bound": getattr(self, "_clip_reward_upper_bound", True),
         }
-        status = {k: _json_clean(v) for k, v in status.items()}
-        live_status = self._run_dir / "status.json"
-        with open(live_status, "w") as f:
-            json.dump(status, f, indent=2, allow_nan=False)
+        status_clean = {k: _json_clean(v) for k, v in status.items()}
+
+        tmp_file = tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=self._run_dir,
+            prefix=".status_",
+            suffix=".tmp",
+            delete=False,
+        )
+        tmp_path = Path(tmp_file.name)
+        try:
+            json.dump(status_clean, tmp_file, indent=2, allow_nan=False)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+            tmp_file.close()
+            os.replace(tmp_path, self._run_dir / "status.json")
+        except Exception:
+            tmp_file.close()
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+            raise

@@ -112,8 +112,14 @@ def process_single(args_tuple):
             with open(metrics_json) as f:
                 metrics = json.load(f)
         else:
-            evaluator = MDEvaluator(target, scratch_dir=scratch_dir, model=model)
-            metrics = evaluator.compute_metrics(csv_path)
+            target_dir = csv_path.parent
+            if (target_dir / "status.json").exists():
+                evaluator = MDEvaluator(target_dir, scratch_dir=scratch_dir)
+            else:
+                evaluator = MDEvaluator.from_csv(
+                    csv_path, benchmark=target, scratch_dir=scratch_dir, model=model
+                )
+            metrics = evaluator.compute_metrics()
 
         # Optional runtime metadata from oracle-side metrics.json
         runtime_path = csv_path.parent / "metrics.json"
@@ -205,7 +211,11 @@ def _read_runtime_metrics(metrics_json_path: Path) -> dict:
 def compute_aggregates(df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Compute mean and std across seeds, and macro-average across targets."""
     # 1. Summary by (model, target) - aggregating over seeds
-    metric_cols = [c for c in df.columns if c not in ["model", "seed", "target"]]
+    metric_cols = [
+        c
+        for c, dtype in zip(df.columns, df.dtypes)
+        if c not in ["model", "seed", "target"] and dtype.is_numeric()
+    ]
 
     agg_exprs = []
     for c in metric_cols:
@@ -427,7 +437,7 @@ def plot_figure_1_generation(full_df: pl.DataFrame, output_dir: Path):
     metrics_map = {
         "validity": "Validity",
         "uniqueness": "Uniqueness",
-        "fragment_incorporation": "Fragment-adherence",
+        "fragment_adherence": "Fragment-adherence",
         "novelty": "Novelty",
         "effective_yield_rate": "Effective Yield Rate",
         "effective_medchem_pass": "MedChem Pass Rate",
@@ -514,49 +524,18 @@ def _build_reference_set_cache(
         except Exception as e:
             print(f"  Error reading reference cache {cache_path}: {e}. Recomputing...")
 
-    evaluator = evaluator_cls(target)
-    reference_df, _, _ = evaluator._loader.get_full_data_and_threshold()
-    if reference_df.is_empty():
+    ref_metrics = evaluator_cls.compute_reference_metrics(target)
+    if ref_metrics.is_empty():
         return pl.DataFrame()
 
-    smiles_col = (
-        "canonical_smiles"
-        if "canonical_smiles" in reference_df.columns
-        else "smiles"
-        if "smiles" in reference_df.columns
-        else None
+    cache_df = ref_metrics.with_columns(
+        pl.lit(True).alias("is_novel"),
+        pl.lit(True).alias("has_fragment"),
+        pl.lit(True).alias("passes_medchem"),
     )
-    if smiles_col is None:
-        print(f"  Reference data for {target} has no SMILES column.")
-        return pl.DataFrame()
-
-    seen = set()
-    rows = []
-    for row_data in reference_df.iter_rows(named=True):
-        mol = chem_module.MolFromSmiles(str(row_data[smiles_col]))
-        if mol is None:
-            continue
-        smiles = chem_module.MolToSmiles(mol)
-        if smiles in seen:
-            continue
-        seen.add(smiles)
-        rows.append(
-            {
-                "smiles": smiles,
-                "qed": float(qed_module.qed(mol)),
-                "sa": float(evaluator._sa_score(mol)),
-                # Reference-set compounds define the baseline; keep all rows in Figure 3.
-                "is_novel": True,
-                "has_fragment": True,
-                "passes_medchem": True,
-            }
-        )
-
-    cache_df = pl.DataFrame(rows)
-    if not cache_df.is_empty():
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_df.write_csv(cache_path)
-        print(f"  Saved reference cache for {target} to {cache_path}")
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_df.write_csv(cache_path)
+    print(f"  Saved reference cache for {target} to {cache_path}")
     return cache_df
 
 
@@ -654,7 +633,7 @@ def plot_figure_3_quality(
 
         # Check if cache exists with all required columns
         use_cache = False
-        if cache_path.exists():
+        if cache_path.exists() and not force:
             try:
                 run_df = pl.read_csv(cache_path)
                 required_cols = {"smiles", "qed", "sa", "is_novel", "has_fragment", "passes_medchem"}
@@ -686,80 +665,33 @@ def plot_figure_3_quality(
             continue
 
         try:
-            evaluator = MDEvaluator(target, model=model)
-            fragment_smiles = evaluator.fragment_smiles
-            frag_q = Chem.MolFromSmiles(fragment_smiles) if fragment_smiles else None
-            if frag_q is None and fragment_smiles:
-                frag_q = Chem.MolFromSmarts(fragment_smiles)
-
-            df = pl.read_csv(csv_path)
-            smiles_col = "smiles" if "smiles" in df.columns else "original_smiles"
-            raw_smiles = df[smiles_col].to_list()
-
-            valid_mols = []
-            seen = set()
-            for s in raw_smiles:
-                mol = Chem.MolFromSmiles(str(s))
-                if mol is None:
-                    continue
-                canonical_s = Chem.MolToSmiles(mol)
-                if canonical_s not in seen:
-                    seen.add(canonical_s)
-                    valid_mols.append((canonical_s, mol))
-
-            ref_smiles_df = evaluator._loader.get_initial_compounds()
-            ref_smiles = set()
-            if not ref_smiles_df.is_empty():
-                col = "canonical_smiles" if "canonical_smiles" in ref_smiles_df.columns else "smiles"
-                ref_smiles = set(ref_smiles_df[col].to_list())
-            ref_smiles_canonical = evaluator._canonicalize_smiles_set(ref_smiles)
-
-            cache_rows = []
-            for smiles, mol in valid_mols:
-                is_novel = smiles not in ref_smiles_canonical
-                has_fragment = bool(frag_q is not None and get_robust_match(mol, frag_q))
-                qed_val = float(QED.qed(mol))
-                sa_val = float(evaluator._sa_score(mol))
-                filter_result = filters.evaluate(mol)
-                passes_medchem = filter_result["pass"]
-
-                cache_rows.append({
-                    "smiles": smiles,
-                    "qed": qed_val,
-                    "sa": sa_val,
-                    "is_novel": is_novel,
-                    "has_fragment": has_fragment,
-                    "passes_medchem": passes_medchem,
-                })
-                all_mols_data.append({
-                    "model": mapped_model,
-                    "target": target,
-                    "seed": seed,
-                    "smiles": smiles,
-                    "qed": qed_val,
-                    "sa": sa_val,
-                    "is_novel": is_novel,
-                    "has_fragment": has_fragment,
-                    "passes_medchem": passes_medchem,
-                    "molskill_score": None,
-                    "stoplight_score": None,
-                    "aizynthfinder_score": None,
-                    "aizynthfinder_state_score": None,
-                })
-
-            if cache_rows:
-                pl.DataFrame(cache_rows).write_csv(cache_path)
+            target_dir = csv_path.parent
+            if (target_dir / "status.json").exists():
+                evaluator = MDEvaluator(target_dir)
             else:
-                pl.DataFrame(
-                    schema={
-                        "smiles": pl.String,
-                        "qed": pl.Float64,
-                        "sa": pl.Float64,
-                        "is_novel": pl.Boolean,
-                        "has_fragment": pl.Boolean,
-                        "passes_medchem": pl.Boolean,
-                    }
-                ).write_csv(cache_path)
+                evaluator = MDEvaluator.from_csv(csv_path, benchmark=target, model=model)
+
+            run_df = evaluator.compute_molecule_metrics()
+            run_df.write_csv(cache_path)
+
+            if not run_df.is_empty():
+                run_df = _join_quality_score_files(run_df, csv_path.parent)
+                for row_data in run_df.iter_rows(named=True):
+                    all_mols_data.append({
+                        "model": mapped_model,
+                        "target": target,
+                        "seed": seed,
+                        "smiles": row_data["smiles"],
+                        "qed": row_data["qed"],
+                        "sa": row_data["sa"],
+                        "is_novel": row_data["is_novel"],
+                        "has_fragment": row_data["has_fragment"],
+                        "passes_medchem": row_data["passes_medchem"],
+                        "molskill_score": row_data.get("molskill_score", None),
+                        "stoplight_score": row_data.get("stoplight_score", None),
+                        "aizynthfinder_score": row_data.get("aizynthfinder_score", None),
+                        "aizynthfinder_state_score": row_data.get("aizynthfinder_state_score", None),
+                    })
 
         except Exception as e:
             print(f"  Error processing molecules for {csv_path}: {e}")
@@ -1056,7 +988,7 @@ def write_table_1_macro_summary(macro_df: pl.DataFrame, output_dir: Path):
         "model",
         "validity_mean",
         "uniqueness_mean",
-        "fragment_incorporation_mean",
+        "fragment_adherence_mean",
         "novelty_mean",
         "effective_yield_rate_mean",
         "fraction_medchem_pass_mean",

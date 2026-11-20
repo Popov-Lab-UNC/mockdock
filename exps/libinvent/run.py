@@ -376,10 +376,12 @@ def reconcile_libinvent_run(
     )
 
     try:
-        ev = MDEvaluator(benchmark, model="libinvent")
-        eval_metrics = ev.compute_metrics(
-            results_csv, output_path=benchmark_run_dir / "eval_metrics.json"
+        ev = (
+            MDEvaluator(benchmark_run_dir)
+            if (benchmark_run_dir / "status.json").exists()
+            else MDEvaluator.from_csv(results_csv, benchmark=benchmark, model="libinvent")
         )
+        eval_metrics = ev.compute_metrics(output_path=benchmark_run_dir / "eval_metrics.json")
         log.info(
             "Updated eval_metrics.json for %s (validity=%.3f, uniqueness=%.3f, effective_yield=%.3f)",
             benchmark,

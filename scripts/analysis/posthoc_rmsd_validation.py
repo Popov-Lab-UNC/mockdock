@@ -63,6 +63,7 @@ if str(MOCKDOCK_SRC) not in sys.path:
 
 import mockdock
 from mockdock.analysis import DockingAnalyzer, unroll_multiconf_rdkit_mols
+from mockdock.evaluator import MDEvaluator
 from mockdock.loader import BenchmarkLoader
 
 MODEL_RENAME_MAP = {
@@ -334,24 +335,13 @@ def process_single_run(task: tuple[str, str, bool]) -> dict[str, Any]:
     az_state_map = _load_optional_score_map(run_dir / "scores_aizynthfinder.csv", "aizynthfinder_state_score")
     az_bin_map = _load_optional_score_map(run_dir / "scores_aizynthfinder.csv", "aizynthfinder_score")
 
-    # Read results.csv
-    res_df = pl.read_csv(
-        results_csv,
-        infer_schema_length=10000,
-        schema_overrides={
-            "smiles": pl.Utf8,
-            "original_smiles": pl.Utf8,
-            "dlg_path": pl.Utf8,
-            "skip_reason": pl.Utf8,
-            "docking_score": pl.Float64,
-            "norm_score": pl.Float64,
-            "reward_score": pl.Float64,
-            "best_any_score": pl.Float64,
-            "pose_index": pl.Int64,
-            "generation_index": pl.Int64,
-        },
-        null_values=["", "NaN", "nan", "null", "None"],
-    )
+    # Read results.csv via MDEvaluator
+    if (run_dir / "status.json").exists():
+        ev = MDEvaluator(run_dir)
+    else:
+        ev = MDEvaluator.from_csv(results_csv, benchmark=target)
+    res_df = ev.load_results()
+    budget_total = ev.budget_total or len(res_df)
 
     # Cache parsed DLGs within this run
     dlg_cache: dict[str, dict[str, Any]] = {}
@@ -367,7 +357,7 @@ def process_single_run(task: tuple[str, str, bool]) -> dict[str, Any]:
     evaluated_rows: list[dict[str, Any]] = []
     unique_smiles_seen: set[str] = set()
 
-    for row in res_df.iter_rows(named=True):
+    for row_idx, row in enumerate(res_df.iter_rows(named=True), start=1):
         skip_reason = row.get("skip_reason")
         if skip_reason is not None and skip_reason != "failed_rmsd":
             continue
@@ -377,8 +367,8 @@ def process_single_run(task: tuple[str, str, bool]) -> dict[str, Any]:
         smi = str(smi)
         unique_smiles_seen.add(smi)
 
-        gen_idx = row.get("generation_index")
-        gen_idx = int(gen_idx) if gen_idx is not None else -1
+        gen_idx = row.get("oracle_call") or row.get("generation_index")
+        gen_idx = int(gen_idx) if gen_idx is not None else row_idx
         dock_sc = row.get("docking_score")
         dock_sc = float(dock_sc) if dock_sc is not None and math.isfinite(dock_sc) else float("nan")
         best_any_sc = row.get("best_any_score")
@@ -506,8 +496,13 @@ def process_single_run(task: tuple[str, str, bool]) -> dict[str, Any]:
         r["aizynthfinder_state_score"] = az_state_map.get(smi, float("nan"))
         r["aizynthfinder_score"] = az_bin_map.get(smi, float("nan"))
 
-    # --- 1. Trajectory bins (all evaluated calls, binned by generation_index) ---
-    bin_defs = [(1, 200, "1-200"), (201, 400, "201-400"), (401, 600, "401-600"), (601, 800, "601-800"), (801, 1000, "801-1000")]
+    # --- 1. Trajectory bins (all evaluated calls, dynamically binned into 5 bins) ---
+    bin_size = max(1, budget_total // 5)
+    bin_defs = []
+    for b_i in range(5):
+        lo = b_i * bin_size + 1
+        hi = (b_i + 1) * bin_size if b_i < 4 else budget_total
+        bin_defs.append((lo, hi, f"{lo}-{hi}"))
     traj_rows: list[dict[str, Any]] = []
     for lo, hi, blabel in bin_defs:
         b_items = [r for r in evaluated_rows if lo <= r["generation_index"] <= hi]

@@ -95,7 +95,11 @@ def process_single_csv(args_tuple):
         from rdkit import Chem
 
         # Instantiate evaluator to load target references and config
-        evaluator = MDEvaluator(target)
+        target_dir = csv_path.parent
+        if (target_dir / "status.json").exists():
+            evaluator = MDEvaluator(target_dir)
+        else:
+            evaluator = MDEvaluator.from_csv(csv_path, benchmark=target)
         
         # Read the CSV
         df = pl.read_csv(csv_path)

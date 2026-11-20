@@ -38,8 +38,8 @@ def test_compute_metrics_generates_expected_keys(tmp_path: Path, monkeypatch):
     csv_path = tmp_path / "results.csv"
     df.write_csv(csv_path)
 
-    ev = evaluator_mod.MDEvaluator("CHK1")
-    out = ev.compute_metrics(csv_path, output_path=tmp_path / "metrics.json")
+    ev = evaluator_mod.MDEvaluator.from_csv(csv_path, benchmark="CHK1")
+    out = ev.compute_metrics(output_path=tmp_path / "metrics.json")
     assert "validity" in out
     assert "avg_top_1" in out
     assert "valid_pose_rate" in out
@@ -47,6 +47,7 @@ def test_compute_metrics_generates_expected_keys(tmp_path: Path, monkeypatch):
 
     # Check active medchem & yield metrics
     assert "fraction_medchem_pass" in out
+    assert "fragment_adherence" in out
     assert "effective_yield_rate" in out
     assert "effective_medchem_pass" in out
 
@@ -83,9 +84,10 @@ def test_compute_metrics_deduplicates_unique_smiles(tmp_path: Path, monkeypatch)
     csv_path = tmp_path / "results.csv"
     df.write_csv(csv_path)
 
-    ev = evaluator_mod.MDEvaluator("CHK1")
-    out = ev.compute_metrics(csv_path, output_path=tmp_path / "metrics.json")
+    ev = evaluator_mod.MDEvaluator.from_csv(csv_path, benchmark="CHK1")
+    out = ev.compute_metrics(output_path=tmp_path / "metrics.json")
 
-    # With deduplication: top 2 unique are CCO (0.9) and CCN (0.1) -> avg_top_10 = (0.9 + 0.1) / 2 = 0.5
+    # With deduplication and zero-padding to k=10:
+    # Top 2 unique are CCO (0.9) and CCN (0.1) -> avg_top_10 = (0.9 + 0.1 + 8 * 0.0) / 10 = 0.1
     assert out["avg_top_1"] == 0.9
-    assert round(out["avg_top_10"], 4) == 0.5
+    assert round(out["avg_top_10"], 4) == 0.1

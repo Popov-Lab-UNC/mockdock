@@ -105,14 +105,16 @@ def build_reference_set_cache(target: str, reference_cache_dir: Path, force: boo
         from rdkit import Chem
         from rdkit.Chem import QED
         from mockdock import MDEvaluator
+        from mockdock.loader import BenchmarkLoader
     except ImportError:
         ensure_src_on_path()
         from rdkit import Chem
         from rdkit.Chem import QED
         from mockdock import MDEvaluator
+        from mockdock.loader import BenchmarkLoader
 
-    evaluator = MDEvaluator(target)
-    reference_df, _, _ = evaluator._loader.get_full_data_and_threshold()
+    loader = BenchmarkLoader(target)
+    reference_df, _, _ = loader.get_full_data_and_threshold()
     if reference_df.is_empty():
         print(f"  No reference-set data found for {target}.")
         return None
@@ -138,10 +140,11 @@ def build_reference_set_cache(target: str, reference_cache_dir: Path, force: boo
         if smiles in seen:
             continue
         seen.add(smiles)
+        sa_val = MDEvaluator._sa_score(mol)
         row = {
             "smiles": smiles,
             "qed": float(QED.qed(mol)),
-            "sa": float(evaluator._sa_score(mol)),
+            "sa": float(sa_val) if sa_val is not None else float("nan"),
             # Reference-set compounds are the baseline set, so all are retained by scorers.
             "is_novel": True,
             "has_fragment": True,

@@ -74,10 +74,10 @@ def test_mdoracle_adgpu_executable_config(mock_loader, mock_which, tmp_path, mon
     monkeypatch.setattr(MDOracle, "_ensure_components", dummy_ensure_components)
 
     # 4. Test direct instantiation on MDOracle
-    oracle = MDOracle("CHK1", adgpu_executable="/mock/oracle_adgpu")
+    oracle = MDOracle("CHK1", adgpu_executable="/mock/oracle_adgpu", run_dir=tmp_path / "run_1")
     assert oracle._backend_config["adgpu_executable"] == "/mock/oracle_adgpu"
 
     # 5. Test class default resolution on MDOracle
     monkeypatch.setattr(AutoDockGPUOracle, "DEFAULT_ADGPU_EXECUTABLE", "/mock/class_default_oracle")
-    oracle_default = MDOracle("CHK1")
+    oracle_default = MDOracle("CHK1", run_dir=tmp_path / "run_2")
     assert oracle_default._backend_config["adgpu_executable"] == "/mock/class_default_oracle"
